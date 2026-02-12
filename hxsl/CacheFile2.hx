@@ -236,6 +236,7 @@ class CacheFile2 extends Cache {
 	static var LOAD_TIME : Float = 0.0;
 
 	var file : String;
+	var outFile : String;
 	var allowSave : Bool;
 
 	var isLoading : Bool = false;
@@ -249,9 +250,10 @@ class CacheFile2 extends Cache {
 	var rtMutex : sys.thread.Mutex;
 	#end
 
-	public function new( file : String, allowSave : Bool ) {
+	public function new( file : String, allowSave : Bool, ?outFile : String ) {
 		super();
 		this.file = file;
+		this.outFile = outFile != null ? outFile : file;
 		this.allowSave = allowSave;
 		#if heaps_mt_hxsl_cache
 		rtMutex = new sys.thread.Mutex();
@@ -316,12 +318,29 @@ class CacheFile2 extends Cache {
 
 	function load() {
 		isLoading = true;
-		if( !sys.FileSystem.exists(file) ) {
-			isLoading = false;
-			return;
-		}
 
 		var tLoadStart = haxe.Timer.stamp();
+		var loader = new CacheFile2Loader(this);
+
+		loadFile(loader, file);
+		if( outFile != file ) {
+			loadFile(loader, outFile);
+		}
+
+		loader.run(function() {
+			var tLoadEnd = haxe.Timer.stamp();
+			var dt = tLoadEnd - tLoadStart;
+			CacheFile2.LOAD_TIME = dt;
+			log('${runtimesDefault.length + runtimesBatch.length} shaders loaded in ${hxd.Math.fmt(dt)}s');
+			isLoading = false;
+		});
+	}
+
+	static function loadFile( loader : CacheFile2Loader, file : String ) : Bool {
+		if( !sys.FileSystem.exists(file) ) {
+			return false;
+		}
+
 		var f = new haxe.io.BytesInput(sys.io.File.getBytes(file));
 
 		inline function readLine() {
@@ -330,12 +349,9 @@ class CacheFile2 extends Cache {
 
 		var magic = readLine();
 		if( !StringTools.startsWith(magic, "CF2-1") ) {
-			log("Invalid cache file, skipped");
-			isLoading = false;
-			return;
+			f.close();
+			return false;
 		}
-
-		var loader = new CacheFile2Loader(this);
 
 		while( true ) {
 			var line = readLine();
@@ -431,14 +447,7 @@ class CacheFile2 extends Cache {
 		}
 
 		f.close();
-
-		loader.run(function() {
-			var tLoadEnd = haxe.Timer.stamp();
-			var dt = tLoadEnd - tLoadStart;
-			CacheFile2.LOAD_TIME = dt;
-			log('${runtimesDefault.length + runtimesBatch.length} shaders loaded in ${hxd.Math.fmt(dt)}s');
-			isLoading = false;
-		});
+		return true;
 	}
 
 	function saveIfModified() {
@@ -521,8 +530,8 @@ class CacheFile2 extends Cache {
 		}
 		out.writeString("\n");
 
-		sys.io.File.saveBytes(file, out.getBytes());
-		log("Cache file saved to " + file);
+		sys.io.File.saveBytes(outFile, out.getBytes());
+		log("Cache file saved to " + outFile);
 	}
 }
 
