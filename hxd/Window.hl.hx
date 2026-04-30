@@ -15,6 +15,7 @@ enum DisplayMode {
 	Windowed;
 	Borderless;
 	Fullscreen;
+	ExclusiveFullscreen;
 }
 #end
 
