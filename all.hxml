@@ -19,7 +19,8 @@
 -lib hlopenal
 -xml heaps_hl.xml
 hxsl.CacheFileBuilder
--D hl-ver=1.15.0
+# sdl3
+-D hl-ver=1.16.0
 
 --next
 
