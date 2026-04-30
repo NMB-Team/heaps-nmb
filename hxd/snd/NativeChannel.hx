@@ -54,7 +54,13 @@ private class ALChannel {
 
 		for ( b in buffers )
 			onSample(b);
-		forcePlay();
+		if( hxd.System.isDisplayReady() )
+			forcePlay();
+		else
+			hxd.System.onDisplayReady(function() {
+				if( src != null )
+					forcePlay();
+			});
 		nativeChannels.push(this);
 	}
 
@@ -116,6 +122,7 @@ class NativeChannel {
 	var time : Float; // Mandatory for proper buffer sync, otherwise produces gaps in playback due to innacurate timings.
 	var tmpBuffer : haxe.io.Float32Array;
 	var gain : js.html.audio.GainNode;
+	var started : Bool = false;
 	#elseif hlopenal
 	var channel : ALChannel;
 	#end
@@ -148,10 +155,10 @@ class NativeChannel {
 		queued.addEventListener("ended", swap);
 		queued.connect(gain);
 
-		var currTime : Float = ctx.currentTime;
-		current.start(currTime);
-		time = currTime + front.duration;
-		queued.start(time);
+		if( hxd.System.isDisplayReady() )
+			start();
+		else
+			hxd.System.onDisplayReady(start);
 
 		#elseif hlopenal
 		channel = new ALChannel(bufferSamples, this);
@@ -159,6 +166,16 @@ class NativeChannel {
 	}
 
 	#if js
+
+	function start() {
+		if( started || current == null )
+			return;
+		started = true;
+		var currTime : Float = hxd.snd.webaudio.Context.get().currentTime;
+		current.start(currTime);
+		time = currTime + front.duration;
+		queued.start(time);
+	}
 
 	function swap( event : js.html.Event ) {
 		var tmp = front;

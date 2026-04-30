@@ -48,6 +48,10 @@ class System {
 	}
 
 	static var loopFunc : Void -> Void;
+	static var displayReady = true;
+	static var displayReadyCallbacks : Array<Void -> Void> = [];
+
+	public static var delayWindowUntilFirstFrame = false;
 
 	public static function getCurrentLoop() : Void -> Void {
 		return loopFunc;
@@ -58,6 +62,32 @@ class System {
 	}
 
 	public static function start( callb : Void -> Void ) : Void {
+	}
+
+	public static function isDisplayReady() {
+		return displayReady || !delayWindowUntilFirstFrame;
+	}
+
+	public static function onDisplayReady( callback : Void -> Void ) {
+		if( isDisplayReady() )
+			callback();
+		else
+			displayReadyCallbacks.push(callback);
+	}
+
+	public static function presentFrame( engine : h3d.Engine ) {
+		engine.driver.present();
+		markDisplayReady();
+	}
+
+	static function markDisplayReady() {
+		if( displayReady )
+			return;
+		displayReady = true;
+		var callbacks = displayReadyCallbacks;
+		displayReadyCallbacks = [];
+		for( callback in callbacks )
+			callback();
 	}
 
 	/**

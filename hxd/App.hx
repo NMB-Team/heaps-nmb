@@ -154,7 +154,7 @@ class App implements h3d.IDrawable {
 			hxd.Timer.skip();
 			mainLoop();
 			hxd.System.setLoop(mainLoop);
-			engine.driver.present();
+			hxd.System.presentFrame(engine);
 			hxd.Key.initialize();
 		});
 	}

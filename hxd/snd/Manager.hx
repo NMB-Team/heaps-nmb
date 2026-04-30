@@ -147,10 +147,29 @@ class Manager {
 	public static function get() : Manager {
 		if( instance == null ) {
 			instance = new Manager();
+			instance.suspended = !hxd.System.isDisplayReady();
 			instance.updateEvent = haxe.MainLoop.add(instance.update);
 			instance.updateEvent.isBlocking = false;
 		}
 		return instance;
+	}
+
+	public static function resumeAfterFirstFrame() {
+		if( instance == null )
+			return;
+		instance.suspended = false;
+		instance.resetChannelTime();
+	}
+
+	function resetChannelTime() {
+		var stamp = haxe.Timer.stamp();
+		var c = channels;
+		while( c != null ) {
+			c.lastStamp = stamp;
+			if( c.currentFade != null )
+				c.currentFade.start = stamp;
+			c = c.next;
+		}
 	}
 
 	public function stopAll() {

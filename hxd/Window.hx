@@ -32,6 +32,7 @@ class Window {
 	public var mouseMode(default, set) : MouseMode = Absolute;
 	public var vsync(get, set) : Bool;
 	public var isFocused(get, never) : Bool;
+	public var visible(default, set) : Bool = true;
 
 	public var title(get, set) : String;
 	public var displayMode(get, set) : DisplayMode;
@@ -171,6 +172,10 @@ class Window {
 	function set_vsync( b : Bool ) : Bool {
 		if( !b ) throw "Can't disable vsync on this platform";
 		return true;
+	}
+
+	function set_visible( v : Bool ) : Bool {
+		return visible = v;
 	}
 
 	function get_isFocused() : Bool return true;

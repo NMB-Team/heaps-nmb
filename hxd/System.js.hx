@@ -38,6 +38,10 @@ class System {
 	}
 
 	static var loopFunc : Void -> Void;
+	static var displayReady = false;
+	static var displayReadyCallbacks : Array<Void -> Void> = [];
+
+	public static var delayWindowUntilFirstFrame = false;
 
 	// JS
 	static var loopInit = false;
@@ -81,6 +85,36 @@ class System {
 
 	public static function start( callb : Void -> Void ) : Void {
 		callb();
+	}
+
+	public static function isDisplayReady() {
+		return displayReady || !delayWindowUntilFirstFrame;
+	}
+
+	public static function onDisplayReady( callback : Void -> Void ) {
+		if( isDisplayReady() )
+			callback();
+		else
+			displayReadyCallbacks.push(callback);
+	}
+
+	public static function presentFrame( engine : h3d.Engine ) {
+		engine.driver.present();
+		markDisplayReady();
+	}
+
+	static function markDisplayReady() {
+		if( displayReady )
+			return;
+		displayReady = true;
+		var w = hxd.Window.getInstance();
+		if( w != null )
+			w.visible = true;
+		hxd.snd.Manager.resumeAfterFirstFrame();
+		var callbacks = displayReadyCallbacks;
+		displayReadyCallbacks = [];
+		for( callback in callbacks )
+			callback();
 	}
 
 	public static function setNativeCursor( c : Cursor ) : Void {

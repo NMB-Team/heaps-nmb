@@ -42,6 +42,10 @@ class System {
 
 	static var loopFunc : Void -> Void;
 	static var dismissErrors = false;
+	static var displayReady = false;
+	static var displayReadyCallbacks : Array<Void -> Void> = [];
+
+	public static var delayWindowUntilFirstFrame = true;
 
 	#if !usesys
 	static var sentinel : hl.UI.Sentinel;
@@ -86,7 +90,7 @@ class System {
 			#if hl_profile
 			hl.Profile.event(-1); // pause
 			#end
-			cur.driver.present();
+			presentFrame(cur);
 			#if hl_profile
 			hl.Profile.event(0); // next frame
 			hl.Profile.event(-2); // resume
@@ -107,7 +111,37 @@ class System {
 			width = Std.parseInt(p[0]);
 			height = Std.parseInt(p[1]);
 		}
-		return new Window(title, width, height, { fixed: fixed });
+		return new Window(title, width, height, { fixed: fixed, hidden: delayWindowUntilFirstFrame });
+	}
+
+	public static function isDisplayReady() {
+		return displayReady || !delayWindowUntilFirstFrame;
+	}
+
+	public static function onDisplayReady( callback : Void -> Void ) {
+		if( isDisplayReady() )
+			callback();
+		else
+			displayReadyCallbacks.push(callback);
+	}
+
+	public static function presentFrame( engine : h3d.Engine ) {
+		engine.driver.present();
+		markDisplayReady();
+	}
+
+	static function markDisplayReady() {
+		if( displayReady )
+			return;
+		displayReady = true;
+		var w = hxd.Window.getInstance();
+		if( w != null )
+			w.visible = true;
+		hxd.snd.Manager.resumeAfterFirstFrame();
+		var callbacks = displayReadyCallbacks;
+		displayReadyCallbacks = [];
+		for( callback in callbacks )
+			callback();
 	}
 
 	public static function start( init : Void -> Void ) : Void {

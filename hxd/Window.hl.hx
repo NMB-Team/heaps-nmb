@@ -68,6 +68,7 @@ class Window {
 	public var framerate : Null<Int> = null;
 	public var vsync(get, set) : Bool;
 	public var isFocused(get, never) : Bool;
+	public var visible(default, set) : Bool = true;
 
 	public var title(get, set) : String;
 	public var displayMode(get, set) : DisplayMode;
@@ -112,7 +113,8 @@ class Window {
 		#if hlsdl
 		var sdlFlags = 0;
 		if (!fixed) sdlFlags |= sdl.Window.SDL_WINDOW_RESIZABLE;
-		if (!hidden) sdlFlags |= sdl.Window.SDL_WINDOW_SHOWN;
+		if (hidden) sdlFlags |= sdl.Window.SDL_WINDOW_HIDDEN;
+		else sdlFlags |= sdl.Window.SDL_WINDOW_SHOWN;
 		#if heaps_vulkan
 		if( USE_VULKAN ) sdlFlags |= sdl.Window.SDL_WINDOW_VULKAN;
 		#end
@@ -125,10 +127,15 @@ class Window {
 		if (hidden) dxFlags |= dx.Window.HIDDEN;
 		window = new dx.Window(title, width, height, dx.Window.CW_USEDEFAULT, dx.Window.CW_USEDEFAULT, dxFlags);
 		#end
+		#if (hldx || hlsdl)
+		if( hidden )
+			window.visible = false;
+		#end
 		WINDOWS.push(this);
 		#if multidriver
 		id = window.id;
 		#end
+		visible = !hidden;
 	}
 
 	public dynamic function onClose() : Bool {
@@ -364,6 +371,17 @@ class Window {
 	function set_vsync( b : Bool ) : Bool {
 		window.vsync = b;
 		return b;
+	}
+
+	function set_visible( v : Bool ) : Bool {
+		if( visible == v )
+			return v;
+		#if (hldx || hlsdl)
+		window.visible = v;
+		#end
+		if( flags != null )
+			flags.hidden = !v;
+		return visible = v;
 	}
 
 	function get_isFocused() : Bool return !wasBlurred;
