@@ -42,6 +42,7 @@ class System {
 
 	static var loopFunc : Void -> Void;
 	static var dismissErrors = false;
+	static var firstFramePresented = false;
 	static var displayReady = false;
 	static var displayReadyCallbacks : Array<Void -> Void> = [];
 
@@ -127,16 +128,29 @@ class System {
 
 	public static function presentFrame( engine : h3d.Engine ) {
 		engine.driver.present();
-		markDisplayReady();
+		markFirstFramePresented();
+	}
+
+	static function markFirstFramePresented() {
+		if( firstFramePresented )
+			return;
+		firstFramePresented = true;
+		var w = hxd.Window.getInstance();
+		if( w == null || w.visible )
+			markDisplayReady();
+		else
+			w.visible = true;
+	}
+
+	public static function notifyWindowShown() {
+		if( firstFramePresented )
+			markDisplayReady();
 	}
 
 	static function markDisplayReady() {
 		if( displayReady )
 			return;
 		displayReady = true;
-		var w = hxd.Window.getInstance();
-		if( w != null )
-			w.visible = true;
 		hxd.snd.Manager.resumeAfterFirstFrame();
 		var callbacks = displayReadyCallbacks;
 		displayReadyCallbacks = [];

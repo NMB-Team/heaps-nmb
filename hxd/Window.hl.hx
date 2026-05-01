@@ -393,6 +393,8 @@ class Window {
 		switch( e.type ) {
 		case WindowState:
 			switch( e.state ) {
+			case Show, Expose:
+				hxd.System.notifyWindowShown();
 			case Resize:
 				windowWidth = window.width;
 				windowHeight = window.height;
