@@ -762,7 +762,9 @@ class Window {
 			window.selectedMonitor = mon != null ? mon.name : null;
 			#end
 			window.displayMode = m;
+			#if hldx
 			window.resize(dm.mode.width, dm.mode.height);
+			#end
 		}
 		else {
 			window.displayMode = m;
