@@ -18,6 +18,9 @@ class Base2d extends hxsl.Shader {
 		@global var time : Float;
 		@param var zValue : Float;
 		@param var texture : Sampler2D;
+		#if texture_filtering
+		@param var runtimeMipMapFilter : Float;
+		#end
 
 		var spritePosition : Vec4;
 		var absolutePosition : Vec4;
@@ -53,6 +56,26 @@ class Base2d extends hxsl.Shader {
 			calculatedUV = hasUVPos ? input.uv * uvPos.zw + uvPos.xy : input.uv;
 			pixelColor = isRelative ? color * input.color : input.color;
 			textureColor = texture.get(calculatedUV);
+			#if texture_filtering
+			if( runtimeMipMapFilter > 0.0 ) {
+				var dx = dFdx(calculatedUV);
+				var dy = dFdy(calculatedUV);
+				var texSize = vec2(texture.size());
+				var texDx = dx * texSize;
+				var texDy = dy * texSize;
+				var footprint = max(max(abs(texDx.x), abs(texDx.y)), max(abs(texDy.x), abs(texDy.y)));
+				var amount = clamp(footprint - 1.0, 0.0, 1.0) * runtimeMipMapFilter;
+				if( amount > 0.0 ) {
+					var filtered = (
+						texture.get(calculatedUV + 0.25 * dx + 0.25 * dy) +
+						texture.get(calculatedUV + 0.25 * dx - 0.25 * dy) +
+						texture.get(calculatedUV - 0.25 * dx + 0.25 * dy) +
+						texture.get(calculatedUV - 0.25 * dx - 0.25 * dy)
+					) * 0.25;
+					textureColor = mix(textureColor, filtered, amount);
+				}
+			}
+			#end
 			pixelColor *= textureColor;
 		}
 

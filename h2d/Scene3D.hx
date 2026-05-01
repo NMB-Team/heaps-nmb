@@ -128,7 +128,7 @@ class Scene3D extends h2d.Flow {
 		s3d.setOutputTarget();
 		if( prevRZ != null )
 			@:privateAccess ctx.setRZ(prevRZ.x, prevRZ.y, prevRZ.width, prevRZ.height);
-		@:privateAccess ctx.initShaders(ctx.baseShaderList);
+		@:privateAccess ctx.initShaders(ctx.baseShaderList, ctx.baseShaderListTail);
 		ctx.setCurrent();
 	}
 

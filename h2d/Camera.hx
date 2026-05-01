@@ -47,33 +47,33 @@ class Camera {
 	**/
 	public var clipViewport : Bool;
 	/**
-		Horizontal viewport offset of the camera relative to internal scene viewport (see `h2d.Scene.scaleMode`) in scene coordinates. ( default : 0 )  
+		Horizontal viewport offset of the camera relative to internal scene viewport (see `h2d.Scene.scaleMode`) in scene coordinates. ( default : 0 )
 		Automatically scales on scene resize.
 	**/
 	public var viewportX(get, set) : Float;
 	/**
-		Vertical viewport offset of the camera relative to internal scene viewport (see `h2d.Scene.scaleMode`) in scene coordinates. ( default : 0 )  
+		Vertical viewport offset of the camera relative to internal scene viewport (see `h2d.Scene.scaleMode`) in scene coordinates. ( default : 0 )
 		Automatically scales on scene resize.
 	**/
 	public var viewportY(get, set) : Float;
 	/**
-		Camera viewport width in scene coordinates. ( default : scene.width )  
+		Camera viewport width in scene coordinates. ( default : scene.width )
 		Automatically scales on scene resize.
 	**/
 	public var viewportWidth(get, set) : Float;
 	/**
-		Camera viewport height in scene coordinates. ( default: scene.height )  
+		Camera viewport height in scene coordinates. ( default: scene.height )
 		Automatically scales on scene resize.
 	**/
 	public var viewportHeight(get, set) : Float;
 
 	/**
-		Horizontal anchor position inside viewport boundaries used for positioning and resize compensation. ( default : 0 )  
+		Horizontal anchor position inside viewport boundaries used for positioning and resize compensation. ( default : 0 )
 		Value is a percentile (0..1) from left viewport edge to right viewport edge with 0.5 being center.
 	**/
 	public var anchorX(default, set) : Float;
 	/**
-		Vertical anchor position inside viewport boundaries used for positioning and resize compensation. ( default : 0 )  
+		Vertical anchor position inside viewport boundaries used for positioning and resize compensation. ( default : 0 )
 		Value is a percentile (0..1) from top viewport edge to bottom viewport edge with 0.5 being center.
 	**/
 	public var anchorY(default, set) : Float;
@@ -93,6 +93,12 @@ class Camera {
 		Enables `h2d.Object.rotation` sync between `Camera.follow` object and Camera.
 	**/
 	public var followRotation : Bool = false;
+
+	/**
+		Round the camera position?
+		Setting to false allows the camera to have a sub-pixel accurate position.
+	**/
+	public var enableCameraRounding : Bool = true;
 
 	var posChanged : Bool;
 
@@ -224,8 +230,12 @@ class Camera {
 				matC = scaleY * -sr;
 				matD = scaleY * cr;
 			}
-			absX = Math.round(-(x * matA + y * matC) + (scene.width * anchorX * viewW) + scene.width * viewX);
-			absY = Math.round(-(x * matB + y * matD) + (scene.height * anchorY * viewH) + scene.height * viewY);
+			absX = -(x * matA + y * matC) + (scene.width * anchorX * viewW) + scene.width * viewX;
+			absY = -(x * matB + y * matD) + (scene.height * anchorY * viewH) + scene.height * viewY;
+			if (this.enableCameraRounding) {
+				absX = Math.round(absX);
+				absY = Math.round(absY);
+			}
 			invDet = 1 / (matA * matD - matB * matC);
 			posChanged = false;
 		}
@@ -309,6 +319,9 @@ class Camera {
 		Requires Camera being attached to a Scene.
 	**/
 	inline function screenXToCamera( mx : Float, my : Float ) : Float {
+		mx *= scene.engineScaleX;
+		my *= scene.engineScaleY;
+
 		return sceneXToCamera((mx - scene.offsetX) / scene.viewportScaleX, (my - scene.offsetY) / scene.viewportScaleY);
 	}
 
@@ -318,25 +331,28 @@ class Camera {
 		Requires Camera being attached to a Scene.
 	**/
 	inline function screenYToCamera( mx : Float, my : Float ) : Float {
+		mx *= scene.engineScaleX;
+		my *= scene.engineScaleY;
+
 		return sceneYToCamera((mx - scene.offsetX) / scene.viewportScaleX, (my - scene.offsetY) / scene.viewportScaleY);
 	}
 
 	/**
-		Convert local camera position to absolute screen position.
+		Convert local camera position to absolute screen (engine) position.
 
 		Requires Camera being attached to a Scene.
 	**/
 	inline function cameraXToScreen( mx : Float, my : Float ) : Float {
-		return cameraXToScene(mx, my) * scene.viewportScaleX + scene.offsetX;
+		return (cameraXToScene(mx, my) * scene.viewportScaleX + scene.offsetX) * scene.engineScaleX;
 	}
 
 	/**
-		Convert local camera position to absolute screen position.
+		Convert local camera position to absolute screen (engine) position.
 
 		Requires Camera being attached to a Scene.
 	**/
 	inline function cameraYToScreen( mx : Float, my : Float ) : Float {
-		return cameraYToScene(mx, my) * scene.viewportScaleY + scene.offsetY;
+		return (cameraYToScene(mx, my) * scene.viewportScaleY + scene.offsetY) * scene.engineScaleY;
 	}
 
 	// Scene <-> Camera
@@ -380,8 +396,8 @@ class Camera {
 	@:dox(hide) @:noCompletion public function eventToCamera( e : hxd.Event ) {
 		var x = (e.relX - scene.offsetX) / scene.viewportScaleX - absX;
 		var y = (e.relY - scene.offsetY) / scene.viewportScaleY - absY;
-		e.relX = (x * matD - y * matC) * invDet;
-		e.relY = (-x * matB + y * matA) * invDet;
+		e.relX = (x * matD - y * matC) * invDet * scene.engineScaleX;
+		e.relY = (-x * matB + y * matA) * invDet * scene.engineScaleY;
 	}
 
 	/**
@@ -393,8 +409,8 @@ class Camera {
 		checkScene();
 		var x = (pt.x - scene.offsetX) / scene.viewportScaleX - absX;
 		var y = (pt.y - scene.offsetY) / scene.viewportScaleY - absY;
-		pt.x = (x * matD - y * matC) * invDet;
-		pt.y = (-x * matB + y * matA) * invDet;
+		pt.x = (x * matD - y * matC) * invDet * scene.engineScaleX;
+		pt.y = (-x * matB + y * matA) * invDet * scene.engineScaleY;
 	}
 
 	/**
