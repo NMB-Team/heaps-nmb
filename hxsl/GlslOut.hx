@@ -1,5 +1,5 @@
 package hxsl;
-import hxsl.Ast;
+using hxsl.Ast;
 
 class GlslOut {
 
@@ -97,10 +97,15 @@ class GlslOut {
 	var isES2(get,never) : Bool;
 	var uniformBuffer : Int = 0;
 	var outIndex : Int = 0;
+	var inputIndex : Int = 0;
+	var varyingIndex : Int = 0;
+	var textureIndex : Int = 0;
+	var vulkanParametersPadding : Int = 0;
 	var rwTextures : Int = 0;
 	public var varNames : Map<Int,String>;
 	public var glES : Null<Float>;
 	public var version : Null<Int>;
+	public var isVulkan : Bool;
 
 	/*
 		Intel HD driver fix:
@@ -769,13 +774,19 @@ class GlslOut {
 				add('layout(${format}32f, binding=${rwTextures}) uniform ');
 				rwTextures += n;
 			default:
+				if( isVulkan && isSampler(v.type) )
+					add('layout(binding=${textureIndex++}) ');
 				add("uniform ");
 			}
 		case Input:
+			if( isVulkan )
+				add('layout(location=${inputIndex++}) ');
 			add( isES2 ? "attribute " : "in ");
 		case Var:
 			if ( Tools.hasQualifier(v, Flat) )
 				add("flat ");
+			if( isVulkan )
+				add('layout(location=${varyingIndex++}) ');
 			add( isES2 ? "varying " : (isVertex ? "out " : "in "));
 		case Output:
 			if( isES2 ) {
@@ -783,7 +794,7 @@ class GlslOut {
 				return;
 			}
 			if( isVertex ) return;
-			if( isES )
+			if( isES || isVulkan )
 				add('layout(location=${outIndex++}) ');
 			add("out ");
 		case Function:
@@ -805,13 +816,54 @@ class GlslOut {
 		add(";\n");
 	}
 
+	function isSampler( t : Type ) {
+		return switch( t ) {
+		case TSampler(_), TArray(TSampler(_), _):
+			true;
+		default: false;
+		}
+	}
+
 	function initVars( s : ShaderData ){
 		outIndex = 0;
+		textureIndex = 0;
+		inputIndex = 0;
 		rwTextures = 0;
 		uniformBuffer = 0;
 		outIndexes = new Map();
-		for( v in s.vars )
-			initVar(v);
+		if( isVulkan ) {
+			var params = [], globals = [];
+			for( v in s.vars )
+				switch( v.kind ) {
+				case Param: params.push(v);
+				case Global: globals.push(v);
+				default: initVar(v);
+				}
+			if( params.length > 0 || globals.length > 0 ) {
+				add("layout( push_constant ) uniform _Constants_ {\n");
+				if( vulkanParametersPadding > 0 )
+					add("\tvec4 _dummy_padding_["+vulkanParametersPadding+"];\n");
+				for( v in globals ) {
+					if( isSampler(v.type) ) continue;
+					add("\t");
+					initVar(v);
+				}
+				for( v in params ) {
+					if( isSampler(v.type) ) continue;
+					add("\t");
+					initVar(v);
+				}
+				add("};\n");
+				for( v in globals.concat(params) ) {
+					if( isSampler(v.type) ) {
+						initVar(v);
+					}
+				}
+			}
+		} else {
+			for( v in s.vars )
+				initVar(v);
+		}
 		add("\n");
 
 		if( outIndex < 2 )
@@ -882,7 +934,10 @@ class GlslOut {
 				Given we have either [X, Y, 0, N] for zNear or [X, Y, F, F] for zFar,
 				this shader operation will map [0, 1] range to [-1, 1] for correct clipping.
 			**/
-			add("\tgl_Position.z += gl_Position.z - gl_Position.w;\n");
+			if( isVulkan )
+				add("\tgl_Position.y = -gl_Position.y;\n");
+			else
+				add("\tgl_Position.z += gl_Position.z - gl_Position.w;\n");
 		}
 		add("}");
 		exprValues.push(buf.toString());
@@ -906,7 +961,7 @@ class GlslOut {
 		else if( isCompute || version >= 430 )
 			decl("#version 430");
 		else if( version != null )
-			decl("#version " + (version > 150 ? 150 : version));
+			decl("#version " + (version > 150 && !isVulkan ? 150 : version));
 		else
 			decl("#version 130"); // OpenGL 3.0
 

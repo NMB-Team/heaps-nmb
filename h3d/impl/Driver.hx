@@ -8,6 +8,13 @@ typedef Query = {};
 typedef GPUBuffer = js.html.webgl.Buffer;
 typedef Texture = { t : js.html.webgl.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 typedef Query = {};
+#elseif (hlsdl && heaps_vulkan)
+typedef IndexBuffer = { buf : sdl.Vulkan.VkBuffer, mem : sdl.Vulkan.VkDeviceMemory, stride : Int };
+typedef VertexBuffer = { buf : sdl.Vulkan.VkBuffer, mem : sdl.Vulkan.VkDeviceMemory, stride : Int };
+typedef GPUBuffer = VertexBuffer;
+typedef Texture = { img : sdl.Vulkan.VkImage, mem : sdl.Vulkan.VkDeviceMemory, view : sdl.Vulkan.VkImageView };
+typedef DepthBuffer = {};
+typedef Query = {};
 #elseif hlsdl
 typedef GPUBuffer = sdl.GL.Buffer;
 typedef Texture = { t : sdl.GL.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };

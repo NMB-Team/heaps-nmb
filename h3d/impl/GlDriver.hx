@@ -4,7 +4,7 @@ import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
 
-#if (js||hlsdl||usegl)
+#if ((js||hlsdl||usegl) && !(hlsdl && heaps_vulkan))
 
 #if js
 import hxd.impl.TypedArray;
@@ -2226,6 +2226,12 @@ class GlDriver extends Driver {
 			null;
 		#end
 
+}
+
+#else
+
+class GlDriver extends Driver {
+	public static var hasMultiIndirectCount = false;
 }
 
 #end
