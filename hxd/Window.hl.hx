@@ -927,6 +927,8 @@ class Window {
 		for( w in WINDOWS )
 			if( e.windowId == w.id )
 				return w.onEvent(e);
+		if( inst != null && (e.windowId == 0 || WINDOWS.length == 1) )
+			return inst.onEvent(e);
 		return true;
 		#else
 		return inst.onEvent(e);
