@@ -132,6 +132,10 @@ class HtmlText extends Text {
 			m._42 = ((dropShadow.color >> 8) & 0xFF) / 255;
 			m._43 = (dropShadow.color & 0xFF) / 255;
 			m._44 = dropShadow.alpha;
+			for (e in elements) {
+				if (e is TileGroup)
+					(cast (e, TileGroup)).drawWith(ctx, this);
+			}
 			glyphs.drawWith(ctx, this);
 			dropMatrix.enabled = false;
 			absX = oldX;

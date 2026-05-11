@@ -404,6 +404,16 @@ class Pixels {
 			innerFormat = RGBA;
 			convert(target);
 			return;
+		#else
+		case [S3TC(ver), _]:
+			if( (width|height)&3 != 0 ) throw "Texture size should be 4x4 multiple";
+			var out = haxe.io.Bytes.alloc(width * height * 4);
+			decodeDXT(this.bytes.sub(offset, this.bytes.length - offset), out, width, height, ver);
+			offset = 0;
+			this.bytes = out;
+			innerFormat = RGBA;
+			convert(target);
+			return;
 		#end
 
 		case [_, S3TC(1)] if( width == 1 && height == 1):
@@ -771,6 +781,247 @@ class Pixels {
 				outPos += p.dataSize;
 			}
 		return ddsOut;
+	}
+
+	static var BIT5 = [
+		0, 8, 16, 25, 33, 41, 49, 58, 66, 74, 82, 90, 99, 107, 115, 123, 132, 140, 148, 156, 165, 173, 181, 189, 197, 206, 214, 222, 230, 239, 247, 255
+	];
+	static var BIT6 = [
+		0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 130, 134, 138,
+		142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186, 190, 194, 198, 202, 206, 210, 215, 219, 223, 227, 231, 235, 239, 243, 247, 251, 255
+	];
+
+	static inline function mkColor(r:Int, g:Int, b:Int, a:Int) {
+		return (((a) << 24) | ((b) << 16) | ((g) << 8) | (r));
+	}
+
+	static inline function dxtColor1(c:Int, a:Int) {
+		return mkColor(BIT5[(c & 0xFC00) >> 11], BIT6[(c & 0x07E0) >> 5], BIT5[(c & 0x001F)], a);
+	}
+
+	static inline function dxtColor2(c0:Int, c1:Int, a:Int) {
+		return mkColor((BIT5[(c0 & 0xFC00) >> 11] + BIT5[(c1 & 0xFC00) >> 11]) >> 1, (BIT6[(c0 & 0x07E0) >> 5] + BIT6[(c1 & 0x07E0) >> 5]) >> 1,
+			(BIT5[c0 & 0x001F] + BIT5[c1 & 0x001F]) >> 1, a);
+	}
+
+	static inline function dxtColor3(c0:Int, c1:Int, a:Int) {
+		return mkColor(Std.int((2 * BIT5[(c0 & 0xFC00) >> 11] + BIT5[(c1 & 0xFC00) >> 11]) / 3),
+			Std.int((2 * BIT6[(c0 & 0x07E0) >> 5] + BIT6[(c1 & 0x07E0) >> 5]) / 3), Std.int((2 * BIT5[c0 & 0x001F] + BIT5[c1 & 0x001F]) / 3), a);
+	}
+
+	static function dxtAlpha(a0:Int, a1:Int, t:Int) {
+		if (a0 > a1)
+			switch (t) {
+				case 0:
+					return a0;
+				case 1:
+					return a1;
+				case 2:
+					return Std.int((6 * a0 + a1) / 7);
+				case 3:
+					return Std.int((5 * a0 + 2 * a1) / 7);
+				case 4:
+					return Std.int((4 * a0 + 3 * a1) / 7);
+				case 5:
+					return Std.int((3 * a0 + 4 * a1) / 7);
+				case 6:
+					return Std.int((2 * a0 + 5 * a1) / 7);
+				case 7:
+					return Std.int((a0 + 6 * a1) / 7);
+			}
+		else
+			switch (t) {
+				case 0:
+					return a0;
+				case 1:
+					return a1;
+				case 2:
+					return Std.int((4 * a0 + a1) / 5);
+				case 3:
+					return Std.int((3 * a0 + 2 * a1) / 5);
+				case 4:
+					return Std.int((2 * a0 + 3 * a1) / 5);
+				case 5:
+					return Std.int((a0 + 4 * a1) / 5);
+				case 6:
+					return 0;
+				case 7:
+					return 255;
+			}
+		return 0;
+	}
+
+	static function dxtColor(c0:Int, c1:Int, a:Int, t:Int) {
+		switch (t) {
+			case 0:
+				return dxtColor1(c0, a);
+			case 1:
+				return dxtColor1(c1, a);
+			case 2:
+				return (c0 > c1) ? dxtColor3(c0, c1, a) : dxtColor2(c0, c1, a);
+			case 3:
+				return (c0 > c1) ? dxtColor3(c1, c0, a) : 0;
+		}
+		return 0;
+	}
+
+	static function convert565ByteToRgb(byte:Int) {
+		return [
+			Math.round(((byte >>> 11) & 31) * (255 / 31)),
+			Math.round(((byte >>> 5) & 63) * (255 / 63)),
+			Math.round((byte & 31) * (255 / 31))
+		];
+	};
+
+	static function lerp(val1:Float, val2:Float, ratio:Float) {
+		return (1 - ratio) * val1 + ratio * val2;
+	};
+
+	static function interpolateColorValues(firstVal, secondVal, isDxt1) {
+		var firstColor = convert565ByteToRgb(firstVal);
+		var secondColor = convert565ByteToRgb(secondVal);
+		var colorValues = firstColor.concat([255]).concat(secondColor.concat([255]));
+
+		if (isDxt1 && firstVal <= secondVal) {
+			colorValues.push(Math.round((firstColor[0] + secondColor[0]) / 2));
+			colorValues.push(Math.round((firstColor[1] + secondColor[1]) / 2));
+			colorValues.push(Math.round((firstColor[2] + secondColor[2]) / 2));
+			colorValues.push(255);
+
+			colorValues.push(0);
+			colorValues.push(0);
+			colorValues.push(0);
+			colorValues.push(0);
+		} else {
+			colorValues.push(Math.round(lerp(firstColor[0], secondColor[0], 1 / 3)));
+			colorValues.push(Math.round(lerp(firstColor[1], secondColor[1], 1 / 3)));
+			colorValues.push(Math.round(lerp(firstColor[2], secondColor[2], 1 / 3)));
+			colorValues.push(255);
+
+			colorValues.push(Math.round(lerp(firstColor[0], secondColor[0], 2 / 3)));
+			colorValues.push(Math.round(lerp(firstColor[1], secondColor[1], 2 / 3)));
+			colorValues.push(Math.round(lerp(firstColor[2], secondColor[2], 2 / 3)));
+			colorValues.push(255);
+		}
+
+		return colorValues;
+	};
+
+	static function decodeDXT(data:haxe.io.Bytes, out:haxe.io.Bytes, width:Int, height:Int, format:Int) {
+		var index = 0;
+		var write = 0;
+		var alpha = [];
+		for (i in 0...16) {
+			alpha.push(0);
+		}
+		var offset = 0;
+		switch (format) {
+			case 1:
+				for (h in 0...(height >> 2)) {
+					for (w in 0...(width >> 2)) {
+						var colorValues = interpolateColorValues(data.getUInt16(offset), data.getUInt16(offset + 2), true);
+						var colorIndices = data.getInt32(offset + 4);
+
+						for (y in 0...4) {
+							for (x in 0...4) {
+								var pixelIndex = (3 - x) + (y * 4);
+								var rgbaIndex = (h * 4 + 3 - y) * width * 4 + (w * 4 + x) * 4;
+								var colorIndex = (colorIndices >> (2 * (15 - pixelIndex))) & 0x03;
+								out.set(rgbaIndex, colorValues[colorIndex * 4]);
+								out.set(rgbaIndex + 1, colorValues[colorIndex * 4 + 1]);
+								out.set(rgbaIndex + 2, colorValues[colorIndex * 4 + 2]);
+								out.set(rgbaIndex + 3, colorValues[colorIndex * 4 + 3]);
+							}
+						}
+
+						offset += 8;
+					}
+				}
+				return true;
+			case 2:
+				for (y in 0...(height >> 2)) {
+					for (x in 0...(width >> 2)) {
+						var ap = 0;
+						for (k in 0...4) {
+							var a0 = data.get(index++);
+							var a1 = data.get(index++);
+							alpha[ap++] = 17 * ((a0 & 0xF0) >> 4);
+							alpha[ap++] = 17 * (a0 & 0x0F);
+							alpha[ap++] = 17 * ((a1 & 0xF0) >> 4);
+							alpha[ap++] = 17 * (a1 & 0x0F);
+						}
+						ap = 0;
+						var c0 = data.get(index) | (data.get(index + 1) << 8);
+						index += 2;
+						var c1 = data.get(index) | (data.get(index + 1) << 8);
+						index += 2;
+						for (k in 0...4) {
+							var c = data.get(index++);
+							var t0 = c & 0x03;
+							var t1 = (c & 0x0C) >> 2;
+							var t2 = (c & 0x30) >> 4;
+							var t3 = (c & 0xC0) >> 6;
+							var w = write + k * width;
+							out.set(w++, dxtColor(c0, c1, alpha[ap++], t0));
+							out.set(w++, dxtColor(c0, c1, alpha[ap++], t1));
+							out.set(w++, dxtColor(c0, c1, alpha[ap++], t2));
+							out.set(w++, dxtColor(c0, c1, alpha[ap++], t3));
+						}
+						write += 4;
+					}
+					write += 3 * width;
+				}
+				return true;
+			case 3:
+				for (y in 0...(height >> 2)) {
+					for (x in 0...(width >> 2)) {
+						var a0 = data.get(index++);
+						var a1 = data.get(index++);
+						var b0 = data.get(index) | (data.get(index + 1) << 8) | (data.get(index + 2) << 16);
+						index += 3;
+						var b1 = data.get(index) | (data.get(index + 1) << 8) | (data.get(index + 2) << 16);
+						index += 3;
+						alpha[0] = b0 & 0x07;
+						alpha[1] = (b0 >> 3) & 0x07;
+						alpha[2] = (b0 >> 6) & 0x07;
+						alpha[3] = (b0 >> 9) & 0x07;
+						alpha[4] = (b0 >> 12) & 0x07;
+						alpha[5] = (b0 >> 15) & 0x07;
+						alpha[6] = (b0 >> 18) & 0x07;
+						alpha[7] = (b0 >> 21) & 0x07;
+						alpha[8] = b1 & 0x07;
+						alpha[9] = (b1 >> 3) & 0x07;
+						alpha[10] = (b1 >> 6) & 0x07;
+						alpha[11] = (b1 >> 9) & 0x07;
+						alpha[12] = (b1 >> 12) & 0x07;
+						alpha[13] = (b1 >> 15) & 0x07;
+						alpha[14] = (b1 >> 18) & 0x07;
+						alpha[15] = (b1 >> 21) & 0x07;
+						var c0 = data.get(index) | (data.get(index + 1) << 8);
+						index += 2;
+						var c1 = data.get(index) | (data.get(index + 1) << 8);
+						index += 2;
+						var ap = 0;
+						for (k in 0...4) {
+							var c = data.get(index++);
+							var t0 = c & 0x03;
+							var t1 = (c & 0x0C) >> 2;
+							var t2 = (c & 0x30) >> 4;
+							var t3 = (c & 0xC0) >> 6;
+							var w = write + k * width;
+							out.set(w++, dxtColor(c0, c1, dxtAlpha(a0, a1, alpha[ap++]), t0));
+							out.set(w++, dxtColor(c0, c1, dxtAlpha(a0, a1, alpha[ap++]), t1));
+							out.set(w++, dxtColor(c0, c1, dxtAlpha(a0, a1, alpha[ap++]), t2));
+							out.set(w++, dxtColor(c0, c1, dxtAlpha(a0, a1, alpha[ap++]), t3));
+						}
+						write += 4;
+					}
+					write += 3 * width;
+				}
+				return true;
+			default:
+				return false;
+		}
 	}
 
 }

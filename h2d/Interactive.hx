@@ -61,6 +61,8 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 	var invDet : Float;
 	var maskedBounds : h2d.col.Bounds;
 
+	public var forceAnywherefocus: Bool = false;
+
 	/**
 		Detailed shape collider for Interactive.
 		If set, `width` and `height` properties are ignored for collision checks.
@@ -146,23 +148,27 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 
 	@:dox(hide)
 	@:noCompletion public function handleEvent( e : hxd.Event ) {
-		if( maskedBounds != null && checkBounds(e) ) {
-			var pt = new h2d.col.Point(e.relX, e.relY);
-			localToGlobal(pt);
-			if( pt.x < maskedBounds.xMin || pt.y < maskedBounds.yMin || pt.x > maskedBounds.xMax || pt.y > maskedBounds.yMax ) {
-				e.cancel = true;
-				return;
+		if (!forceAnywherefocus) {
+			if( maskedBounds != null && checkBounds(e) ) {
+				var pt = new h2d.col.Point(e.relX, e.relY);
+				localToGlobal(pt);
+				if( pt.x < maskedBounds.xMin || pt.y < maskedBounds.yMin || pt.x > maskedBounds.xMax || pt.y > maskedBounds.yMax ) {
+					e.cancel = true;
+					return;
+				}
+			}
+
+			if(shape == null && isEllipse && checkBounds(e) ) {
+				var cx = width * 0.5, cy = height * 0.5;
+				var dx = (e.relX - cx) / cx;
+				var dy = (e.relY - cy) / cy;
+				if( dx * dx + dy * dy > 1 ) {
+					e.cancel = true;
+					return;
+				}
 			}
 		}
-		if(shape == null && isEllipse && checkBounds(e) ) {
-			var cx = width * 0.5, cy = height * 0.5;
-			var dx = (e.relX - cx) / cx;
-			var dy = (e.relY - cy) / cy;
-			if( dx * dx + dy * dy > 1 ) {
-				e.cancel = true;
-				return;
-			}
-		}
+
 		if( propagateEvents ) e.propagate = true;
 		if( cancelEvents ) e.cancel = true;
 		switch( e.kind ) {

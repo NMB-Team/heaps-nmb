@@ -1,6 +1,6 @@
 package hxd.fs;
 
-#if (sys || nodejs)
+#if ((sys || nodejs) && !uwp)
 
 typedef ConvertConfig = {
 	var obj : Dynamic;
@@ -68,6 +68,12 @@ class FileConverter {
 		this.configuration = configuration;
 		tmpDir = ".tmp/";
 		// this is the default converts config, it can be override in per-directory props.json
+		#if uwp
+		var defaultCfg:Dynamic = {
+			"fs.convert": {
+			}
+		};
+		#else
 		var defaultCfg : Dynamic = {
 			"fs.convert" : {
 				"fbx" : { "convert" : "hmd", "priority" : -1 },
@@ -75,6 +81,7 @@ class FileConverter {
 				"svg" : { "convert" : "png", "priority" : -1 }
 			}
 		};
+		#end
 		for ( conf in extraConfigs ) {
 			defaultCfg = mergeRec(defaultCfg, conf);
 		}
@@ -295,8 +302,10 @@ class FileConverter {
 		}
 		function saveCache() {
 			if( needInsert ) cache.set(e.file, entry);
+			#if !uwp
 			sys.FileSystem.createDirectory(baseDir + tmpDir);
 			sys.io.File.saveContent(baseDir + tmpDir + "cache.dat", haxe.Serializer.run(cache));
+			#end
 			cacheTime = Date.now().getTime();
 		}
 

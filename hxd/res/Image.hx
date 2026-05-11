@@ -348,7 +348,7 @@ class Image extends Resource {
 				if (inf.pixelFormat != BGRA)
 					throw "No support to decode " + inf.pixelFormat + " on this platform (" + entry.path + ")";
 				var p = try NanoJpeg.decode(bytes) catch (e:Dynamic) throw "Failed to decode JPG " + entry.path + " (" + e + ")";
-				pixels = new Pixels(p.width, p.height, p.pixels, BGRA);
+				pixels = new Pixels(p.width, p.height, p.pixels, RGBA);
 				#end
 			case Tga:
 				var bytes = entry.getBytes();

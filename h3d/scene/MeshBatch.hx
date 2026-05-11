@@ -23,7 +23,7 @@ class MeshBatch extends MultiMaterial {
 	static var modelViewInverseID = hxsl.Globals.allocID("global.modelViewInverse");
 	static var previousModelViewID = hxsl.Globals.allocID("global.previousModelView");
 	static var BATCH_START_FMT = hxd.BufferFormat.make([{ name : "Batch_Start", type : DFloat }]);
-	inline static var MAX_BUFFER_ELEMENTS = 4096;
+	inline static var MAX_BUFFER_ELEMENTS = 1024;
 	inline static var MAX_STORAGE_BUFFER_ELEMENTS = 128 * 1024 * 1024 >> 2;
 	inline static var DEFAULT_EMIT_COUNT_TIP = 128;
 
