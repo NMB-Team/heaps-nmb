@@ -7,6 +7,7 @@ import sdl.Vulkan;
 class CompiledShaderData {
 	public var vertex : Bool;
 	public var module : VkShaderModule;
+	public var stageFlags : haxe.EnumFlags<VkShaderStageFlag>;
 	public var pushConstantsOffset : Int;
 	public var globalsOffset : Int;
 	public function new() {
@@ -22,6 +23,8 @@ class CompiledShader {
 	public var format : hxd.BufferFormat;
 	public var layout : VkPipelineLayout;
 	public var samplerSets : hl.NativeArray<VkDescriptorSet>;
+	public var samplerTextures : Array<h3d.mat.Texture>;
+	public var pipelines : Map<Int,VkGraphicsPipeline> = new Map();
 	public function new(shader) {
 		this.shader = shader;
 	}
@@ -37,6 +40,18 @@ class VulkanFrame {
 	}
 }
 
+class VulkanOutImage {
+	public var img : VkImage;
+	public var view : VkImageView;
+	public var depth : VkImage;
+	public var depthView : VkImageView;
+	public var depthMem : VkDeviceMemory;
+	public var framebuffer : VkFramebuffer;
+	public var fence : VkFence;
+	public function new() {
+	}
+}
+
 class VulkanDriver extends Driver {
 
 	var ctx : VkContext;
@@ -46,6 +61,8 @@ class VulkanDriver extends Driver {
 	var commandPool : VkCommandPool;
 	var samplerPool : VkDescriptorPool;
 	var savedPointers : Array<Dynamic> = [];
+	var currentPipeline : VkGraphicsPipeline;
+	var currentDescriptorSet : VkDescriptorSet;
 
 	var memReq = new VkMemoryRequirements();
 	var allocInfo = new VkMemoryAllocateInfo();
@@ -57,13 +74,19 @@ class VulkanDriver extends Driver {
 	var queueFamily : Int;
 	var depthFormat : VkFormat;
 	var outImageFormat : VkFormat;
-	var outImages : Array<{ img : VkImage, framebuffer : VkFramebuffer, fence : VkFence }>;
+	var outImages : Array<VulkanOutImage>;
 	var viewportWidth : Int;
 	var viewportHeight : Int;
+	var swapchainVsync : Bool;
+	var renderZoneX : Int;
+	var renderZoneY : Int;
+	var renderZoneWidth : Int;
+	var renderZoneHeight : Int;
 
 	var frames : Array<VulkanFrame>;
 	var currentImageIndex : Int;
 	var currentFrameIndex : Int;
+	var frameStarted = false;
 	var limits : VkPhysicalDeviceLimits;
 
 	var defaultSampler : VkSampler; // TOREMOVE
@@ -135,7 +158,8 @@ class VulkanDriver extends Driver {
 	function initSwapchain( width : Int, height : Int ) {
 		var images = new hl.NativeArray(2);
 		var format : VkFormat = UNDEFINED;
-		if( !ctx.initSwapchain(width, height, images, format) )
+		swapchainVsync = hxd.Window.getInstance().vsync;
+		if( !ctx.initSwapchain(width, height, swapchainVsync, images, format) )
 			throw "Failed to init swapchain";
 
 		outImageFormat = format;
@@ -190,7 +214,14 @@ class VulkanDriver extends Driver {
 			framebuffer.attachments = makeArray([view,depthView]); // abstract
 
 			var fb = ctx.createFramebuffer(framebuffer);
-			outImages.push({ img : img, framebuffer : fb, fence : null });
+			var out = new VulkanOutImage();
+			out.img = img;
+			out.view = view;
+			out.depth = depth;
+			out.depthView = depthView;
+			out.depthMem = mem;
+			out.framebuffer = fb;
+			outImages.push(out);
 		}
 
 		var vp = new VkPipelineViewport();
@@ -211,6 +242,29 @@ class VulkanDriver extends Driver {
 		defaultViewport = vp;
 		viewportWidth = width;
 		viewportHeight = height;
+		setRenderZone(0, 0, -1, -1);
+	}
+
+	function releaseSwapchainResources() {
+		if( outImages == null )
+			return;
+		ctx.queueWaitIdle();
+		for( img in outImages ) {
+			ctx.destroyFramebuffer(img.framebuffer);
+			ctx.destroyImageView(img.view);
+			ctx.destroyImageView(img.depthView);
+			ctx.destroyImage(img.depth);
+			ctx.freeMemory(img.depthMem);
+		}
+		outImages = null;
+	}
+
+	function recreateSwapchain( width : Int, height : Int ) {
+		if( width < 32 ) width = 32;
+		if( height < 32 ) height = 32;
+		releaseSwapchainResources();
+		initSwapchain(width, height);
+		currentImageIndex = -1;
 	}
 
 	function initDefaults() {
@@ -276,8 +330,13 @@ class VulkanDriver extends Driver {
 		var frame = frames[currentFrameIndex];
 		ctx.waitForFence(frame.fence, -1);
 		currentImageIndex = ctx.getNextImageIndex(frame.imageAvailable);
-		if( currentImageIndex < 0 )
-			throw "assert";
+		if( currentImageIndex < 0 ) {
+			var win = hxd.Window.getInstance();
+			recreateSwapchain(win.width, win.height);
+			currentImageIndex = ctx.getNextImageIndex(frame.imageAvailable);
+			if( currentImageIndex < 0 )
+				throw "assert";
+		}
 		var img = outImages[currentImageIndex];
 		if( img.fence != null )
 			ctx.waitForFence(img.fence, -1);
@@ -287,6 +346,8 @@ class VulkanDriver extends Driver {
 		var inf = new VkCommandBufferBeginInfo();
 		inf.flags.set(ONE_TIME_SUBMIT);
 		command = frame.command;
+		currentPipeline = null;
+		currentDescriptorSet = null;
 		command.begin(inf);
 
 		var begin = new VkRenderPassBeginInfo();
@@ -296,11 +357,17 @@ class VulkanDriver extends Driver {
 		begin.renderAreaExtentY = viewportHeight;
 
 		command.beginRenderPass(begin,INLINE);
+		frameStarted = true;
+		applyViewport();
+		applyScissor();
 	}
 
 	function endFrame() {
+		if( !frameStarted )
+			return;
 		command.endRenderPass();
 		command.end();
+		frameStarted = false;
 	}
 
 	override function hasFeature( f : Feature ) {
@@ -330,7 +397,39 @@ class VulkanDriver extends Driver {
 	override function present() {
 		endFrame();
 		submit();
+		if( hxd.Window.getInstance().vsync != swapchainVsync )
+			recreateSwapchain(viewportWidth, viewportHeight);
 		beginFrame();
+	}
+
+	override function resize( width : Int, height : Int ) {
+		endFrame();
+		submit();
+		recreateSwapchain(width, height);
+		beginFrame();
+	}
+
+	function applyViewport() {
+		command.setViewport1(0, 0., 0., viewportWidth, viewportHeight, 0., 1.);
+	}
+
+	function applyScissor() {
+		command.setScissor1(0, renderZoneX, renderZoneY, renderZoneWidth, renderZoneHeight);
+	}
+
+	override function setRenderZone( x : Int, y : Int, width : Int, height : Int ) {
+		if( x == 0 && y == 0 && width < 0 && height < 0 ) {
+			x = 0;
+			y = 0;
+			width = viewportWidth;
+			height = viewportHeight;
+		}
+		renderZoneX = x;
+		renderZoneY = y;
+		renderZoneWidth = width;
+		renderZoneHeight = height;
+		if( frameStarted )
+			applyScissor();
 	}
 
 	function submit() {
@@ -354,6 +453,8 @@ class VulkanDriver extends Driver {
 			programs.set(shader.id, p);
 		}
 		currentShader = p;
+		currentPipeline = null;
+		currentDescriptorSet = null;
 		return true;
 	}
 
@@ -371,6 +472,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		var sh = new CompiledShaderData();
 		sh.vertex = shader.kind == Vertex;
 		sh.module = mod;
+		sh.stageFlags = new haxe.EnumFlags<VkShaderStageFlag>();
+		sh.stageFlags.set(sh.vertex ? VERTEX : FRAGMENT);
 		return sh;
 	}
 
@@ -472,6 +575,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			desc.bindings = makeArray(bindings);
 			var set = ctx.createDescriptorSetLayout(desc);
 			c.samplerSets = allocateDescriptorSets(set);
+			c.samplerTextures = [for( i in 0...frameCount ) null];
 			sets.push(set);
 		}
 
@@ -680,7 +784,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 
         var submit = new VkSubmitInfo();
         submit.commandBufferCount = 1;
-        submit.pCommandBuffers = makeArray([cmd]);
+        submit.pCommandBuffers = makeArray([cmd], false);
 		ctx.queueSubmit(submit, null);
 		ctx.queueWaitIdle();
 
@@ -743,8 +847,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	override function selectBuffer( v : h3d.Buffer ) {
-		var arr = makeArray([@:privateAccess v.vbuf.buf], false);
-		command.bindVertexBuffers(0, 1, arr, null);
+		command.bindVertexBuffer(0, @:privateAccess v.vbuf.buf, 0);
 	}
 
 	override function selectMultiBuffers( format : hxd.BufferFormat.MultiFormat, buffers : Array<h3d.Buffer> ) {
@@ -789,6 +892,16 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	override function selectMaterial( pass : h3d.mat.Pass ) {
+		var bits = @:privateAccess pass.bits;
+		var key = bits | ((pass.colorMask & 15) << 28);
+		var pipe = currentShader.pipelines.get(key);
+		if( pipe != null ) {
+			if( currentPipeline != pipe ) {
+				command.bindPipeline(GRAPHICS, pipe);
+				currentPipeline = pipe;
+			}
+			return;
+		}
 
 		var defaultInput = new VkPipelineInputAssembly();
 		defaultInput.topology = TRIANGLE_LIST;
@@ -800,6 +913,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		inf.vertexInput = currentShader.input;
 		inf.inputAssembly = defaultInput;
 		inf.viewport = defaultViewport;
+		var dynamicState = new VkPipelineDynamic();
+		dynamicState.dynamicStateCount = 2;
+		dynamicState.dynamicStates = new IntArray([VIEWPORT, SCISSOR]);
+		inf.dynamicDef = dynamicState;
 
 		var raster = new VkPipelineRasterization();
 		raster.polygonMode = pass.wireframe	? LINE : FILL;
@@ -819,8 +936,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		inf.depthStencil = stencil;
 
 		var colorAttach = new VkPipelineColorBlendAttachmentState();
-		colorAttach.colorWriteMask = 15;
-		colorAttach.blendEnable = false;
+		colorAttach.colorWriteMask = pass.colorMask & 15;
+		colorAttach.blendEnable = pass.blendSrc != One || pass.blendDst != Zero || pass.blendAlphaSrc != One || pass.blendAlphaDst != Zero;
+		colorAttach.srcColorBlendFactor = BLEND[pass.blendSrc.getIndex()];
+		colorAttach.dstColorBlendFactor = BLEND[pass.blendDst.getIndex()];
+		colorAttach.colorBlendOp = OP[pass.blendOp.getIndex()];
+		colorAttach.srcAlphaBlendFactor = BLEND[pass.blendAlphaSrc.getIndex()];
+		colorAttach.dstAlphaBlendFactor = BLEND[pass.blendAlphaDst.getIndex()];
+		colorAttach.alphaBlendOp = OP[pass.blendAlphaOp.getIndex()];
 
 		var blend = new VkPipelineColorBlend();
 		blend.attachmentCount = 1;
@@ -832,10 +955,12 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		inf.layout = currentShader.layout;
 		inf.renderPass = defaultRenderPass;
 
-		var pipe = ctx.createGraphicsPipeline(inf);
+		pipe = ctx.createGraphicsPipeline(inf);
 		if( pipe == null ) throw "Failed to create pipeline";
+		currentShader.pipelines.set(key, pipe);
 
 		command.bindPipeline(GRAPHICS, pipe);
+		currentPipeline = pipe;
 	}
 
 	override function uploadShaderBuffers( buf : h3d.shader.Buffers, which : h3d.shader.Buffers.BufferKind ) {
@@ -847,30 +972,25 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		switch( which ) {
 		case Globals:
 			if( buf.globals.length > 0 ) {
-				var flags = new haxe.EnumFlags<VkShaderStageFlag>();
-				flags.set(s.vertex ? VERTEX : FRAGMENT);
-				command.pushConstants(currentShader.layout, flags, s.pushConstantsOffset, buf.globals.length*4, hl.Bytes.getArray(buf.globals.toArray()));
+				command.pushConstants(currentShader.layout, s.stageFlags, s.pushConstantsOffset, buf.globals.length * 4, hl.Bytes.getArray(buf.globals.toData()));
 			}
 		case Params:
 			if( buf.params.length > 0 ) {
-				var flags = new haxe.EnumFlags<VkShaderStageFlag>();
-				flags.set(s.vertex ? VERTEX : FRAGMENT);
-				command.pushConstants(currentShader.layout, flags, s.pushConstantsOffset + s.globalsOffset, buf.params.length*4, hl.Bytes.getArray(buf.params.toArray()));
+				command.pushConstants(currentShader.layout, s.stageFlags, s.pushConstantsOffset + s.globalsOffset, buf.params.length * 4, hl.Bytes.getArray(buf.params.toData()));
 			}
 		case Textures:
 			if( buf.tex.length > 0 ) {
-				var s = currentShader.samplerSets[currentFrameIndex];
-				var imageInfo = new VkDescriptorImageInfo();
-				imageInfo.imageView = buf.tex[0].t.view;
-				imageInfo.sampler = defaultSampler;
-				imageInfo.imageLayout = SHADER_READ_ONLY_OPTIMAL;
-				var write = new VkWriteDescriptorSet();
-				write.descriptorCount = 1;
-				write.descriptorType = COMBINED_IMAGE_SAMPLER;
-				write.dstSet = s;
-				write.pImageInfo = makeArray([imageInfo]);
-				ctx.updateDescriptorSets(1, makeArray([write]), 0, null);
-				command.bindDescriptorSets(GRAPHICS, currentShader.layout, 0, 1, makeArray([s]), 0, null);
+				var tex = buf.tex[0];
+				var set = currentShader.samplerSets[currentFrameIndex];
+				if( currentShader.samplerTextures[currentFrameIndex] != tex ) {
+					currentShader.samplerTextures[currentFrameIndex] = tex;
+					ctx.updateDescriptorImageSampler(set, 0, tex.t.view, defaultSampler, SHADER_READ_ONLY_OPTIMAL);
+					currentDescriptorSet = null;
+				}
+				if( currentDescriptorSet != set ) {
+					command.bindDescriptorSet(GRAPHICS, currentShader.layout, 0, set);
+					currentDescriptorSet = set;
+				}
 			}
 		case Buffers:
 		}
@@ -888,6 +1008,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 
 	static var CULLING : Array<VkCullModeFlags> = [NONE, BACK, FRONT, FRONT_AND_BACK];
 	static var COMPARE : Array<VkCompareOp> = [ALWAYS, NEVER, EQUAL, NOT_EQUAL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL];
+	static var BLEND : Array<VkBlendFactor> = [ONE, ZERO, SRC_ALPHA, SRC_COLOR, DST_ALPHA, DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, CONSTANT_COLOR, CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_CONSTANT_ALPHA, SRC_ALPHA_SATURATE];
+	static var OP : Array<VkBlendOp> = [ADD, SUBTRACT, REVERSE_SUBTRACT, MIN, MAX];
 
 }
 
