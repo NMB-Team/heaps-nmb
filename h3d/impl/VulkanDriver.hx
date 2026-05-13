@@ -95,7 +95,6 @@ class VulkanDriver extends Driver {
 	public function new() {
 		var win = hxd.Window.getInstance();
 		initContext(@:privateAccess win.window.vkctx);
-		initDefaults();
 		initSwapchain(win.width, win.height);
 		beginFrame();
 	}
@@ -106,7 +105,7 @@ class VulkanDriver extends Driver {
 		ctx = Vulkan.initContext(surface, queueFamily);
 		if( ctx == null ) throw "Failed to init context";
 		this.queueFamily = queueFamily;
-		this.depthFormat = D24_UNORM_S8_UINT;
+		this.depthFormat = selectDepthFormat();
 
 		var poolInf = new VkCommandPoolCreateInfo();
 		poolInf.flags.set(RESET_COMMAND_BUFFER);
@@ -156,13 +155,17 @@ class VulkanDriver extends Driver {
 	}
 
 	function initSwapchain( width : Int, height : Int ) {
-		var images = new hl.NativeArray(2);
+		var images = new hl.NativeArray(8);
 		var format : VkFormat = UNDEFINED;
 		swapchainVsync = hxd.Window.getInstance().vsync;
 		if( !ctx.initSwapchain(width, height, swapchainVsync, images, format) )
 			throw "Failed to init swapchain";
 
+		var renderPassChanged = defaultRenderPass == null || outImageFormat != format;
 		outImageFormat = format;
+		if( renderPassChanged )
+			initDefaultRenderPass();
+
 		outImages = [];
 		for( img in images ) {
 
@@ -267,14 +270,22 @@ class VulkanDriver extends Driver {
 		currentImageIndex = -1;
 	}
 
-	function initDefaults() {
+	function initDefaultRenderPass() {
+		if( defaultRenderPass != null ) {
+			ctx.destroyRenderPass(defaultRenderPass);
+			programs = new Map();
+			currentShader = null;
+			currentPipeline = null;
+			currentDescriptorSet = null;
+		}
+
 		rangeAll = new VkImageSubResourceRange();
 		rangeAll.aspectMask.set(COLOR);
 		rangeAll.levelCount = -1;
 		rangeAll.layerCount = -1;
 
 		var colorAttach = new VkAttachmentDescription();
-		colorAttach.format = B8G8R8A8_UNORM;
+		colorAttach.format = outImageFormat;
 		colorAttach.samples = 1;
 		colorAttach.loadOp = LOAD;
 		colorAttach.storeOp = STORE;
@@ -324,6 +335,16 @@ class VulkanDriver extends Driver {
 		renderPass.dependencyCount = 1;
 		renderPass.dependencies = makeRef(dep);
 		defaultRenderPass = ctx.createRenderPass(renderPass);
+	}
+
+	function selectDepthFormat() {
+		for( format in [D24_UNORM_S8_UINT, D32_SFLOAT_S8_UINT, D32_SFLOAT] ) {
+			var props = new VkFormatProperties();
+			ctx.getPdeviceFormatProps(format, props);
+			if( (props.optimalTilingFeatures & cast VkFormatFeature.DEPTH_STENCIL_ATTACHMENT) != 0 )
+				return format;
+		}
+		throw "Could not find supported depth format";
 	}
 
 	function beginFrame() {
@@ -592,14 +613,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 
 	function allocateDescriptorSets( set : VkDescriptorSetLayout ) {
 		if( samplerPool == null ) {
+			var maxSets = 4096;
 			var poolSize = new VkDescriptorPoolSize();
-			poolSize.descriptorCount = frameCount;
+			poolSize.descriptorCount = maxSets * 16;
 			poolSize.type = COMBINED_IMAGE_SAMPLER;
 			var poolInf = new VkDescriptorPoolCreateInfo();
 			poolInf.poolSizeCount = 1;
 			poolInf.pPoolSizes = makeArray([poolSize]);
-			poolInf.maxSets = 4096;
-			poolInf.flags.set(UPDATE_AFTER_BIND);
+			poolInf.maxSets = maxSets;
 			samplerPool = ctx.createDescriptorPool(poolInf);
 			if( samplerPool == null )
 				throw "assert";
