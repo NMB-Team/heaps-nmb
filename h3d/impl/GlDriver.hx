@@ -4,7 +4,7 @@ import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && heaps_vulkan))
+#if ((js||hlsdl||usegl) && !(hlsdl && vulkan))
 
 #if js
 import hxd.impl.TypedArray;
@@ -654,11 +654,11 @@ class GlDriver extends Driver {
 							t = h3d.mat.Texture.fromColor(color, (color >>> 24) / 255);
 						case TSampler(_, true):
 							t = h3d.mat.TextureArray.defaultArrayTexture();
-	
+
 						default:
 							if(t == null)
 								t = h3d.mat.Texture.fromColor(0, 1);
-							else 
+							else
 								throw "Disposed texture";
 					}
 				}

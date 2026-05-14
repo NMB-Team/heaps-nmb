@@ -23,7 +23,7 @@ hxsl.CacheFileBuilder
 
 --next
 
--hl heaps_vulkan.hl
+-hl heaps.hl
 -lib hlsdl
 -lib hlopenal
 -xml heaps_vulkan.xml

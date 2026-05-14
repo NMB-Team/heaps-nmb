@@ -90,7 +90,7 @@ class Engine {
 		setCurrent();
 		#if macro
 		driver = new h3d.impl.NullDriver();
-		#elseif (hlsdl && heaps_vulkan)
+		#elseif (hlsdl && vulkan)
 		driver = new h3d.impl.VulkanDriver();
 		#elseif (js || hlsdl || usegl)
 		#if js

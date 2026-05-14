@@ -1,6 +1,6 @@
 package h3d.impl;
 
-#if (hlsdl && heaps_vulkan)
+#if (hlsdl && vulkan)
 import h3d.impl.Driver;
 import sdl.Vulkan;
 
@@ -751,10 +751,22 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		viewInfo.aspectMask.set(COLOR);
 
 		var view = ctx.createImageView(viewInfo);
-		if( view == null )
+		if( view == null ) {
+			ctx.destroyImage(img);
+			ctx.freeMemory(mem);
 			throw "assert";
+		}
 
 		return { img : img, view : view, mem : mem };
+	}
+
+	override function disposeTexture( t : h3d.mat.Texture ) {
+		if( t.t == null )
+			return;
+		ctx.destroyImageView(t.t.view);
+		ctx.destroyImage(t.t.img);
+		ctx.freeMemory(t.t.mem);
+		t.t = null;
 	}
 
 	override function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, layer : Int ) {
@@ -862,6 +874,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		properties.set(HOST_VISIBLE);
 		properties.set(HOST_COHERENT);
 		var mem = allocMemory(properties);
+		if( mem == null ) {
+			ctx.destroyBuffer(buf);
+			return null;
+		}
 		if( !ctx.bindBufferMemory(buf, mem, 0) )
 			throw "assert";
 		return { buf : buf, mem : mem, stride : stride };
@@ -888,6 +904,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	override function allocBuffer( b : h3d.Buffer ) : GPUBuffer {
 		var usage = b.flags.has(IndexBuffer) ? INDEX_BUFFER : VERTEX_BUFFER;
 		return allocVkBuffer(usage, b.vertices, b.format.strideBytes);
+	}
+
+	override function disposeBuffer( b : h3d.Buffer ) {
+		if( b.vbuf == null )
+			return;
+		ctx.destroyBuffer(b.vbuf.buf);
+		ctx.freeMemory(b.vbuf.mem);
 	}
 
 	function updateBuffer( mem : VkDeviceMemory, bytes : hl.Bytes, offset : Int, size : Int ) {
@@ -1002,6 +1025,26 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		case Textures:
 			if( buf.tex.length > 0 ) {
 				var tex = buf.tex[0];
+				if( tex == null || tex.isDisposed() ) {
+					var color = h3d.mat.Defaults.loadingTextureColor;
+					tex = h3d.mat.Texture.fromColor(color, (color >>> 24) / 255);
+				}
+				if( tex.t == null && tex.realloc != null ) {
+					var shader = currentShader;
+					tex.alloc();
+					tex.realloc();
+					if( currentShader != shader ) {
+						currentShader = shader;
+						currentPipeline = null;
+						currentDescriptorSet = null;
+						uploadShaderBuffers(buffer, Globals);
+						uploadShaderBuffers(buffer, Params);
+						uploadShaderBuffers(buffer, Textures);
+						return;
+					}
+				}
+				if( tex.t == null )
+					throw "Disposed texture";
 				var set = currentShader.samplerSets[currentFrameIndex];
 				if( currentShader.samplerTextures[currentFrameIndex] != tex ) {
 					currentShader.samplerTextures[currentFrameIndex] = tex;

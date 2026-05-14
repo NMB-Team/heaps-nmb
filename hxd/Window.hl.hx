@@ -112,7 +112,7 @@ class Window {
 		if (!fixed) sdlFlags |= sdl.Window.SDL_WINDOW_RESIZABLE;
 		if (hidden) sdlFlags |= sdl.Window.SDL_WINDOW_HIDDEN;
 		else sdlFlags |= sdl.Window.SDL_WINDOW_SHOWN;
-		#if heaps_vulkan
+		#if vulkan
 		sdlFlags |= sdl.Window.SDL_WINDOW_VULKAN;
 		#end
 		window = new sdl.Window(title, width, height, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdlFlags);
