@@ -286,7 +286,7 @@ class BufferFormat {
 	}
 
 	public function resolveMapping( target : BufferFormat ) {
-		var m = mappings == null ? null : mappings[target.uid];
+		var m = mappings == null || target.uid >= mappings.length ? null : mappings[target.uid];
 		if( m != null )
 			return m;
 		m = [];
@@ -497,7 +497,7 @@ class MultiFormat {
 	}
 
 	public inline function resolveMapping( format : hxd.BufferFormat ) {
-		var m = mappings[format.uid];
+		var m = format.uid >= mappings.length ? null : mappings[format.uid];
 		if( m == null )
 			m = makeMapping(format);
 		return m;

@@ -270,6 +270,7 @@ class CompiledShader {
 	public var depthStencils : hl.BytesAccess<Address>;
 	public var copyableInfosBytes : hl.Bytes;
 	public var vertexViews : hl.CArray<VertexBufferView>;
+	public var vertexViewCount : Int;
 	public var descriptors2 : hl.NativeArray<DescriptorHeap>;
 	public var barriers : hl.CArray<ResourceBarrier>;
 	public var resourcesToTransition : hl.NativeArray<ResourceData>;
@@ -303,7 +304,8 @@ class CompiledShader {
 		renderTargets = new hl.Bytes(8 * 8);
 		depthStencils = new hl.Bytes(8);
 		copyableInfosBytes = new hl.Bytes(8 * 3);
-		vertexViews = hl.CArray.alloc(VertexBufferView, 16);
+		vertexViewCount = 16;
+		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
 		maxBarriers = 100;
 		barriers = hl.CArray.alloc( ResourceBarrier, maxBarriers );
 		var allSubresource = #if (hldx >= version("1.16.0")) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
@@ -1127,7 +1129,7 @@ class DX12Driver extends h3d.impl.Driver {
 		}
 
 		// Need one barrier for UAV
-		if( tmp.maxBarriers - 1 == tmp.barrierCount) {
+		if( tmp.barrierCount >= tmp.maxBarriers - 1) {
 			flushTransitions();
 			tmp.maxBarriers += 100;
 			tmp.barriers = hl.CArray.alloc(ResourceBarrier, tmp.maxBarriers);
@@ -1933,8 +1935,8 @@ class DX12Driver extends h3d.impl.Driver {
 		p.dsvFormat = UNKNOWN;
 		p.sampleDesc.count = 1;
 		p.sampleMask = -1;
-		p.inputLayout.inputElementDescs = inputLayout;
-		p.inputLayout.numElements = inputs.length;
+		p.inputElementDescs = inputLayout;
+		p.numInputElements = inputs.length;
 
 		//Driver.createGraphicsPipelineState(p);
 
@@ -2955,6 +2957,7 @@ class DX12Driver extends h3d.impl.Driver {
 	}
 
 	override function selectBuffer(buffer:Buffer) {
+		ensureVertexViews(currentShader.inputCount);
 		var views = tmp.vertexViews;
 		var bview = buffer.vbuf.view;
 		var map = buffer.format.resolveMapping(currentShader.format);
@@ -2972,8 +2975,9 @@ class DX12Driver extends h3d.impl.Driver {
 	}
 
 	override function selectMultiBuffers(formats:hxd.BufferFormat.MultiFormat,buffers:Array<h3d.Buffer>) {
-		var views = tmp.vertexViews;
 		var map = formats.resolveMapping(currentShader.format);
+		ensureVertexViews(map.length);
+		var views = tmp.vertexViews;
 		for( i in 0...map.length ) {
 			var v = views[i];
 			var inf = map[i];
@@ -2986,6 +2990,13 @@ class DX12Driver extends h3d.impl.Driver {
 			pipelineBuilder.setBuffer(i, inf, v.strideInBytes);
 		}
 		frame.commandList.iaSetVertexBuffers(0, map.length, views[0]);
+	}
+
+	inline function ensureVertexViews( count : Int ) {
+		if ( count <= tmp.vertexViewCount )
+			return;
+		tmp.vertexViewCount = count;
+		tmp.vertexViews = hl.CArray.alloc(VertexBufferView, count);
 	}
 
 	static var CULL : Array<CullMode> = [NONE,BACK,FRONT,NONE];
