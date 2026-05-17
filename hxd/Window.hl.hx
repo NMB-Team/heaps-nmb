@@ -393,8 +393,8 @@ class Window {
 			case Show, Expose:
 				hxd.System.notifyWindowShown();
 			case Resize:
-				windowWidth = window.width;
-				windowHeight = window.height;
+				windowWidth = e.mouseX > 0 ? e.mouseX : window.width;
+				windowHeight = e.mouseY > 0 ? e.mouseY : window.height;
 				onResize(null);
 			case Focus:
 				#if hldx

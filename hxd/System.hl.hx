@@ -45,6 +45,9 @@ class System {
 	static var firstFramePresented = false;
 	static var displayReady = false;
 	static var displayReadyCallbacks : Array<Void -> Void> = [];
+	#if hlsdl
+	static var processingWindowEvent = false;
+	#end
 
 	public static var delayWindowUntilFirstFrame = true;
 
@@ -71,6 +74,24 @@ class System {
 		loopFunc = f;
 	}
 
+	#if hlsdl
+	static function processWindowEvent( event : sdl.Event ) {
+		if( processingWindowEvent )
+			return;
+		processingWindowEvent = true;
+		try {
+			@:privateAccess hxd.Window.dispatchEvent(event);
+			timeoutTick();
+			if( loopFunc != null ) loopFunc();
+			renderFrame();
+		} catch( e : Dynamic ) {
+			processingWindowEvent = false;
+			throw e;
+		}
+		processingWindowEvent = false;
+	}
+	#end
+
 	static function mainLoop() {
 		// process events
 		#if usesys
@@ -85,6 +106,10 @@ class System {
 		timeoutTick();
 		if( loopFunc != null ) loopFunc();
 
+		renderFrame();
+	}
+
+	static function renderFrame() {
 		// present
 		var cur = h3d.Engine.getCurrent();
 		if( cur != null && cur.ready ) {
@@ -172,6 +197,10 @@ class System {
 		#end
 
 		@:privateAccess Window.inst = createWindow();
+		#if hlsdl
+		if( Sys.systemName() == "Windows" )
+			sdl.Sdl.watchWindowEvents(processWindowEvent);
+		#end
 
 		init();
 		#end
