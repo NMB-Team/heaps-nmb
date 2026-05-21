@@ -183,6 +183,8 @@ class Image extends Resource {
 							case 2: S3TC(5);
 							default: null;
 						}
+					case 0x344342: inf.pixelFormat = S3TC(4); /* BC4 */
+					case 0x354342: inf.pixelFormat = S3TC(5); /* BC5 */
 					case _ if (fourCC == 0x30315844 /* DX10 */):
 						f.skip(3 * 4);
 						inf.flags.set(Dxt10Header);
@@ -227,6 +229,12 @@ class Image extends Resource {
 								inf.pixelFormat = RGBA;
 							case [16, 0xFFFF, 0, 0, 0]:
 								inf.pixelFormat = R16U;
+							case [8, 0xFF, 0, 0, 0]:
+								inf.pixelFormat = R8;
+							case [16, 0xFF, 0xFF00, 0, 0]:
+								inf.pixelFormat = RG8;
+							case [16, 0xFF, 0, 0, 0xFF00]:
+								inf.pixelFormat = RG8;
 							case [32, 0xFFFF, 0xFFFF0000, 0, 0]:
 								inf.pixelFormat = RG16U;
 							default:
