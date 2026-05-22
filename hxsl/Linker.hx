@@ -78,12 +78,10 @@ class Linker {
 	var isBatchShader : Bool;
 	var debugDepth = 0;
 
-	var lowercaseMap : Map<String, String>;
 	var mapExprVarFun : TExpr -> TExpr;
 
 	public function new(mode) {
 		this.mode = mode;
-		this.lowercaseMap = new Map();
 		this.mapExprVarFun = mapExprVar;
 	}
 
@@ -141,12 +139,7 @@ class Linker {
 				case Name(n): key = n;
 				default:
 				}
-		var ukey = lowercaseMap.get(key);
-		if( ukey == null ) {
-			ukey = key.toLowerCase();
-			lowercaseMap.set(key, ukey);
-		}
-		var v2 = varMap.get(ukey);
+		var v2 = varMap.get(key);
 		var vname = v.name;
 		if( v2 != null ) {
 			for( vm in v2.merged )
@@ -159,7 +152,7 @@ class Linker {
 				// allocate a new unique name in the shader if already in use
 				var k = 2;
 				while( true ) {
-					var a = varMap.get(ukey + k);
+					var a = varMap.get(key + k);
 					if( a == null ) break;
 					for( vm in a.merged )
 						if( vm == v )
@@ -168,14 +161,13 @@ class Linker {
 				}
 				if( v.kind == Input ) {
 					// it's not allowed to rename an input var, let's rename existing var instead
-					varMap.remove(ukey);
-					varMap.set(ukey + k, v2);
+					varMap.remove(key);
+					varMap.set(key + k, v2);
 					v2.v.name += k;
 					v2.path += k;
 				} else {
 					vname += k;
 					key += k;
-					ukey += k;
 				}
 			} else {
 				v2.merged.push(v);
@@ -201,7 +193,7 @@ class Linker {
 		a.instanceIndex = curInstance;
 		a.rootShaderName = shaderName;
 		allVars.push(a);
-		varMap.set(ukey, a);
+		varMap.set(key, a);
 		switch( v2.type ) {
 		case TStruct(vl):
 			v2.type = TStruct([for( v in vl ) allocVar(v, p, shaderName, key, a).v]);
