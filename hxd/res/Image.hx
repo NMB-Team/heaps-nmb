@@ -88,7 +88,7 @@ class Image extends Resource {
 	var inf:ImageInfo;
 	var animationInfo:ImageAnimationInfo;
 	var animationInfoChecked = false;
-	var frameDelays:Array<Float>;
+	var frameDelays:Array<Null<Float>>;
 
 	public var enableAsyncLoading:Bool;
 
