@@ -60,6 +60,16 @@ class ImageInfo {
 	}
 }
 
+class ImageAnimationInfo {
+	public var frameCount(default, null):Int;
+	public var loopCount(default, null):Int;
+
+	public function new(frameCount, loopCount) {
+		this.frameCount = frameCount;
+		this.loopCount = loopCount;
+	}
+}
+
 class Image extends Resource {
 	/**
 		Specify if we will automatically convert non-power-of-two textures to power-of-two.
@@ -76,6 +86,9 @@ class Image extends Resource {
 
 	var tex:h3d.mat.Texture;
 	var inf:ImageInfo;
+	var animationInfo:ImageAnimationInfo;
+	var animationInfoChecked = false;
+	var frameDelays:Array<Float>;
 
 	public var enableAsyncLoading:Bool;
 
@@ -319,7 +332,10 @@ class Image extends Resource {
 				#if hl
 				if (fmt == null)
 					fmt = inf.pixelFormat;
-				pixels = decodePNG(bytes, inf.width, inf.height, fmt);
+				if (getAnimationInfo() != null)
+					pixels = decodeAPNGFrame(bytes, inf.width, inf.height, fmt, index);
+				else
+					pixels = decodePNG(bytes, inf.width, inf.height, fmt);
 				if (pixels == null)
 					throw "Failed to decode PNG " + entry.path;
 				#else
@@ -454,6 +470,47 @@ class Image extends Resource {
 		return pixels;
 	}
 
+	public function getAnimationInfo():ImageAnimationInfo {
+		if (getInfo().dataFormat != Png)
+			return null;
+		#if hl
+		if (animationInfoChecked)
+			return animationInfo;
+		animationInfoChecked = true;
+		var bytes = entry.getBytes();
+		var out = new hl.Bytes(20);
+		if (!pngAPNGInfo(bytes.getData(), bytes.length, out))
+			return null;
+		animationInfo = new ImageAnimationInfo(out.getI32(8), out.getI32(12));
+		return animationInfo;
+		#else
+		return null;
+		#end
+	}
+
+	public function getFrameDelay(index:Int) {
+		var info = getAnimationInfo();
+		if (info == null || index < 0 || index >= info.frameCount)
+			return 0.;
+		#if hl
+		if (frameDelays == null)
+			frameDelays = [];
+		var delay = frameDelays[index];
+		if (delay != null)
+			return delay;
+		var bytes = entry.getBytes();
+		var out = new hl.Bytes(32);
+		if (!pngAPNGFrameInfo(bytes.getData(), bytes.length, index, out))
+			return 0.;
+		var den = out.getI32(20);
+		delay = out.getI32(16) / (den == 0 ? 100 : den);
+		frameDelays[index] = delay;
+		return delay;
+		#else
+		return 0.;
+		#end
+	}
+
 	#if hl
 	static function decodeJPG(src:haxe.io.Bytes, width:Int, height:Int, requestedFmt:hxd.PixelFormat) {
 		var outFmt = requestedFmt;
@@ -508,6 +565,37 @@ class Image extends Resource {
 			return null;
 		var pix = new hxd.Pixels(width, height, dst, outFmt);
 		return pix;
+	}
+
+	static function decodeAPNGFrame(src:haxe.io.Bytes, width:Int, height:Int, requestedFmt:hxd.PixelFormat, index:Int) {
+		var outFmt = requestedFmt;
+		var ifmt:Int = switch (requestedFmt) {
+			case RGBA: 7;
+			case BGRA: 8;
+			case ARGB: 10;
+			default:
+				outFmt = BGRA;
+				8;
+		};
+		var dst = haxe.io.Bytes.alloc(width * height * 4);
+		if (!pngAPNGDecodeFrame(src.getData(), src.length, dst.getData(), width, height, width * 4, ifmt, 0, index))
+			return null;
+		return new hxd.Pixels(width, height, dst, outFmt);
+	}
+
+	@:hlNative("fmt", "png_apng_info")
+	static function pngAPNGInfo(src:hl.Bytes, srcLen:Int, out:hl.Bytes):Bool {
+		return false;
+	}
+
+	@:hlNative("fmt", "png_apng_frame_info")
+	static function pngAPNGFrameInfo(src:hl.Bytes, srcLen:Int, frameIndex:Int, out:hl.Bytes):Bool {
+		return false;
+	}
+
+	@:hlNative("fmt", "png_apng_decode_frame")
+	static function pngAPNGDecodeFrame(src:hl.Bytes, srcLen:Int, dst:hl.Bytes, width:Int, height:Int, stride:Int, format:Int, flags:Int, frameIndex:Int):Bool {
+		return false;
 	}
 	#end
 
