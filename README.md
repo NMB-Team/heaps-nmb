@@ -1,10 +1,14 @@
-# Heaps
+<div align=center>
+  
+[![Heaps.io logo](https://raw.githubusercontent.com/HeapsIO/heaps.io/master/assets/logo/logo-heaps-color.png)](http://heaps.io)
+
+# Heaps NMB
 _High Performance Game Framework_
 
-[![Build Status](https://travis-ci.org/HeapsIO/heaps.svg?branch=master)](https://travis-ci.org/HeapsIO/heaps)
+[![Build Status](https://github.com/NMB-Team/hashlink-nmb/workflows/Build/badge.svg "GitHub Actions")](https://github.com/NMB-Team/heaps-nmb/actions?query=workflow%3ACI)
 [![](https://img.shields.io/discord/162395145352904705.svg?logo=discord)](https://discordapp.com/invite/sWCGm33)
 
-[![Heaps.io logo](https://raw.githubusercontent.com/HeapsIO/heaps.io/master/assets/logo/logo-heaps-color.png)](http://heaps.io)
+</div>
 
 **Heaps** is a cross platform graphics engine designed for high performance games. It's designed to leverage modern GPUs that are commonly available on desktop, mobile and consoles.
 
@@ -13,8 +17,6 @@ Heaps is currently working on:
 - Mobile (iOS, tvOS and Android)
 - Desktop with OpenGL (Win/Linux/OSX) or DirectX (Windows only)
 - Consoles (Nintendo Switch, Sony PS4, XBox One - requires being a registered developer)
-- Flash Stage3D
-
 
 Community
 ---------
@@ -30,7 +32,7 @@ In order to compile the samples, go to the `samples` directory and run `haxe gen
 
 To compile:
 - For JS/WebGL: run `haxe [sample]_js.hxml`, then open `index.html` to run
-- For [HashLink](https://hashlink.haxe.org): run `haxe [sample]_hl.hxml` then run `hl <sample>.hl` to run (will use SDL, replace `-lib hlsdl` by `-lib hldx` in hxml to use DirectX)
+- For [HashLink](https://github.com/NMB-Team/hashlink-nmb): run `haxe [sample]_hl.hxml` then run `hl <sample>.hl` to run (will use SDL, replace `-lib hlsdl` by `-lib hldx` in hxml to use DirectX)
 - For Flash: run `haxe [sample]_swf.hxml`, then open `<sample>.swf` to run
 - For Consoles, contact us: nicolas@haxe.org
 
