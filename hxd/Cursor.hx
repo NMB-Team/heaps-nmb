@@ -35,6 +35,10 @@ class CustomCursor {
 	#else
 	var alloc : Dynamic;
 	#end
+	#if (hlsdl && !macro)
+	var allocSurfaces : Array<sdl.Surface>;
+	var allocPixels : Array<hxd.Pixels>;
+	#end
 
 	// Heaps-side cursor animation for target that do not support native animated cursors.
 	#if (hlsdl || hldx || js)
@@ -85,10 +89,18 @@ class CustomCursor {
 			f.dispose();
 		frames = [];
 		if( alloc != null ) {
-			#if hlsdl
+			#if (hlsdl && !macro)
 			for (cur in alloc) {
 				cur.free();
 			}
+			for (surf in allocSurfaces) {
+				surf.free();
+			}
+			for (pixels in allocPixels) {
+				pixels.dispose();
+			}
+			allocSurfaces = null;
+			allocPixels = null;
 			#elseif hldx
 			for (cur in alloc) {
 				cur.destroy();

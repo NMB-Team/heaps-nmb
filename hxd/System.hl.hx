@@ -368,6 +368,10 @@ class System {
 		case Custom(c):
 			if( c.alloc == null ) {
 				c.alloc = new Array();
+				#if hlsdl
+				c.allocSurfaces = new Array();
+				c.allocPixels = new Array();
+				#end
 				for ( frame in c.frames ) {
 					var pixels = frame.getPixels();
 					pixels.convert(BGRA);
@@ -377,11 +381,12 @@ class System {
 					}
 					var surf = sdl.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
 					c.alloc.push(sdl.Cursor.create(surf, c.offsetX, c.offsetY));
-					surf.free();
+					c.allocSurfaces.push(surf);
+					c.allocPixels.push(pixels);
 					#elseif hldx
 					c.alloc.push(dx.Cursor.createCursor(pixels.width, pixels.height, pixels.bytes, c.offsetX, c.offsetY));
-					#end
 					pixels.dispose();
+					#end
 				}
 			}
 			if ( c.frames.length > 1 ) {
