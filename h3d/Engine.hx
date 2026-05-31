@@ -47,7 +47,7 @@ class Engine {
 	public var backgroundColor : Null<Int> = 0xFF000000;
 	public var autoResize : Bool;
 	public var fullScreen(default, set) : Bool;
-	public var fullScreenMode(default, set) : hxd.Window.DisplayMode = Borderless;
+	public var fullScreenMode(default, set) : hxd.Window.DisplayMode = BorderlessFixed;
 
 	public var fps(get, never) : Float;
 
@@ -283,7 +283,7 @@ class Engine {
 
 	function set_fullScreenMode(v) {
 		fullScreenMode = switch( v ) {
-		case Windowed: Borderless;
+		case Windowed: BorderlessFixed;
 		default: v;
 		}
 		if( fullScreen && mem != null && hxd.System.getValue(IsWindowed) )

@@ -5,6 +5,10 @@ class Fullscreen extends SampleApp {
 		addButton("Toggle FullScreen", function() {
 			engine.fullScreen = !engine.fullScreen;
 		});
+		addButton("Borderless Fixed FullScreen", function() {
+			engine.fullScreenMode = BorderlessFixed;
+			engine.fullScreen = true;
+		});
 		addButton("Borderless FullScreen", function() {
 			engine.fullScreenMode = Borderless;
 			engine.fullScreen = true;

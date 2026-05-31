@@ -12,10 +12,10 @@ typedef DisplayMode = sdl.Window.DisplayMode;
 typedef DisplayMode = dx.Window.DisplayMode;
 #else
 enum DisplayMode {
-	Windowed;
-	Borderless;
-	Fullscreen;
-	ExclusiveFullscreen;
+	Windowed; // 0
+	Fullscreen; // 1
+	BorderlessFixed; // 2
+	Borderless; // 3
 }
 #end
 
@@ -256,7 +256,7 @@ class Window {
 	@:deprecated("Use the displayMode property instead")
 	public function setFullScreen( v : Bool ) : Void {
 		#if (hldx || hlsdl)
-		window.displayMode = v ? Borderless : Windowed;
+		window.displayMode = v ? BorderlessFixed : Windowed;
 		#end
 	}
 
@@ -400,7 +400,7 @@ class Window {
 				#if hldx
 				// return to exclusive mode
 				if( window.displayMode == Fullscreen && wasBlurred ) {
-					window.displayMode = Borderless;
+					window.displayMode = BorderlessFixed;
 					window.displayMode = Fullscreen;
 				}
 				#end
