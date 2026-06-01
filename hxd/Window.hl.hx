@@ -388,13 +388,17 @@ class Window {
 	function onEvent( e : #if hldx dx.Event #else sdl.Event #end ) : Bool {
 		var eh = null;
 		switch( e.type ) {
-		case WindowState:
+		default:
 			switch( e.state ) {
 			case Show, Expose:
 				hxd.System.notifyWindowShown();
-			case Resize:
-				windowWidth = e.mouseX > 0 ? e.mouseX : window.width;
-				windowHeight = e.mouseY > 0 ? e.mouseY : window.height;
+			default:
+				var w:Int = 0, h:Int = 0;
+				@:privateAccess sdl.Window.winGetSize(window.win, w, h);
+				windowWidth = w;
+				windowHeight = h;
+				// windowWidth = e.mouseX > 0 ? e.mouseX : window.width;
+				// windowHeight = e.mouseY > 0 ? e.mouseY : window.height;
 				onResize(null);
 			case Focus:
 				#if hldx
@@ -433,7 +437,7 @@ class Window {
 			case Move:
 				if( onMove != null )
 					onMove();
-			default:
+			// default:
 			}
 		case MouseDown if (!hxd.System.getValue(IsTouch)):
 			if (mouseMode == Absolute) {
@@ -593,7 +597,7 @@ class Window {
 		case Quit:
 			return onCloseEvent();
 		#end
-		default:
+		// default:
 		}
 		if( eh != null ) event(eh);
 		return true;
