@@ -49,6 +49,7 @@ class HMDOut extends BaseLibrary {
 	public var lowPrecConfig : Map<String,Precision>;
 	public var lodsDecimation : Array<Float>;
 	public var maxUVs : Int = 0;
+	public var noColor : Bool = false;
 
 	function int32tof( v : Int ) : Float {
 		tmp.set(0, v & 0xFF);
@@ -370,7 +371,7 @@ class HMDOut extends BaseLibrary {
 		var uvs = geom.getUVs();
 		if( maxUVs > 0 && uvs.length > maxUVs )
 			uvs = uvs.slice(0, maxUVs);
-		var colors = geom.getColors();
+		var colors = noColor ? null : geom.getColors();
 		var mats = geom.getMaterials();
 		var index = geom.getPolygons();
 
@@ -1487,31 +1488,31 @@ class HMDOut extends BaseLibrary {
 		}
 
 		var rootIndex = -1;
-		for ( i => m in d.models ) {
-			if ( m.parent == -1 && m.geometry == -1 && m.name == null && m.position.isIdentity() ) {
+		for (i => m in d.models) {
+			if (m.parent == -1 && m.geometry == -1 && m.name == null && m.position.isIdentity()) {
 				rootIndex = i;
 				break;
 			}
 		}
-		if ( rootIndex != -1 ) {
-			var meshCount = 0;
-			for ( m in d.models ) {
-				if ( m.geometry >= 0 && !m.isLOD() && !m.isCollider() && m.parent == rootIndex )
-					meshCount++;
-				if ( meshCount > 1 )
+		if (rootIndex != -1) {
+			var objectCount = 0;
+			for (m in d.models) {
+				if (!m.isLOD() && !m.isCollider() && m.parent == rootIndex)
+					objectCount++;
+				if (objectCount > 1)
 					break;
 			}
-			if ( meshCount == 1 ) {
+			if (objectCount == 1) {
 				d.models.remove(d.models[rootIndex]);
-				for ( m in d.models ) {
-					if ( m.parent == rootIndex )
+				for (m in d.models) {
+					if (m.parent == rootIndex)
 						m.parent = -1;
-					else if ( m.parent > rootIndex )
+					else if (m.parent > rootIndex)
 						m.parent--;
-					if ( m.lods != null ) {
-						for ( i in 0...m.lods.length ) {
+					if (m.lods != null) {
+						for (i in 0...m.lods.length) {
 							var lodIndex = m.lods[i];
-							if ( lodIndex > rootIndex )
+							if (lodIndex > rootIndex)
 								m.lods[i] = lodIndex - 1;
 						}
 					}

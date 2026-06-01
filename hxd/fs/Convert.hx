@@ -277,13 +277,22 @@ class ConvertFBX2HMD extends Convert {
 			if (params.lowp != null) {
 				var m:haxe.DynamicAccess<String> = params.lowp;
 				hmdout.lowPrecConfig = [];
-				for (k in m.keys())
-					hmdout.lowPrecConfig.set(k, switch (m.get(k)) {
+				for (k in m.keys()) {
+					var prec : hxd.BufferFormat.Precision = switch (m.get(k)) {
 						case "f16": F16;
 						case "u8": U8;
 						case "s8": S8;
+						case "remove":
+							switch(k) {
+							case "color": hmdout.noColor = true;
+							default: throw "Removal of attribute " + k + " is not supported";
+							}
+							hxd.BufferFormat.Precision.fromInt(-1);
 						case x: throw "Invalid precision '" + x + "' should be u8|s8|f16";
-					});
+					}
+					if (prec.toInt() != -1)
+						hmdout.lowPrecConfig.set(k, prec);
+				}
 			}
 			if ( params.optimizeMesh != null )
 				hmdout.optimizeMesh = params.optimizeMesh;
@@ -489,26 +498,19 @@ class CompressIMG extends Convert {
 		return @:privateAccess new hxd.res.Image(new hxd.fs.BytesFileSystem.BytesFileEntry(path, sys.io.File.getBytes(path)));
 	}
 
-	function runTexconv(src:String, dst:String, args:Array<String>) {
-		var allArgs = ["-y", "-nologo"].concat(args);
-		var src = src.toLowerCase();
-		var dst = dst.toLowerCase();
-		var srcPath = new haxe.io.Path(src);
-		var dstPath = new haxe.io.Path(dst);
-		var input = '${dstPath.dir}/${srcPath.file}.${srcPath.ext}';
-		var output = '${dstPath.dir}/${srcPath.file}.dds';
-		if ( input != src )
-			sys.io.File.copy(src, input);
-		else {
-			if ( src != dst && src == output ) {
-				var prefix = "_tmp.";
-				allArgs.concat(["-px", prefix]);
-				output = '${dstPath.dir}/$prefix${srcPath.file}.dds';
-			}
-		}
-		allArgs.push(input);
-		command("texconv", allArgs);
-		sys.FileSystem.rename(output, dst);
+	function runTexconv(srcPath:String, dstPath:String, args:Array<String>, outExt = "dds") {
+		var tmpPath = new haxe.io.Path(dstPath);
+		tmpPath.ext = "tmp." + new haxe.io.Path(srcPath).ext;
+		var input = tmpPath.toString();
+		try sys.FileSystem.deleteFile(input) catch (e) {};
+		sys.io.File.copy(srcPath, input);
+		try sys.FileSystem.deleteFile(dstPath) catch (e) {};
+		command("texconv", ["-y", "-nologo"].concat(args).concat([input]));
+		tmpPath.ext = 'tmp.$outExt';
+		var output = tmpPath.toString();
+		if ( sys.FileSystem.exists(output) )
+			sys.FileSystem.rename(output, dstPath);
+		try sys.FileSystem.deleteFile(input) catch (e) {};
 		return dstPath;
 	}
 
@@ -523,6 +525,7 @@ class CompressIMG extends Convert {
 		function tempFile(path: String, tag: String, ext=null) : String {
 			var spath = new haxe.io.Path(path);
 			var tmp = Sys.getEnv("TEMP") + '/${spath.file}.$tag.' + (ext != null ? ext : spath.ext);
+			tmp = haxe.io.Path.normalize(tmp);
 			if(cleanupFiles == null) cleanupFiles = [];
 			cleanupFiles.push(tmp);
 			return tmp;
@@ -551,7 +554,7 @@ class CompressIMG extends Convert {
 			var srcFmt = Std.string(image.getPixelFormat());
 			var fmt = TEXCONV_FMT.get(srcFmt) ?? "RGBA";
 			if (pxls.width == pxls.height && pxls.width > maxSize) {
-				var resized = tempFile(srcPath, "resized");
+				var resized = tempFile(srcPath, "resized", "dds");
 				var ssize = "" + maxSize;
 				var args = ["-m", "0", "-sepalpha", "-w", ssize, "-h", ssize, "-f", fmt];
 				if (hasParam("filter"))
