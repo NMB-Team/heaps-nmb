@@ -11,7 +11,6 @@ class Joint extends Object {
 		super(null);
 		name = j.name;
 		this.skin = skin;
-		lastFrame = -2; // force first sync
 		// fake parent
 		this.parent = skin;
 		this.index = j.index;
@@ -38,33 +37,11 @@ class Joint extends Object {
 
 	@:access(h3d.scene.Skin)
 	override function syncPos() {
-		// check if one of our parents has changed
-		// we don't have a posChanged flag since the Joint
-		// is not actualy part of the hierarchy
-		var p : h3d.scene.Object = skin;
-		while( p != null ) {
-			if( p.posChanged) {
-				update();
-				break;
-			}
-			p = p.parent;
-		}
-
-		if( lastFrame != skin.lastFrame) {
-			lastFrame = skin.lastFrame;
-			absPos.load(skin.jointsData[index].currentAbsPos);
-		}
-	}
-
-	/**
-		Force the update of the position of this joint
-	**/
-	@:access(h3d.scene.Skin)
-	public function update() {
 		skin.getAbsPos();
 		skin.syncJoints();
-		lastFrame = -1;
+		absPos.load(skin.jointsData[index].currentAbsPos);
 	}
+
 }
 
 @:access(h3d.scene.Skin)
@@ -724,25 +701,60 @@ class SubSkin extends h3d.scene.Skin {
 		initBinds();
 	}
 
+	inline function packIndices(from: Int, to: Int) {
+		return (from << 16) | to;
+	}
+
+	inline function unpackIndices( i : Int ) {
+		return {
+			to: i & ((1<<16)-1),
+			from: i >> 16
+		}
+	}
+
 	function bindJoint(from: h3d.anim.Skin.Joint, to: h3d.anim.Skin.Joint) {
 		if(!baseSkin.skinData.allJoints.contains(from)) throw "assert";
 		if(!skinData.allJoints.contains(to)) throw "assert";
-		bindMap.push((from.index << 16) | to.index);
+		bindMap.push(packIndices(from.index, to.index));
+	}
+
+	function getBound(toJoint: h3d.anim.Skin.Joint) {
+		for( b in bindMap ) {
+			var bind = unpackIndices( b );
+			if(toJoint.index == bind.to)
+				return baseSkin.getSkinData().allJoints[bind.from];
+		}
+		return null;
+	}
+
+	var selfPlayAnim = false;
+	override function playAnimation( a : h3d.anim.Animation ) {
+		selfPlayAnim = true;
+		var inst = super.playAnimation(a);
+		selfPlayAnim = false;
+		return inst;
+	}
+
+	override function getObjectByName( name : String ) : h3d.scene.Object {
+		// Returning null prevents external animation.bind() from matching our joints and writing
+		// currentRelPos here instead of baseSkin. Bypassed when playAnimation is called on this
+		// SubSkin directly, so specific bones can still be animated on top (lipsync, eye blinks etc)
+		if( !selfPlayAnim )
+			return null;
+		return super.getObjectByName(name);
 	}
 
 	override function syncJoints() {
+		baseSkin.syncJoints();  // for when subSkin is before baseSkin in the hierarchy
 		if( baseSkin.jointsFrame != hxd.Timer.frameCount )
 			return;
 		jointsUpdated = true;
 		if( bindMap != null ) {
 			for( b in bindMap ) {
-				var to = b & ((1<<16)-1);
-				var from = b >> 16;
-
-				var toJoint = jointsData[to];
-				var fromJoint = baseSkin.jointsData[from];
-
-				if( toJoint != null && fromJoint != null )
+				var bind = unpackIndices( b );
+				var toJoint = jointsData[bind.to];
+				var fromJoint = baseSkin.jointsData[bind.from];
+				if(toJoint != null && fromJoint != null)
 					toJoint.currentRelPos = fromJoint.currentRelPos;
 			}
 		}
