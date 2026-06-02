@@ -393,12 +393,8 @@ class Window {
 			case Show, Expose:
 				hxd.System.notifyWindowShown();
 			default:
-				var w:Int = 0, h:Int = 0;
-				@:privateAccess sdl.Window.winGetSize(window.win, w, h);
-				windowWidth = w;
-				windowHeight = h;
-				// windowWidth = e.mouseX > 0 ? e.mouseX : window.width;
-				// windowHeight = e.mouseY > 0 ? e.mouseY : window.height;
+				windowWidth = window.width;
+				windowHeight = window.height;
 				onResize(null);
 			case Focus:
 				#if hldx
