@@ -119,9 +119,10 @@ class RenderContext extends h3d.impl.RenderContext {
 		currentView.frustum = camera.frustum;
 	}
 
-	public function setRenderResolution( x : Int, y : Int ) {
-		renderResolutionWidth = x;
-		renderResolutionHeight = y;
+	public function setRenderResolution( width : Int, height : Int ) {
+		renderResolutionWidth = width;
+		renderResolutionHeight = height;
+		pixelSize = new h3d.Vector(2 / width, 2 / height);
 	}
 
 	public function updateNumViews( numViews : Int ) {
@@ -302,6 +303,10 @@ class RenderContext extends h3d.impl.RenderContext {
 
 	public function selectTextureHandles(handles : Array<h3d.mat.TextureHandle>) {
 		engine.driver.selectTextureHandles(handles);
+	}
+
+	public function selectBufferHandles(handles : Array<h3d.BufferHandle>) {
+		engine.driver.selectBufferHandles(handles);
 	}
 
 	public function uploadParams() {

@@ -251,18 +251,35 @@ class Batcher extends h3d.scene.Object {
 		batches[ctx.drawPass.index & 0xFFFF].draw(ctx);
 	}
 
-	public function dump( path : String = "batcher_dump.txt" ) {
-		var lines : Array<{ prim : String, pass : String, shaders : String, count : Int }> = [];
+	public function dump( path : String = "batcher_dump.txt" ) @:privateAccess {
+		var sb = new StringBuf();
+		var primLines : Array<{ format : String, hmds : Array<String>}> = [];
+		var primitives = library.primitives;
+		for ( i => p in primitives ) {
+			var format = '\t$i) ${p.vertexFormat.toString()}\n';
+			var hmds = [];
+			for ( m in p.models)
+				hmds.push("\t\t" + m.lib.resource.entry.path + " - " + m.model.getObjectName() + "\n");
+			primLines.push({format:format, hmds:hmds});
+		}
+
+		sb.add("Primitives:\n");
+		for (l in primLines) {
+			sb.add(l.format);
+			for ( hmd in l.hmds )
+				sb.add(hmd);
+		}
+
+		var lines : Array<{ prim : Int, pass : String, shaders : String, count : Int }> = [];
 		for ( b in batches ) {
-			var primName = @:privateAccess b.primitive.vertexFormat.toString();
-			for ( bp in @:privateAccess b.passes ) {
-				var shaderNames = [ for (s in @:privateAccess bp.shaders) Type.getClassName(Type.getClass(s)).split(".").pop() ].join("+");
-				lines.push({ prim: primName, pass: @:privateAccess bp.pass.name, shaders: shaderNames, count: @:privateAccess bp.totalInstanceCount });
+			var primId = primitives.indexOf(b.primitive);
+			for ( bp in b.passes ) {
+				var shaderNames = [ for (s in bp.shaders) { Type.getClassName(Type.getClass(s)).split(".").pop() + ':${s.constBits}'; } ].join("+");
+				lines.push({ prim: primId, pass: bp.pass.name, shaders: shaderNames, count: bp.totalInstanceCount });
 			}
 		}
 		lines.sort((a, b) -> b.count - a.count);
-		var sb = new StringBuf();
-		sb.add("COUNT\tPASS\tPRIMITIVE\tSHADERS\n");
+		sb.add("\nCOUNT\tPASS\tPRIMITIVE\tSHADERS\n");
 		for ( l in lines )
 			sb.add('${l.count}\t${l.pass}\t${l.prim}\t${l.shaders}\n');
 		#if (sys || nodejs)
@@ -349,13 +366,21 @@ private class MaterialInstance {
 
 @:allow(h3d.scene.Batch)
 private class DrawInstance {
-	public var shaderData : hxd.FloatBuffer;
+	public var shaderData : ShaderData;
 	public var passID : Int;
 
-	function new(shaderData : hxd.FloatBuffer, passID : Int) {
+	function new(shaderData : ShaderData, passID : Int) {
 		this.shaderData = shaderData;
 		this.passID = passID;
 	}
+}
+
+@:allow(h3d.scene.BatchPass)
+private class ShaderData {
+	public var data : hxd.FloatBuffer;
+	public var bufferHandles : Array<h3d.BufferHandle>;
+	public var textureHandles : Array<h3d.mat.TextureHandle>;
+	function new() {}
 }
 
 private class FollowShader extends hxsl.Shader {
@@ -764,7 +789,7 @@ private class BatchCommandBuilder extends hxsl.Shader {
 
 @:allow(h3d.scene.EmitData)
 private class BatchPass {
-	static var shaderTexParamsCache : Map<Int, Array<String>> = [];
+	static var shaderPerInstCache : Map<Int, Array<String>> = [];
 
 	static final INDIRECT_DRAW_ARGUMENTS_FMT = hxd.BufferFormat.make([{ name : "", type : DVec4 }, { name : "", type : DFloat }]);
 	static final PASS_INSTANCES_INFOS_FMT = hxd.BufferFormat.make([{ name : "flags", type : DFloat }]); // flags = subPartID(16 bits) + subMeshID(16 bits)
@@ -794,7 +819,7 @@ private class BatchPass {
 	var countBuffer : h3d.GPUCounter;
 	var builderShader = new BatchCommandBuilder();
 
-	var textureHandlesMap : Map<h3d.mat.TextureHandle, Bool>;
+	var bufferHandles : Array<h3d.BufferHandle>;
 	var textureHandles : Array<h3d.mat.TextureHandle>;
 
 	public function new(renderer : h3d.scene.Renderer, batch : Batch, p : h3d.mat.Pass, sl : hxsl.ShaderList, prim : h3d.prim.BatchPrimitive) @:privateAccess {
@@ -816,15 +841,15 @@ private class BatchPass {
 			if ( shaderVisited.exists(name) )
 				continue;
 			shaderVisited.set(name, true);
-			var params = shaderTexParamsCache.get(si.id);
+			var params = shaderPerInstCache.get(si.id);
 			if (params == null) {
 				params = [];
 				for ( v in si.shader.vars ) {
-					if ( v.kind != Param || !v.type.match(TSampler(_)|TInt|TFloat|TVec(_)) )
+					if ( v.kind != Param || !v.type.match(TSampler(_)|TInt|TFloat|TVec(_)|TBuffer(TInt|TFloat, _, _)) )
 						continue;
 					params.push(v.name);
 				}
-				shaderTexParamsCache.set(si.id, params);
+				shaderPerInstCache.set(si.id, params);
 			}
 			if ( params.length == 0 )
 				continue;
@@ -858,7 +883,8 @@ private class BatchPass {
 		}
 	}
 
-	public function getShaderData( sl : hxsl.ShaderList ) : hxd.FloatBuffer {
+	public function getShaderData( sl : hxsl.ShaderList ) : ShaderData {
+		var sd = new ShaderData();
 		var p = batchShader.params;
 		var shaders = [null/*link shader*/];
 		while( sl != null ) {
@@ -895,30 +921,39 @@ private class BatchPass {
 			case TMat4:
 				var m : h3d.Matrix = curShader.getParamValue(p.index);
 				bufLoader.loadMatrix(m);
+			case TBufferHandle:
+				if ( sd.bufferHandles == null )
+					sd.bufferHandles = [];
+				var h : h3d.BufferHandle = curShader.getParamValue(p.index);
+				if ( sd.bufferHandles.indexOf(h) < 0 )
+					sd.bufferHandles.push(h);
+				bufLoader.loadInt(h.handle);
+			case TBuffer(_):
+				if ( sd.bufferHandles == null )
+					sd.bufferHandles = [];
+				var b : h3d.Buffer = curShader.getParamValue(p.index);
+				if (b != null) {
+					var h = b.getHandle();
+					if ( sd.bufferHandles.indexOf(h) < 0 )
+						sd.bufferHandles.push(h);
+					bufLoader.loadInt(h.handle);
+				}
 			case TTextureHandle:
-				if ( textureHandles == null ) {
-					textureHandles = [];
-					textureHandlesMap = [];
-				}
+				if ( sd.textureHandles == null )
+					sd.textureHandles = [];
 				var h : h3d.mat.TextureHandle = curShader.getParamValue(p.index);
-				if ( !textureHandlesMap.exists(h) ) {
-					textureHandlesMap.set(h, true);
+				if ( sd.textureHandles.indexOf(h) < 0 )
 					textureHandles.push(h);
-				}
 				bufLoader.loadInt(h.handle.low);
 				bufLoader.loadInt(h.handle.high);
 			case TSampler(_):
-				if ( textureHandles == null ) {
-					textureHandles = [];
-					textureHandlesMap = [];
-				}
+				if ( sd.textureHandles == null )
+					sd.textureHandles = [];
 				var t : h3d.mat.Texture = curShader.getParamValue(p.index);
 				if(t != null) {
 					var h = t.getHandle();
-					if ( !textureHandlesMap.exists(h) ) {
-						textureHandlesMap.set(h, true);
-						textureHandles.push(h);
-					}
+					if ( sd.textureHandles.indexOf(h) < 0 )
+						sd.textureHandles.push(h);
 					bufLoader.loadInt(h.handle.low);
 					bufLoader.loadInt(h.handle.high);
 				}
@@ -927,7 +962,8 @@ private class BatchPass {
 			}
 			p = p.next;
 		}
-		return shaderData;
+		sd.data = shaderData;
+		return sd;
 	}
 
 	public function uploadInstances() {
@@ -964,7 +1000,25 @@ private class BatchPass {
 		}
 
 		var instanceCursor = 0;
+		if ( bufferHandles != null )
+			bufferHandles.resize(0);
+		if ( textureHandles != null )
+			textureHandles.resize(0);
 		for ( ed in toEmit ) {
+			if ( ed.bufferHandles != null ) {
+				if ( bufferHandles == null )
+					bufferHandles = [];
+				for ( bh in ed.bufferHandles )
+					if ( bufferHandles.indexOf(bh) < 0 )
+						bufferHandles.push(bh);
+			}
+			if ( ed.textureHandles != null ) {
+				if ( textureHandles == null )
+					textureHandles = [];
+				for ( th in ed.textureHandles )
+					if ( textureHandles.indexOf(th) < 0 )
+						textureHandles.push(th);
+			}
 			instancesData.uploadFloats( ed.instancesData, 0, ed.instanceCount * batchShader.paramsSize, instanceCursor * batchShader.paramsSize );
 			instancesInfos.uploadBytes( ed.instancesInfos, 0, ed.instanceCount, instanceCursor );
 			if ( hasSyncIDs )
@@ -1083,6 +1137,8 @@ private class BatchPass {
 	public function draw( ctx : h3d.scene.RenderContext ) {
 		if ( textureHandles != null )
 			ctx.selectTextureHandles( textureHandles );
+		if ( bufferHandles != null )
+			ctx.selectBufferHandles( bufferHandles );
 		var engine = ctx.engine;
 		@:privateAccess engine.driver.selectMultiBuffers(primitive.formats, primitive.buffers);
 		@:privateAccess command.commandCount = totalInstanceCount;
@@ -1116,13 +1172,23 @@ private class EmitData {
 	var instancesData : hxd.FloatBuffer;
 	var syncIDs : haxe.io.Bytes;
 	var batchPass : BatchPass;
+	var bufferHandles : Array<h3d.BufferHandle> = [];
+	var textureHandles : Array<h3d.mat.TextureHandle> = [];
 
 	public function new(bp : BatchPass) {
 		batchPass = bp;
 		bp.toEmit.push(this);
 	};
 
-	public function emitInstance( subMeshID : Int, subPartID : Int, shaderData : hxd.FloatBuffer, worldPosition : h3d.Matrix, syncID : Int ) {
+	public function emitInstance( subMeshID : Int, subPartID : Int, shaderData : ShaderData, worldPosition : h3d.Matrix, syncID : Int ) {
+		if ( shaderData.bufferHandles != null)
+			for ( b in shaderData.bufferHandles )
+				if ( bufferHandles.indexOf(b) < 0 )
+					bufferHandles.push(b);
+		if ( shaderData.textureHandles != null)
+			for ( t in shaderData.textureHandles )
+				if ( textureHandles.indexOf(t) < 0 )
+					textureHandles.push(t);
 		batchPass.instancesDirty = true;
 		batchPass.totalInstanceCount++;
 		var instanceID = instanceCount++;
@@ -1163,7 +1229,7 @@ private class EmitData {
 		var p = batchPass.batchShader.params;
 		var invWorldPosition : h3d.Matrix = null;
 		while ( p != null ) {
-			var bufLoader = new hxd.FloatBufferLoader(shaderData, p.pos);
+			var bufLoader = new hxd.FloatBufferLoader(shaderData.data, p.pos);
 			if( p.perObjectGlobal == null ) {
 				p = p.next;
 				continue;
@@ -1186,12 +1252,13 @@ private class EmitData {
 		var instanceByteStride = instanceDataStride * 4;
 		var startPos = instanceID * instanceByteStride;
 		var dst = hl.Bytes.getArray(instancesData.getNative());
-		var src = hl.Bytes.getArray(shaderData.getNative());
+		var src = hl.Bytes.getArray(shaderData.data.getNative());
 		dst.blit(startPos, src, 0, instanceByteStride);
 		#else
 		var startPos = instanceID * instanceDataStride;
+		var data = shaderData.data;
 		for ( i in 0...instanceDataStride )
-			instancesData[startPos + i] = shaderData[i];
+			instancesData[startPos + i] = data[i];
 		#end
 	}
 

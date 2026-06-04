@@ -151,6 +151,15 @@ enum DLSSTag {
 	public var orthographicProjection : Bool;
 	public var motionVectorsDilated : Bool;
 	public var motionVectorsJittered : Bool;
+	public var colorBufferHDR : Bool;
+	public var autoExposure : Bool;
+	public function new() {
+	}
+}
+
+@struct class DLSSSettings {
+	public var optimalWidth : Int;
+	public var optimalHeight : Int;
 	public function new() {
 	}
 }
@@ -255,6 +264,10 @@ class Driver {
 
 	public function selectTextureHandles( handles : Array<h3d.mat.TextureHandle> ) {
 	}
+
+	public function selectBufferHandles( handles : Array<h3d.BufferHandle> ) {
+	}
+
 
 	public function uploadShaderBuffers( buffers : h3d.shader.Buffers, which : h3d.shader.Buffers.BufferKind ) {
 	}
@@ -410,6 +423,10 @@ class Driver {
 		throw "Bindless is not implemented on this platform";
 	}
 
+	public function getBufferHandle( b : h3d.Buffer ) : h3d.BufferHandle {
+		throw "Bindless is not implemented on this platform";
+	}
+
 	// --- DLSS
 
 	public function isDLSSSupported( framegen : Bool = false ) : Bool {
@@ -417,6 +434,10 @@ class Driver {
 		return false;
 	}
 
-	public function applyDLSS( resources : Map<h3d.mat.Texture, DLSSTag>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
+	public function getDLSSOptimalSettings( mode : DLSSMode, targetWidth : Int, targetHeight : Int ) : DLSSSettings {
+		return null;
+	}
+
+	public function applyDLSS( resources : Map<DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
 	}
 }

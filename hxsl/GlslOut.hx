@@ -213,7 +213,7 @@ class GlslOut {
 			throw "assert";
 		case TChannel(n):
 			add("channel" + n);
-		case TTextureHandle:
+		case TTextureHandle, TBufferHandle:
 			throw "assert";
 		}
 	}
