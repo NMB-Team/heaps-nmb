@@ -109,17 +109,40 @@ class Batcher extends h3d.scene.Object {
 	var shouldDisposeLibrary : Bool = false;
 
 	var renderer : h3d.scene.Renderer;
+	var globalShaders : Map<String, Array<hxsl.Shader>>;
 
 	public function hasSyncIDs() : Bool {
 		return (syncShader != null && syncShader.hasSyncIDs());
 	}
 
-	public function addShader( s : hxsl.Shader ) {
-		for ( b in batches )
-			for ( p in @:privateAccess b.passes ){
-				p.pass.removeShader(s);
-				p.pass.addShader(s);
-			}
+	public function addShader( s : hxsl.Shader, pass = "" ) {
+		if( globalShaders == null )
+			globalShaders = [];
+		var shaders = globalShaders.get(pass);
+		if( shaders == null ) {
+			shaders = [];
+			globalShaders.set(pass, shaders);
+		}
+		shaders.push(s);
+		for( b in batches )
+			for( p in @:privateAccess b.passes )
+				if( pass == "" )
+					p.pass.addShader(s);
+				else if( p.pass.name == pass )
+					@:privateAccess p.pass.addSelfShader(s);
+	}
+
+	public function removeShader( s : hxsl.Shader, pass = "" ) {
+		if( globalShaders == null )
+			return;
+		var shaders = globalShaders.get(pass);
+		if( shaders == null )
+			return;
+		if( shaders.remove(s) )
+			for( b in batches )
+				for( p in @:privateAccess b.passes )
+					if( pass == "" || p.pass.name == pass)
+						p.pass.removeShader(s);
 	}
 
 	public function new( parent : h3d.scene.Object, renderer : h3d.scene.Renderer, library : BatchLibrary = null, batchFlags = null ) {
@@ -233,10 +256,14 @@ class Batcher extends h3d.scene.Object {
 				followShader = new FollowShader();
 				followShader.followMatrix = new h3d.Matrix();
 				followShader.prevFollowMatrix = new h3d.Matrix();
+				addShader(followShader);
 			}
 			var absPos = getAbsPos();
 			followShader.followMatrix.load(absPos);
 			followShader.prevFollowMatrix.load(prevAbsPos ?? absPos);
+		} else if ( followShader != null ) {
+			removeShader(followShader);
+			followShader = null;
 		}
 
 		var doDispatch = !batchFlags.has(ManualEmitGPU);
@@ -270,18 +297,24 @@ class Batcher extends h3d.scene.Object {
 				sb.add(hmd);
 		}
 
-		var lines : Array<{ prim : Int, pass : String, shaders : String, count : Int }> = [];
+		var lines : Array<{ prim : Int, pass : String, shaders : String, count : Int, batchShader : hxsl.BatchShader }> = [];
 		for ( b in batches ) {
 			var primId = primitives.indexOf(b.primitive);
 			for ( bp in b.passes ) {
 				var shaderNames = [ for (s in bp.shaders) { Type.getClassName(Type.getClass(s)).split(".").pop() + ':${s.constBits}'; } ].join("+");
-				lines.push({ prim: primId, pass: bp.pass.name, shaders: shaderNames, count: bp.totalInstanceCount });
+				lines.push({ prim: primId, pass: bp.pass.name, shaders: shaderNames, count: bp.totalInstanceCount, batchShader:bp.batchShader });
 			}
 		}
 		lines.sort((a, b) -> b.count - a.count);
-		sb.add("\nCOUNT\tPASS\tPRIMITIVE\tSHADERS\n");
-		for ( l in lines )
-			sb.add('${l.count}\t${l.pass}\t${l.prim}\t${l.shaders}\n');
+		sb.add("\nCOUNT\tPASS\tPRIMITIVE\tSHADERS\tPARAMS SIZE\n");
+		for ( l in lines ) {
+			sb.add('${l.count}\t${l.pass}\t${l.prim}\t${l.shaders}\t${l.batchShader.paramsSize * 16}B\n');
+			var p = l.batchShader.params;
+			while ( p != null ) {
+				sb.add('\t${p.name}\n');
+				p = p.next;
+			}
+		}
 		#if (sys || nodejs)
 		sys.io.File.saveContent(path, sb.toString());
 		#else
@@ -517,11 +550,6 @@ private class Batch {
 				continue;
 			if ( doEmitGPU )
 				p.emitGPU(ctx);
-			var hasFollowShader = p.pass.getShader(FollowShader) != null;
-			if ( !batcher.isRelative && hasFollowShader )
-				p.pass.removeShader(batcher.followShader);
-			if ( batcher.isRelative && !hasFollowShader )
-				p.pass.addShader(batcher.followShader);
 			ctx.emitPass(p.pass, batcher).index = i << 16 | batchID;
 			batcher.library.checkOffsetBuffer(p.totalInstanceCount);
 		}
@@ -872,6 +900,16 @@ private class BatchPass {
 		pass.addSelfShader(batchShader);
 		pass.batchMode = true;
 		pass.dynamicParameters = false;
+		if ( batcher.globalShaders != null ) {
+			var shaders = batcher.globalShaders.get("");
+			if ( shaders != null )
+				for ( s in shaders )
+					pass.addShader(s);
+			shaders = batcher.globalShaders.get(pass.name);
+			if ( shaders != null )
+				for ( s in shaders )
+					pass.addSelfShader(s);
+		}
 		isShadowPass = pass.name == "shadow";
 		var p = batchShader.params;
 		while ( p != null ) {
