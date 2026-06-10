@@ -495,7 +495,7 @@ private class Batch {
 			var passID = findPassID(globals, shaders, p);
 			if ( passID < 0 ) {
 				passID = passes.length;
-				passes.push( new BatchPass(renderer, this, p, shaders, primitive) );
+				passes.push( new BatchPass(renderer, this, p, primitive) );
 			}
 			var bp = passes[passID];
 			var shaderData = bp.getShaderData(shaders);
@@ -859,11 +859,14 @@ private class BatchPass {
 	var bufferHandles : Array<h3d.BufferHandle>;
 	var textureHandles : Array<h3d.mat.TextureHandle>;
 
-	public function new(renderer : h3d.scene.Renderer, batch : Batch, p : h3d.mat.Pass, sl : hxsl.ShaderList, prim : h3d.prim.BatchPrimitive) @:privateAccess {
+	public function new(renderer : h3d.scene.Renderer, batch : Batch, p : h3d.mat.Pass, prim : h3d.prim.BatchPrimitive) @:privateAccess {
 		primitive = prim;
 		var output = renderer.getPassByName(p.name);
 		if( output == null )
 			throw "Unknown pass " + p.name;
+
+		pass = p.clone();
+		var sl = pass.getShadersRec();
 
 		var shaderLinker = output.output;
 		var rt = shaderLinker.compileShaders(renderer.ctx.globals, sl, Default);
@@ -899,7 +902,7 @@ private class BatchPass {
 		batchShader.Batch_HasOffset = true;
 		batchShader.constBits = 1 << 1 | 1 << 0;
 		batchShader.updateConstants(null);
-		pass = p.clone();
+
 		shaders = [];
 		while( sl != null ) {
 			shaders.push(sl.s);
