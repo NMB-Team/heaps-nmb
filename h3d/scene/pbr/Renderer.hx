@@ -144,6 +144,9 @@ class Renderer extends h3d.scene.Renderer {
 		Vec4([Value("output.depth"),Const(0),Const(0),h3d.scene.pbr.Renderer.ALPHA]),
 		Vec4([Value("output.velocity", 2), Const(0), Const(0)])
 	]);
+	var depthOutput = new h3d.pass.Output("depth",
+		[Swiz(Value("output.depth",1),[X,X,X,X])]
+	);
 
 	public function new(?env) {
 		super();
@@ -161,6 +164,7 @@ class Renderer extends h3d.scene.Renderer {
 		allPasses.push(decalsOutput);
 		allPasses.push(colorDepthOutput);
 		allPasses.push(colorDepthVelocityOutput);
+		allPasses.push(depthOutput);
 		allPasses.push(new h3d.pass.Shadows(null));
 		refreshProps();
 	}
@@ -180,6 +184,8 @@ class Renderer extends h3d.scene.Renderer {
 			return output;
 		case "decal":
 			return decalsOutput;
+		case "depthPrepass", "forwardDepthPrepass", "beforeTonemappingDepthPrepass":
+			return depthOutput;
 		#if editor
 		case "highlight", "highlightBack":
 			return defaultPass;
