@@ -46,6 +46,7 @@ class Window {
 	var eventTargets : List<Event -> Void>;
 	var dropTargets : List<DropFileEvent -> Void>;
 	var dropFiles : Array<hxd.DropFileEvent.DroppedFile>;
+	var closeRequested = false;
 
 	public var id : Int;
 	public var width(get, never) : Int;
@@ -600,9 +601,14 @@ class Window {
 	}
 
 	function onCloseEvent() {
+		if( closeRequested )
+			return true;
+		closeRequested = true;
 		var ret = onClose();
 		if( ret )
 			close();
+		else
+			closeRequested = false;
 		return ret;
 	}
 
