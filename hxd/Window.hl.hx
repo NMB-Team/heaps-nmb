@@ -193,8 +193,7 @@ class Window {
 		#if (hldx || hlsdl)
 		if( window.displayMode == Fullscreen ) {
 			#if (hlsdl && hl_ver >= version("1.12.0") )
-			var cds = getCurrentDisplaySetting();
-			var mode = getBestDisplayMode(width, height, framerate != null ? framerate : cds.framerate);
+			var mode = getBestDisplayMode(width, height, framerate);
 			if(mode != null) {
 				@:privateAccess sdl.Window.winSetDisplayMode(window.win, mode.mode.width, mode.mode.height, mode.mode.framerate);
 				width = mode.mode.width;
@@ -756,18 +755,17 @@ class Window {
 			}
 		}
 		if( m == Fullscreen ) {
-			var cds = getCurrentDisplaySetting();
-			var dm = getBestDisplayMode(windowWidth, windowHeight, framerate != null ? framerate : cds.framerate);
-			if(dm == null)
-				return oldMode;
-			window.displaySetting = dm.mode;
+			var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
+			if(dm != null)
+				window.displaySetting = dm.mode;
 			#if hldx
 			var mon = selectedMonitor();
 			window.selectedMonitor = mon != null ? mon.name : null;
 			#end
 			window.displayMode = m;
 			#if hldx
-			window.resize(dm.mode.width, dm.mode.height);
+			if(dm != null)
+				window.resize(dm.mode.width, dm.mode.height);
 			#end
 		}
 		else {
@@ -858,26 +856,35 @@ class Window {
 		#end
 	}
 
-	function getBestDisplayMode(width, height, framerate) {
+	function getBestDisplayMode(width:Int, height:Int, framerate:Null<Int>) {
 		var m : {idx: Int, mode: DisplaySetting } = {
 			idx: -1,
 			mode: null
 		}
-		var defaultId = -1;
-		var def = getCurrentDisplaySetting(currentMonitorIndex, true);
-		for( i => s in getDisplaySettings(currentMonitorIndex) ) {
-			if(s.width == def.width && s.height == def.height && s.framerate == def.framerate)
-				defaultId = i;
+		var settings = getDisplaySettings(currentMonitorIndex);
+		for( i => s in settings ) {
 			if(s.width == width && s.height == height) {
 				if(s.framerate == framerate)
 					return { idx: i, mode: s };
-				else if(s.framerate == def.framerate)
+				else if(framerate == null || s.framerate == framerate)
 					m = {idx : i, mode : s };
 				else if(m.idx == -1)
 					m = {idx: i, mode : s };
 			}
 		}
-		return m.idx == -1 ? { idx: defaultId, mode: def } : m;
+		if(m.idx != -1)
+			return m;
+		for( i => s in settings ) {
+			if(s.width >= width && s.height >= height) {
+				if(framerate == null || s.framerate == framerate)
+					return { idx: i, mode: s };
+				else if(m.idx == -1)
+					m = {idx: i, mode : s };
+			}
+		}
+		if(m.idx != -1)
+			return m;
+		return null;
 	}
 
 	function get_currentMonitorIndex() : Int {
