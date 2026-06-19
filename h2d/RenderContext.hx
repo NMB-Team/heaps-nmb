@@ -97,6 +97,7 @@ class RenderContext extends h3d.impl.RenderContext {
 	var output : h3d.pass.OutputShader;
 	var compiledShader : hxsl.RuntimeShader;
 	var fixedBuffer : h3d.Buffer;
+	var fixedBufferRotated : Bool;
 	var pass : h3d.mat.Pass;
 	// ...Tail points at an end of global shader list, and shaders afterwards belong to specific objects.
 	var currentShaders : hxsl.ShaderList;
@@ -813,20 +814,35 @@ class RenderContext extends h3d.impl.RenderContext {
 				return false;
 		}
 
-		if( !beginDraw(obj, tile.getTexture(), true, true) ) return false;
+		if( !beginDraw(obj, tile.getTexture(), true, !tile.rotated) ) return false;
 
 		#if sceneprof h3d.impl.SceneProf.mark(obj); #end
 		setupColor(obj);
 		baseShader.absoluteMatrixA.set(tile.width * obj.matA, tile.height * obj.matC, obj.absX + tile.dx * obj.matA + tile.dy * obj.matC);
 		baseShader.absoluteMatrixB.set(tile.width * obj.matB, tile.height * obj.matD, obj.absY + tile.dx * obj.matB + tile.dy * obj.matD);
-		baseShader.uvPos.set(tile.u, tile.v, tile.u2 - tile.u, tile.v2 - tile.v);
+		if( !tile.rotated )
+			baseShader.uvPos.set(tile.u, tile.v, tile.u2 - tile.u, tile.v2 - tile.v);
 		beforeDraw();
 		if( fixedBuffer == null || fixedBuffer.isDisposed() ) {
 			fixedBuffer = new h3d.Buffer(4, hxd.BufferFormat.H2D);
+			fixedBufferRotated = !tile.rotated;
+		}
+		if( tile.rotated || fixedBufferRotated != tile.rotated ) {
 			var k = new hxd.FloatBuffer();
-			for( v in [0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] )
-				k.push(v);
+			if( tile.rotated ) {
+				for( v in [
+					0, 0, tile.u0, tile.v0, 1, 1, 1, 1,
+					1, 0, tile.u1, tile.v1, 1, 1, 1, 1,
+					0, 1, tile.u2c, tile.v2c, 1, 1, 1, 1,
+					1, 1, tile.u3, tile.v3, 1, 1, 1, 1
+				] )
+					k.push(v);
+			} else {
+				for( v in [0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] )
+					k.push(v);
+			}
 			fixedBuffer.uploadFloats(k, 0, 4);
+			fixedBufferRotated = tile.rotated;
 		}
 		engine.renderQuadBuffer(fixedBuffer);
 		return true;

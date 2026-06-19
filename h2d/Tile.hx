@@ -19,6 +19,15 @@ class Tile {
 	var v : Float;
 	var u2 : Float;
 	var v2 : Float;
+	var u0 : Float;
+	var v0 : Float;
+	var u1 : Float;
+	var v1 : Float;
+	var u2c : Float;
+	var v2c : Float;
+	var u3 : Float;
+	var v3 : Float;
+	var rotated : Bool;
 
 	/**
 		Visual offset of the Tile along the X axis during rendering.
@@ -102,6 +111,7 @@ class Tile {
 		this.height = h;
 		this.dx = dx;
 		this.dy = dy;
+		this.rotated = false;
 		if( tex != null ) setTexture(tex);
 	}
 
@@ -126,6 +136,29 @@ class Tile {
 			this.v = y / tex.height;
 			this.u2 = (x + width) / tex.width;
 			this.v2 = (y + height) / tex.height;
+			updateUVs();
+		}
+	}
+
+	inline function updateUVs() {
+		if( rotated ) {
+			u0 = u2;
+			v0 = v;
+			u1 = u2;
+			v1 = v2;
+			u2c = u;
+			v2c = v;
+			u3 = u;
+			v3 = v2;
+		} else {
+			u0 = u;
+			v0 = v;
+			u1 = u2;
+			v1 = v;
+			u2c = u;
+			v2c = v2;
+			u3 = u2;
+			v3 = v2;
 		}
 	}
 
@@ -158,6 +191,15 @@ class Tile {
 		return new Tile(innerTex, this.x + x, this.y + y, w, h, dx, dy);
 	}
 
+	public function rotatedSub( x : Float, y : Float, w : Float, h : Float, dx = 0., dy = 0. ) : Tile {
+		var t = new Tile(innerTex, this.x + x, this.y + y, h, w, dx, dy);
+		t.width = w;
+		t.height = h;
+		t.rotated = true;
+		t.updateUVs();
+		return t;
+	}
+
 	/**
 		Returns a new Tile with shifting origin point (`dx` and `dy`) to the tile center.
 
@@ -181,6 +223,7 @@ class Tile {
 	public function flipX() : Void {
 		var tmp = u; u = u2; u2 = tmp;
 		dx = -dx - width;
+		updateUVs();
 	}
 
 	/**
@@ -189,6 +232,7 @@ class Tile {
 	public function flipY() : Void {
 		var tmp = v; v = v2; v2 = tmp;
 		dy = -dy - height;
+		updateUVs();
 	}
 
 	/**
@@ -203,6 +247,7 @@ class Tile {
 			v = y / tex.height;
 			u2 = (x + width) / tex.width;
 			v2 = (y + height) / tex.height;
+			updateUVs();
 		}
 	}
 
@@ -216,6 +261,7 @@ class Tile {
 		if( tex != null ) {
 			u2 = (x + w) / tex.width;
 			v2 = (y + h) / tex.height;
+			updateUVs();
 		}
 	}
 
@@ -242,6 +288,7 @@ class Tile {
 		v2 -= dy / tex.height;
 		x = u * tex.width;
 		y = v * tex.height;
+		updateUVs();
 	}
 
 	/**
@@ -263,6 +310,15 @@ class Tile {
 		t.u2 = u2;
 		t.v = v;
 		t.v2 = v2;
+		t.u0 = u0;
+		t.v0 = v0;
+		t.u1 = u1;
+		t.v1 = v1;
+		t.u2c = u2c;
+		t.v2c = v2c;
+		t.u3 = u3;
+		t.v3 = v3;
+		t.rotated = rotated;
 		return t;
 	}
 

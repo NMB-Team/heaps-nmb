@@ -209,8 +209,8 @@ class Drawable extends Object {
 
 		emit(ax);
 		emit(ay);
-		emit(tile.u);
-		emit(tile.v);
+		emit(tile.u0);
+		emit(tile.v0);
 		emit(color.r);
 		emit(color.g);
 		emit(color.b);
@@ -226,8 +226,8 @@ class Drawable extends Object {
 
 		emit(ax + dx1);
 		emit(ay + dy1);
-		emit(tile.u2);
-		emit(tile.v);
+		emit(tile.u1);
+		emit(tile.v1);
 		emit(color.r);
 		emit(color.g);
 		emit(color.b);
@@ -235,8 +235,8 @@ class Drawable extends Object {
 
 		emit(ax + dx2);
 		emit(ay + dy2);
-		emit(tile.u);
-		emit(tile.v2);
+		emit(tile.u2c);
+		emit(tile.v2c);
 		emit(color.r);
 		emit(color.g);
 		emit(color.b);
@@ -244,8 +244,8 @@ class Drawable extends Object {
 
 		emit(ax + dx1 + dx2);
 		emit(ay + dy1 + dy2);
-		emit(tile.u2);
-		emit(tile.v2);
+		emit(tile.u3);
+		emit(tile.v3);
 		emit(color.r);
 		emit(color.g);
 		emit(color.b);
