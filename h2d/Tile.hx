@@ -134,8 +134,8 @@ class Tile {
 		if( tex != null ) {
 			this.u = x / tex.width;
 			this.v = y / tex.height;
-			this.u2 = (x + width) / tex.width;
-			this.v2 = (y + height) / tex.height;
+			this.u2 = (x + (rotated ? height : width)) / tex.width;
+			this.v2 = (y + (rotated ? width : height)) / tex.height;
 			updateUVs();
 		}
 	}
@@ -192,9 +192,9 @@ class Tile {
 	}
 
 	public function rotatedSub( x : Float, y : Float, w : Float, h : Float, dx = 0., dy = 0. ) : Tile {
-		var t = new Tile(innerTex, this.x + x, this.y + y, h, w, dx, dy);
-		t.width = w;
-		t.height = h;
+		var t = new Tile(innerTex, this.x + x, this.y + y, w, h, dx, dy);
+		t.width = h;
+		t.height = w;
 		t.rotated = true;
 		t.updateUVs();
 		return t;
@@ -245,8 +245,8 @@ class Tile {
 		if( tex != null ) {
 			u = x / tex.width;
 			v = y / tex.height;
-			u2 = (x + width) / tex.width;
-			v2 = (y + height) / tex.height;
+			u2 = (x + (rotated ? height : width)) / tex.width;
+			v2 = (y + (rotated ? width : height)) / tex.height;
 			updateUVs();
 		}
 	}
@@ -259,8 +259,8 @@ class Tile {
 		this.height = h;
 		var tex = innerTex;
 		if( tex != null ) {
-			u2 = (x + w) / tex.width;
-			v2 = (y + h) / tex.height;
+			u2 = (x + (rotated ? h : w)) / tex.width;
+			v2 = (y + (rotated ? w : h)) / tex.height;
 			updateUVs();
 		}
 	}
