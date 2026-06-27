@@ -1,5 +1,7 @@
 package h3d.impl;
 
+#if hl
+
 abstract class MemoryType {
 	public var stride : Int = 1;
 	public var alignment : Int = 1;
@@ -469,3 +471,5 @@ private class AllocatorTools {
 		return remainder == 0 ? value : value + alignment - remainder;
 	}
 }
+
+#end
