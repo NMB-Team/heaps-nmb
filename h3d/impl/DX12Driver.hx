@@ -615,6 +615,7 @@ class DX12Driver extends h3d.impl.Driver {
 	var useSM6_6 = false;
 	var errorTex : h3d.mat.Texture;
 	var textureHandles : Map<h3d.mat.Texture, Map<Int, h3d.mat.TextureHandle>> = [];
+	var samplerHandles : Map<Int, Int> = [];
 
 	var copyQueue : CommandQueue;
 	var copyFence : Fence;
@@ -1503,8 +1504,8 @@ class DX12Driver extends h3d.impl.Driver {
 
 	static final SHADER_ARGS : Array<String>= [#if dx12_shader_debug "-Zi", "-Qembed_debug" #end];
 	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, rootStr = "" ) {
-		var out = new hxsl.HlslOut();
 		if( sh.code == null ) {
+			var out = new hxsl.HlslOut();
 			sh.code = out.run(sh.data);
 			sh.code = rootStr + sh.code;
 		}
@@ -3393,14 +3394,19 @@ class DX12Driver extends h3d.impl.Driver {
 		}
 		handle = handles.get(t.bits);
 		if ( handle == null ) {
+			var samplerBits = getSamplerBits(t);
+			var samplerIndex = samplerHandles.get(samplerBits);
+			if ( samplerIndex == null ) {
 			var sampler = getCpuSampler(t);
+				samplerIndex = bindlessSamplerHeap.allocIndex();
+				samplerHandles.set(samplerBits, samplerIndex);
+				Driver.copyDescriptorsSimple(1, bindlessSamplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
+				Driver.copyDescriptorsSimple(1, frame.samplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
+			}
 			var srv = getCpuTexView(t);
 			var srvIndex = bindlessSrvHeap.allocIndex();
-			var samplerIndex = bindlessSamplerHeap.allocIndex();
 			Driver.copyDescriptorsSimple(1, bindlessSrvHeap.getCpuAddressAt(srvIndex), srv, CBV_SRV_UAV);
 			Driver.copyDescriptorsSimple(1, frame.srvHeap.getCpuAddressAt(srvIndex), srv, CBV_SRV_UAV);
-			Driver.copyDescriptorsSimple(1, bindlessSamplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
-			Driver.copyDescriptorsSimple(1, frame.samplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
 			handle = new h3d.mat.TextureHandle(t, haxe.Int64.make(samplerIndex, srvIndex));
 			handles.set(t.bits, handle);
 		}
@@ -3527,6 +3533,7 @@ class DX12Driver extends h3d.impl.Driver {
 				case ColorOut: res.type = DLSSBufferType.COLOROUT;
 			}
 			res.state = t.t.state;
+			t.lastFrame = frameCount;
 			idx++;
 		}
 
@@ -3574,7 +3581,10 @@ class DX12Driver extends h3d.impl.Driver {
 		Dlss.setConstants(dlssFrameToken, dlssConstants);
 		Dlss.evaluateFeature(dlssFrameToken, frame.commandList, DLSSFeature.DLSS);
 
-		flushHeaps(true);
+		var arr = tmp.descriptors2;
+		arr[0] = @:privateAccess frame.srvHeap.heap;
+		arr[1] = @:privateAccess frame.samplerHeap.heap;
+		frame.commandList.setDescriptorHeaps(arr);
 
 		#end
 	}
