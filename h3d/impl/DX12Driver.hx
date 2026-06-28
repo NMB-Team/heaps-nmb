@@ -604,6 +604,7 @@ class DX12Driver extends h3d.impl.Driver {
 	var lastRtvDesc : RenderTargetViewDesc;
 	var rtWidth : Int;
 	var rtHeight : Int;
+	var viewportDirty : Bool = true;
 	var frameCount : Int;
 	var tsFreq : haxe.Int64;
 	var heapCount : Int;
@@ -931,6 +932,7 @@ class DX12Driver extends h3d.impl.Driver {
 		depthStenciViews.clear();
 		curStencilRef = -1;
 		currentIndex = null;
+		viewportDirty = true;
 
 		frame.backBufferView = renderTargetViews.alloc(1);
 		Driver.createRenderTargetView(frame.backBuffer.res, null, frame.backBufferView);
@@ -1222,8 +1224,11 @@ class DX12Driver extends h3d.impl.Driver {
 	}
 
 	function initViewport(w,h) {
+		if( !viewportDirty && rtWidth == w && rtHeight == h )
+			return;
 		rtWidth = w;
 		rtHeight = h;
+		viewportDirty = false;
 		tmp.viewport.width = w;
 		tmp.viewport.height = h;
 		tmp.viewport.maxDepth = 1;
@@ -1397,6 +1402,7 @@ class DX12Driver extends h3d.impl.Driver {
 			tmp.rect.bottom = y + height;
 		}
 		frame.commandList.rsSetScissorRects(1, tmp.rect);
+		viewportDirty = true;
 	}
 
 	override function captureRenderBuffer( pixels : hxd.Pixels ) {

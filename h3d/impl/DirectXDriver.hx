@@ -85,6 +85,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	var vertexShader : PipelineState;
 	var pixelShader : PipelineState;
 	var currentVBuffers = new hl.NativeArray<dx.Resource>(16);
+	var blendDesc = new hl.NativeArray<RenderTargetBlendDesc>(NTARGETS);
 	var frame : Int;
 	var currentMaterialBits = -1;
 	var currentStencilMaskBits = -1;
@@ -775,9 +776,8 @@ class DirectXDriver extends h3d.impl.Driver {
 			desc.renderTargetWriteMask = mask & 15;
 			desc.blendEnable = !(desc.srcBlend == One && desc.srcBlendAlpha == One && desc.destBlend == Zero && desc.destBlendAlpha == Zero && desc.blendOp == Add && desc.blendOpAlpha == Add);
 			var maski = mask >> 4;
+			blendDesc[0] = desc;
 			if ( maski > 0 ) {
-				var tmp = new hl.NativeArray(targetsCount);
-				tmp[0] = desc;
 				for ( i in 1...targetsCount ) {
 					if ( maski & 15 > 0 ) {
 						var desci = new RenderTargetBlendDesc();
@@ -789,17 +789,15 @@ class DirectXDriver extends h3d.impl.Driver {
 						desci.blendOpAlpha = desc.blendOpAlpha;
 						desci.renderTargetWriteMask = maski & 15;
 						desci.blendEnable = desc.blendEnable;
-						tmp[i] = desci;
+						blendDesc[i] = desci;
 					} else {
-						tmp[i] = desc;
+						blendDesc[i] = desc;
 					}
 					maski = maski >> 4;
 				}
-				blend = Driver.createBlendState(false, true, tmp, targetsCount);
+				blend = Driver.createBlendState(false, true, blendDesc, targetsCount);
 			} else {
-				var tmp = new hl.NativeArray(1);
-				tmp[0] = desc;
-				blend = Driver.createBlendState(false, false, tmp, 1);
+				blend = Driver.createBlendState(false, false, blendDesc, 1);
 			}
 			blendStates.set(blendBits, blend);
 		}
