@@ -1,6 +1,6 @@
 package h3d.impl;
 
-#if (hldx && !dx12)
+#if ((hldx || (hlsdl && dx11)) && !dx12)
 
 import h3d.impl.Driver;
 import dx.Driver;
@@ -112,7 +112,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	var hasScissor = false;
 	var shaderVersion : String;
 
-	var window : dx.Window;
+	var window : #if (hlsdl && dx11) sdl.Window #else dx.Window #end;
 	var curTexture : h3d.mat.Texture;
 
 	var mapCount : Int;
@@ -123,7 +123,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	public var depthStencilFormat : dx.Format = D24_UNORM_S8_UINT;
 
 	public function new() {
-		window = @:privateAccess dx.Window.windows[0];
+		window = @:privateAccess #if (hlsdl && dx11) sdl.Window.windows[0] #else dx.Window.windows[0] #end;
 		Driver.setErrorHandler(onDXError);
 		reset();
 	}
@@ -175,15 +175,17 @@ class DirectXDriver extends h3d.impl.Driver {
 		shaderVersion = if( version < 10 ) "3_0" else if( version < 11 ) "4_0" else "5_0";
 
 		Driver.iaSetPrimitiveTopology(TriangleList);
-		// Create a default depth buffer to mimic opengl.
-		defaultDepthInst = new h3d.mat.Texture(-1, -1, Depth24Stencil8);
-		defaultDepthInst.name = "defaultDepth";
 		for( i in 0...VIEWPORTS_ELTS )
 			viewport[i] = 0;
 		for( i in 0...RECTS_ELTS )
 			rects[i] = 0;
 		for( i in 0...BLEND_FACTORS )
 			blendFactors[i] = 0;
+	}
+
+	private function initTextureResources() {
+		defaultDepthInst = new h3d.mat.Texture(-1, -1, Depth24Stencil8);
+		defaultDepthInst.name = "defaultDepth";
 	}
 
 	override function dispose() {
@@ -199,6 +201,9 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	override function resize(width:Int, height:Int)  {
+		if( defaultDepthInst == null )
+			initTextureResources();
+
 		if( defaultDepth != null ) {
 			defaultDepth.depthView.release();
 			defaultDepth.readOnlyDepthView.release();

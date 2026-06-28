@@ -824,6 +824,7 @@ class TextInput extends Text {
 	**/
 	public function focus() {
 		interactive.focus();
+		cursorBlink = 0;
 		if( cursorIndex < 0 ) {
 			cursorIndex = 0;
 			if( text != "" && !multiline ) selectionRange = { start : 0, length : getTextLength() };
@@ -914,7 +915,7 @@ class TextInput extends Text {
 	/**
 		Delegate of underlying `Interactive.onFocus`.
 	**/
-	public dynamic function onFocus(e:hxd.Event) {
+	public dynamic function onFocus(e:Null<hxd.Event>) {
 	}
 
 	/**

@@ -1,6 +1,10 @@
 package h3d;
 import h3d.mat.Data;
 
+#if (dx11 && dx12)
+#error "Do not compile with both -D dx11 and -D dx12"
+#end
+
 private class TargetTmp {
 	public var t : h3d.mat.Texture;
 	public var textures : Array<h3d.mat.Texture>;
@@ -90,6 +94,10 @@ class Engine {
 		setCurrent();
 		#if macro
 		driver = new h3d.impl.NullDriver();
+		#elseif (hlsdl && dx12)
+		driver = new h3d.impl.DX12Driver();
+		#elseif (hlsdl && dx11)
+		driver = new h3d.impl.DirectXDriver();
 		#elseif (hlsdl && vulkan)
 		driver = new h3d.impl.VulkanDriver();
 		#elseif (js || hlsdl || usegl)

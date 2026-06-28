@@ -15,6 +15,14 @@ typedef GPUBuffer = VertexBuffer;
 typedef Texture = { img : sdl.Vulkan.VkImage, mem : sdl.Vulkan.VkDeviceMemory, view : sdl.Vulkan.VkImageView };
 typedef DepthBuffer = {};
 typedef Query = {};
+#elseif (hlsdl && dx12)
+typedef GPUBuffer = DX12Driver.BufferData;
+typedef Texture = h3d.impl.DX12Driver.TextureData;
+typedef Query = h3d.impl.DX12Driver.QueryData;
+#elseif (hlsdl && dx11)
+typedef GPUBuffer = dx.Resource;
+typedef Texture = { res : dx.Resource, view : dx.Driver.ShaderResourceView, ?depthView : dx.Driver.DepthStencilView, ?readOnlyDepthView : dx.Driver.DepthStencilView, rt : Array<dx.Driver.RenderTargetView>, ?views : Array<dx.Driver.ShaderResourceView> };
+typedef Query = {};
 #elseif hlsdl
 typedef GPUBuffer = sdl.GL.Buffer;
 typedef Texture = { t : sdl.GL.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };

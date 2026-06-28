@@ -444,6 +444,10 @@ class System {
 	public static function getDeviceName() : String {
 		#if usesys
 		return haxe.System.name;
+		#elseif (hlsdl && dx12)
+		return "PC/" + dx.Dx12.getDeviceName();
+		#elseif (hlsdl && dx11)
+		return "PC/" + dx.Driver.getDeviceName();
 		#elseif hlsdl
 		return "PC/" + sdl.Sdl.getDevices()[0];
 		#elseif (hldx && dx12)

@@ -44,7 +44,7 @@ class CacheFile extends Cache {
 	public function new( allowCompile, recompileRT = false, showProgress = false ) {
 		super();
 		this.allowCompile = allowCompile;
-		this.recompileRT = recompileRT || allowCompile;
+		this.recompileRT = recompileRT;
 		this.file = FILENAME;
 		sourceFile = this.file + "." + getPlatformTag();
 		load(showProgress);
@@ -53,10 +53,12 @@ class CacheFile extends Cache {
 	function getPlatformTag() {
 		#if usesys
 		return Sys.systemName().toLowerCase();
+		#elseif ((hldx || hlsdl) && dx12)
+		return "dx12";
+		#elseif (hlsdl && dx11)
+		return "directx";
 		#elseif hlsdl
 		return "gl";
-		#elseif (hldx && dx12)
-		return "dx12";
 		#elseif hldx
 		return "dx";
 		#elseif hlnx
