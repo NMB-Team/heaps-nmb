@@ -153,6 +153,7 @@ class System {
 
 	public static function presentFrame( engine : h3d.Engine ) {
 		engine.driver.present();
+		@:privateAccess engine.updateFps();
 		markFirstFramePresented();
 	}
 
@@ -460,6 +461,14 @@ class System {
 	}
 
 	public static function getDefaultFrameRate() : Float {
+		#if (hlsdl && (dx11 || dx12))
+		var win = hxd.Window.getInstance();
+		if( win != null ) {
+			var refreshRate = sdl.Sdl.getFramerate(@:privateAccess win.window.win);
+			if( refreshRate > 0 )
+				return refreshRate;
+		}
+		#end
 		return 60.;
 	}
 

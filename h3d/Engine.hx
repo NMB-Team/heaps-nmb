@@ -441,6 +441,10 @@ class Engine {
 		obj.render(this);
 		end();
 
+		return true;
+	}
+
+	function updateFps() {
 		var delta = haxe.Timer.stamp() - lastTime;
 		lastTime += delta;
 		if( delta > 0 ) {
@@ -450,7 +454,6 @@ class Engine {
 			if( f > 0.3 ) f = 0.3;
 			realFps = realFps * (1 - f) + curFps * f; // smooth a bit the fps
 		}
-		return true;
 	}
 
 	public function setDepthClamp( enabled : Bool ) {
