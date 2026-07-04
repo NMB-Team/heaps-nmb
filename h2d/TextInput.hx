@@ -822,10 +822,10 @@ class TextInput extends Text {
 	/**
 		Sets focus on this `TextInput`.
 	**/
-	public function focus() {
+	public function focus( autoSelect=false ) {
 		interactive.focus();
 		cursorBlink = 0;
-		if( cursorIndex < 0 ) {
+		if( cursorIndex < 0 && autoSelect ) {
 			cursorIndex = 0;
 			if( text != "" && !multiline ) selectionRange = { start : 0, length : getTextLength() };
 		}
