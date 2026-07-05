@@ -295,9 +295,12 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	override function getDriverName(details:Bool) {
-		var desc = "DirectX" + Driver.getSupportedVersion();
-		if( details ) desc += " " + Driver.getDeviceName();
-		return desc;
+		final name = Driver.getDeviceName();
+		return details ? getRendererName() + " " + name : name;
+	}
+
+	override function getRendererName() {
+		return "Direct3D " + Driver.getSupportedVersion();
 	}
 
 	public function forceDeviceError() {

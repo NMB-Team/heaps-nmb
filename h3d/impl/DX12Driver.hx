@@ -1087,13 +1087,16 @@ class DX12Driver extends h3d.impl.Driver {
 	}
 
 	override function getDriverName(details:Bool) {
-		var desc = "DX12";
+		var desc = Driver.getDeviceName();
 		if( details ) {
-			desc += " "+Driver.getDeviceName();
 			var driver = Driver.getDriverVersion();
-			desc += "("+(driver.high>>16)+"."+(driver.high & 0xFFFF)+"."+(driver.low>>16)+"."+(driver.low&0xFFFF)+")";
+			desc = getRendererName() + " " + desc + " ("+(driver.high>>16)+"."+(driver.high & 0xFFFF)+"."+(driver.low>>16)+"."+(driver.low&0xFFFF)+")";
 		}
 		return desc;
+	}
+
+	override function getRendererName() {
+		return "Direct3D 12";
 	}
 
 	public function forceDeviceError() {

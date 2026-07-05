@@ -141,6 +141,10 @@ class Engine {
 		return driver.getDriverName(details);
 	}
 
+	public function rendererName() {
+		return driver.getRendererName();
+	}
+
 	public function selectShader( shader : hxsl.RuntimeShader ) {
 		flushTarget();
 		if( driver.selectShader(shader) )

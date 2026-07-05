@@ -257,6 +257,10 @@ class Driver {
 		return "Not available";
 	}
 
+	public function getRendererName() {
+		return "Not available";
+	}
+
 	public function init( onCreate : Bool -> Void, forceSoftware = false ) {
 	}
 

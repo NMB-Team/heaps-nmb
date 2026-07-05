@@ -100,6 +100,7 @@ class System {
 		dx.Loop.processEvents(@:privateAccess hxd.Window.dispatchEvent);
 		#elseif hlsdl
 		sdl.Sdl.processEvents(@:privateAccess hxd.Window.dispatchEvent);
+		@:privateAccess hxd.Window.processRelativeMouseEvents();
 		#end
 
 		// loop
@@ -445,15 +446,11 @@ class System {
 	public static function getDeviceName() : String {
 		#if usesys
 		return haxe.System.name;
-		#elseif (hlsdl && dx12)
-		return "PC/" + dx.Dx12.getDeviceName();
-		#elseif (hlsdl && dx11)
-		return "PC/" + dx.Driver.getDeviceName();
 		#elseif hlsdl
 		return "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif (hldx && dx12)
+		#elseif ((hldx || hlsdl) && dx12)
 		return "PC/" + dx.Dx12.getDeviceName();
-		#elseif hldx
+		#elseif (hldx || (hlsdl && dx11))
 		return "PC/" + dx.Driver.getDeviceName();
 		#else
 		return "PC/Commandline";

@@ -32,6 +32,10 @@ class NullDriver extends Driver {
 		return "NullDriver";
 	}
 
+	override function getRendererName() {
+		return "Null";
+	}
+
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
 		onCreate(false);
 	}

@@ -415,6 +415,10 @@ class VulkanDriver extends Driver {
 		return "Vulkan";
 	}
 
+	override function getRendererName() {
+		return "Vulkan";
+	}
+
 	override function present() {
 		endFrame();
 		submit();

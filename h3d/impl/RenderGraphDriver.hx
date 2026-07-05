@@ -48,6 +48,10 @@ class RenderGraphDriver extends Driver {
 		return "RenderGraphDriver " + d.getDriverName(details);
 	}
 
+	override function getRendererName() {
+		return d.getRendererName();
+	}
+
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
 		d.init(function(b) {
 			log('OnCreate $b');

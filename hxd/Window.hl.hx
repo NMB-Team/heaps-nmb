@@ -70,6 +70,7 @@ class Window {
 	public var vsync(get, set) : Bool;
 	public var isFocused(get, never) : Bool;
 	public var visible(default, set) : Bool = true;
+	public static var useRelativeMousePolling = true;
 
 	public var title(get, set) : String;
 	public var displayMode(get, set) : DisplayMode;
@@ -316,7 +317,16 @@ class Window {
 		window.setRelativeMouseMode(v != Absolute);
 		return mouseMode = v;
 		#elseif hlsdl
-		sdl.Sdl.setRelativeMouseMode(v != Absolute);
+		var relative = v != Absolute;
+		sdl.Sdl.setRelativeMouseMode(relative);
+		if( useRelativeMousePolling ) {
+			sdl.Sdl.setMouseMotionEvents(!relative);
+			if( relative ) {
+				var dx = 0;
+				var dy = 0;
+				sdl.Sdl.getRelativeMouseState(dx, dy);
+			}
+		}
 		#else
 		if ( v != Absolute ) throw "Not implemented";
 		#end
@@ -610,6 +620,28 @@ class Window {
 			closeRequested = false;
 		return ret;
 	}
+
+	#if hlsdl
+	function processRelativeMouseDelta(dx:Int, dy:Int) {
+		switch (mouseMode) {
+			case Relative(callback, _):
+				var ev = new Event(EMove, dx, dy);
+				callback(ev);
+				if (!ev.cancel && ev.propagate) {
+					ev.cancel = false;
+					ev.propagate = false;
+					ev.relX = curMouseX;
+					ev.relY = curMouseY;
+					event(ev);
+				}
+			case AbsoluteUnbound(_):
+				curMouseX += dx;
+				curMouseY += dy;
+				event(new Event(EMove, curMouseX, curMouseY));
+			case Absolute:
+		}
+	}
+	#end
 
 	static function initChars() : Void {
 
@@ -950,5 +982,19 @@ class Window {
 		return inst.onEvent(e);
 		#end
 	}
+
+	#if hlsdl
+	static function processRelativeMouseEvents() {
+		if( !useRelativeMousePolling )
+			return;
+		var dx = 0;
+		var dy = 0;
+		sdl.Sdl.getRelativeMouseState(dx, dy);
+		if( dx == 0 && dy == 0 )
+			return;
+		if( inst != null )
+			inst.processRelativeMouseDelta(dx, dy);
+	}
+	#end
 
 }
