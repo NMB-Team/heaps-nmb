@@ -3,10 +3,6 @@ import h3d.mat.Data;
 import hxd.GraphicsDriverConfig;
 import hxd.GraphicsDriverApi;
 
-#if (dx11 && dx12)
-#error "Do not compile with both -D dx11 and -D dx12"
-#end
-
 private class TargetTmp {
 	public var t : h3d.mat.Texture;
 	public var textures : Array<h3d.mat.Texture>;
@@ -103,25 +99,25 @@ class Engine {
 		#elseif hlsdl
 		return switch (GraphicsDriverConfig.getCurrentOrDefault()) {
 			case GraphicsDriverApi.Dx12:
-				#if (gfx_dx12 || dx12)
+				#if gfx_dx12
 				new h3d.impl.DX12Driver();
 				#else
 				createFallbackDriver();
 				#end
 			case GraphicsDriverApi.Dx11:
-				#if (gfx_dx11 || dx11)
+				#if gfx_dx11
 				new h3d.impl.DirectXDriver();
 				#else
 				createFallbackDriver();
 				#end
 			case GraphicsDriverApi.Vulkan:
-				#if (gfx_vulkan || vulkan)
+				#if gfx_vulkan
 				new h3d.impl.VulkanDriver();
 				#else
 				createFallbackDriver();
 				#end
 			case GraphicsDriverApi.OpenGL | GraphicsDriverApi.Auto:
-				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !dx11 && !dx12 && !vulkan))
+				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))
 				new h3d.impl.GlDriver(antiAlias);
 				#else
 				createFallbackDriver();
@@ -133,7 +129,7 @@ class Engine {
 		#else
 		return new h3d.impl.GlDriver(antiAlias);
 		#end
-		#elseif (hldx && dx12)
+		#elseif (hldx && gfx_dx12)
 		return new h3d.impl.DX12Driver();
 		#elseif hldx
 		return new h3d.impl.DirectXDriver();
@@ -148,13 +144,13 @@ class Engine {
 	function createFallbackDriver():h3d.impl.Driver {
 		#if macro
 		return new h3d.impl.NullDriver();
-		#elseif (hlsdl && (gfx_dx11 || dx11))
+		#elseif (hlsdl && gfx_dx11)
 		return new h3d.impl.DirectXDriver();
-		#elseif (hlsdl && (gfx_dx12 || dx12))
+		#elseif (hlsdl && gfx_dx12)
 		return new h3d.impl.DX12Driver();
-		#elseif (hlsdl && (gfx_vulkan || vulkan))
+		#elseif (hlsdl && gfx_vulkan)
 		return new h3d.impl.VulkanDriver();
-		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !dx11 && !dx12 && !vulkan)))
+		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan)))
 		return new h3d.impl.GlDriver(antiAlias);
 		#else
 		return new h3d.impl.NullDriver();

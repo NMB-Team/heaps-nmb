@@ -1,6 +1,6 @@
 package h3d.impl;
 
-#if (hldx || (hlsdl && (gfx_dx11 || dx11) && !dx12))
+#if ((hldx && !gfx_dx12) || (hlsdl && gfx_dx11))
 
 import h3d.impl.Driver;
 import dx.Driver;
@@ -56,7 +56,7 @@ class PipelineState {
 	public var kind : PipelineKind;
 	public var samplers = new hl.NativeArray<SamplerState>(64);
 	public var samplerBits = new Array<Int>();
-	public var resources = new hl.NativeArray<ShaderResourceView>(64);
+	public var resources = new hl.NativeArray<dx.Driver.ShaderResourceView>(64);
 	public var buffers = new hl.NativeArray<dx.Resource>(16);
 	public function new(kind) {
 		this.kind = kind;
@@ -71,12 +71,12 @@ class DirectXDriver extends h3d.impl.Driver {
 	static inline var RECTS_ELTS = 4 * NTARGETS;
 	static inline var BLEND_FACTORS = NTARGETS;
 
-	var driver : DriverInstance;
+	var driver : Dynamic;
 	var shaders : Map<Int,CompiledShader>;
 
 	var hasDeviceError = false;
 
-	var defaultTarget : RenderTargetView;
+	var defaultTarget : dx.Driver.RenderTargetView;
 	var defaultDepth : Texture;
 	var defaultDepthInst : h3d.mat.Texture;
 	var extraDepthInst : h3d.mat.Texture;
@@ -90,8 +90,8 @@ class DirectXDriver extends h3d.impl.Driver {
 	var currentIndex : h3d.Buffer;
 	var currentDepth : Texture;
 	var currentLayout : Layout;
-	var currentTargets = new hl.NativeArray<RenderTargetView>(16);
-	var currentTargetResources = new hl.NativeArray<ShaderResourceView>(16);
+	var currentTargets = new hl.NativeArray<dx.Driver.RenderTargetView>(16);
+	var currentTargetResources = new hl.NativeArray<dx.Driver.ShaderResourceView>(16);
 	var vertexShader : PipelineState;
 	var pixelShader : PipelineState;
 	var currentVBuffers = new hl.NativeArray<dx.Resource>(16);

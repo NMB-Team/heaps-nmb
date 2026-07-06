@@ -1,6 +1,6 @@
 package h3d.impl;
 
-#if ((hldx && dx12) || (hlsdl && (gfx_dx12 || dx12)))
+#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
 
 #if (hl_ver < version("1.14.0"))
 #error "DX12Driver requires at least -D hl_ver=1.14.0"
@@ -8,6 +8,17 @@ package h3d.impl;
 
 import h3d.impl.Driver;
 import dx.Dx12;
+import dx.Dx12.Dx12Blend;
+import dx.Dx12.Dx12BlendOp;
+import dx.Dx12.Dx12ComparisonFunc;
+import dx.Dx12.Dx12CullMode;
+import dx.Dx12.Dx12DriverInitFlag;
+import dx.Dx12.Dx12DriverInitFlags;
+import dx.Dx12.Dx12DriverInstance;
+import dx.Dx12.Dx12Resource;
+import dx.Dx12.Dx12SamplerDesc;
+import dx.Dx12.Dx12ShaderResourceViewDesc;
+import dx.Dx12.Dx12StencilOp;
 import haxe.Int64;
 import h3d.mat.Pass;
 import h3d.mat.Stencil;
@@ -3239,7 +3250,7 @@ class DX12Driver extends h3d.impl.Driver {
 		return q.heap < 0;
 	}
 
-	override function queryResult( q : Query ) {
+	override function queryResult( q : Query ) : Float {
 		return q.result;
 	}
 

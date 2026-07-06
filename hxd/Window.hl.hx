@@ -115,7 +115,7 @@ class Window {
 		if (hidden) sdlFlags |= sdl.Window.SDL_WINDOW_HIDDEN;
 		else sdlFlags |= sdl.Window.SDL_WINDOW_SHOWN;
 		sdl.Window.directXMode = hxd.GraphicsDriverConfig.usesDirectX();
-		#if (gfx_vulkan || vulkan)
+		#if gfx_vulkan
 		if( hxd.GraphicsDriverConfig.usesVulkan() )
 			sdlFlags |= sdl.Window.SDL_WINDOW_VULKAN;
 		#end

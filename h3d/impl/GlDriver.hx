@@ -4,7 +4,7 @@ import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && vulkan && !gfx_opengl))
+#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
 
 #if js
 import hxd.impl.TypedArray;

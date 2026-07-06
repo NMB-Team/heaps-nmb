@@ -35,11 +35,11 @@ final class GraphicsDriverConfig {
 		return Vulkan;
 		#elseif default_gfx_opengl
 		return OpenGL;
-		#elseif (gfx_dx12 || dx12)
+		#elseif gfx_dx12
 		return Dx12;
-		#elseif (gfx_dx11 || dx11)
+		#elseif gfx_dx11
 		return Dx11;
-		#elseif (gfx_vulkan || vulkan)
+		#elseif gfx_vulkan
 		return Vulkan;
 		#else
 		return OpenGL;

@@ -44,6 +44,6 @@ hxsl.CacheFileBuilder
 -hl heaps.hl
 -lib hldx
 -lib hlopenal
--D dx12
+-D gfx_dx12
 -xml heaps_hldx12.xml
 -D hl-ver=1.15.0

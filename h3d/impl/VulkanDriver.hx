@@ -1,6 +1,6 @@
 package h3d.impl;
 
-#if (hlsdl && (gfx_vulkan || vulkan))
+#if (hlsdl && gfx_vulkan)
 import h3d.impl.Driver;
 import sdl.Vulkan;
 

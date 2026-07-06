@@ -448,11 +448,11 @@ class System {
 		return haxe.System.name;
 		#elseif hlsdl
 		return "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif (hlsdl && (gfx_dx12 || dx12))
+		#elseif (hlsdl && gfx_dx12)
 		return hxd.GraphicsDriverConfig.getCurrentOrDefault() == hxd.GraphicsDriverApi.Dx12 ? "PC/" + dx.Dx12.getDeviceName() : "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif (hldx && dx12)
+		#elseif (hldx && gfx_dx12)
 		return "PC/" + dx.Dx12.getDeviceName();
-		#elseif (hldx || (hlsdl && (gfx_dx11 || dx11)))
+		#elseif (hldx || (hlsdl && gfx_dx11))
 		return "PC/" + dx.Driver.getDeviceName();
 		#else
 		return "PC/Commandline";
@@ -460,7 +460,7 @@ class System {
 	}
 
 	public static function getDefaultFrameRate() : Float {
-		#if (hlsdl && (gfx_dx11 || dx11 || gfx_dx12 || dx12))
+		#if (hlsdl && (gfx_dx11 || gfx_dx12))
 		var win = hxd.Window.getInstance();
 		if( win != null ) {
 			var refreshRate = sdl.Sdl.getFramerate(@:privateAccess win.window.win);
@@ -543,7 +543,7 @@ class System {
 		layoutStr = sdl.Sdl.detectKeyboardLayout();
 		#elseif (hldx >= version("1.16.0"))
 		layoutStr = dx.Window.detectKeyboardLayout();
-		#elseif (hldx && !dx12)
+		#elseif (hldx && !gfx_dx12)
 		layoutStr = dx.Driver.detectKeyboardLayout();
 		#end
 		return switch(layoutStr) {

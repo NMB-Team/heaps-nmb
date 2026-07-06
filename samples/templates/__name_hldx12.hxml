@@ -1,6 +1,6 @@
 -lib heaps
 -lib hldx
--D dx12
+-D gfx_dx12
 -D hl_ver=1.14.0
 -hl ::name::_dx12.hl
 -main ::main::
