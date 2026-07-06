@@ -123,9 +123,9 @@ class CacheFileBuilder {
 	function generateShader( r : RuntimeShader, rd : RuntimeShader.RuntimeShaderData ) : { code : String, bytes : haxe.io.Bytes, profile : String } {
 		switch( platform ) {
 		case DirectX:
-			#if ((hldx || (hlsdl && dx11)) && !dx12)
+			#if (hldx || (hlsdl && (gfx_dx11 || dx11) && !dx12))
 			if( !dxInitDone ) {
-				#if (hlsdl && dx11)
+				#if hlsdl
 				var win = new sdl.Window("", 800, 600, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOW_HIDDEN);
 				#else
 				var win = new dx.Window("", 800, 600);
@@ -189,7 +189,7 @@ class CacheFileBuilder {
 			sys.FileSystem.deleteFile(tmpOut);
 			return { code : code, bytes : data, profile : shaderCacheConfig };
 		case XBoxSeries, XBoxOneGDK:
-			#if ((hldx || hlsdl) && dx12)
+			#if ((hldx && dx12) || (hlsdl && (gfx_dx12 || dx12)))
 			if( !dxInitDone ) {
 				#if hlsdl
 				var win = new sdl.Window("", 800, 600, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOW_HIDDEN);

@@ -4,7 +4,7 @@ import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && vulkan))
+#if ((js||hlsdl||usegl) && !(hlsdl && vulkan && !gfx_opengl))
 
 #if js
 import hxd.impl.TypedArray;
@@ -19,8 +19,9 @@ private typedef Uniform = sdl.GL.Uniform;
 private typedef Program = sdl.GL.Program;
 private typedef GLShader = sdl.GL.Shader;
 private typedef Framebuffer = sdl.GL.Framebuffer;
-private typedef Texture = h3d.impl.Driver.Texture;
+private typedef Texture = { t : sdl.GL.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 private typedef Query = h3d.impl.Driver.Query;
+private typedef GlQuery = { q : sdl.GL.Query, kind : QueryKind };
 private typedef VertexArray = sdl.GL.VertexArray;
 #elseif usegl
 import haxe.GLTypes;
@@ -999,6 +1000,9 @@ class GlDriver extends Driver {
 	}
 
 	override function resize(width, height) {
+		#if hlsdl
+		hxd.Window.getInstance().setCurrent();
+		#end
 		#if js
 		// prevent infinite grow if pixelRatio != 1
 		if( canvas.style.width == "" ) {
@@ -1962,6 +1966,9 @@ class GlDriver extends Driver {
 	}
 
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
+		#if hlsdl
+		hxd.Window.getInstance().setCurrent();
+		#end
 		#if js
 		// wait until all assets have properly load
 		if( js.Browser.document.readyState == 'complete' )

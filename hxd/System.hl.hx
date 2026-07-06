@@ -448,9 +448,11 @@ class System {
 		return haxe.System.name;
 		#elseif hlsdl
 		return "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif ((hldx || hlsdl) && dx12)
+		#elseif (hlsdl && (gfx_dx12 || dx12))
+		return hxd.GraphicsDriverConfig.getCurrentOrDefault() == hxd.GraphicsDriverApi.Dx12 ? "PC/" + dx.Dx12.getDeviceName() : "PC/" + sdl.Sdl.getDevices()[0];
+		#elseif (hldx && dx12)
 		return "PC/" + dx.Dx12.getDeviceName();
-		#elseif (hldx || (hlsdl && dx11))
+		#elseif (hldx || (hlsdl && (gfx_dx11 || dx11)))
 		return "PC/" + dx.Driver.getDeviceName();
 		#else
 		return "PC/Commandline";
@@ -458,7 +460,7 @@ class System {
 	}
 
 	public static function getDefaultFrameRate() : Float {
-		#if (hlsdl && (dx11 || dx12))
+		#if (hlsdl && (gfx_dx11 || dx11 || gfx_dx12 || dx12))
 		var win = hxd.Window.getInstance();
 		if( win != null ) {
 			var refreshRate = sdl.Sdl.getFramerate(@:privateAccess win.window.win);

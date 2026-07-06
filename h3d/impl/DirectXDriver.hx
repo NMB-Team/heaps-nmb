@@ -1,10 +1,20 @@
 package h3d.impl;
 
-#if ((hldx || (hlsdl && dx11)) && !dx12)
+#if (hldx || (hlsdl && (gfx_dx11 || dx11) && !dx12))
 
 import h3d.impl.Driver;
 import dx.Driver;
+import dx.Resource.MapType;
 import h3d.mat.Pass;
+
+private typedef DX11Texture = {
+	res : dx.Resource,
+	view : dx.Driver.ShaderResourceView,
+	?depthView : dx.Driver.DepthStencilView,
+	?readOnlyDepthView : dx.Driver.DepthStencilView,
+	rt : Array<dx.Driver.RenderTargetView>,
+	?views : Array<dx.Driver.ShaderResourceView>
+}
 
 private class ShaderContext {
 	public var shader : Shader;
@@ -113,7 +123,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	var hasScissor = false;
 	var shaderVersion : String;
 
-	var window : #if (hlsdl && dx11) sdl.Window #else dx.Window #end;
+	var window : #if hlsdl sdl.Window #else dx.Window #end;
 	var curTexture : h3d.mat.Texture;
 
 	var mapCount : Int;
@@ -124,7 +134,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	public var depthStencilFormat : dx.Format = D24_UNORM_S8_UINT;
 
 	public function new() {
-		window = @:privateAccess #if (hlsdl && dx11) sdl.Window.windows[0] #else dx.Window.windows[0] #end;
+		window = @:privateAccess #if hlsdl sdl.Window.windows[0] #else dx.Window.windows[0] #end;
 		Driver.setErrorHandler(onDXError);
 		reset();
 	}
@@ -206,10 +216,11 @@ class DirectXDriver extends h3d.impl.Driver {
 			initTextureResources();
 
 		if( defaultDepth != null ) {
-			defaultDepth.depthView.release();
-			defaultDepth.readOnlyDepthView.release();
-			defaultDepth.view.release();
-			defaultDepth.res.release();
+			final depth:DX11Texture = defaultDepth;
+			depth.depthView.release();
+			depth.readOnlyDepthView.release();
+			depth.view.release();
+			depth.res.release();
 		}
 		if( defaultTarget != null ) {
 			defaultTarget.release();
@@ -290,8 +301,10 @@ class DirectXDriver extends h3d.impl.Driver {
 			if (targetsCount == 0)
 				Driver.clearColor(defaultTarget, color.r, color.g, color.b, color.a);
 		}
-		if( currentDepth != null && (depth != null || stencil != null) )
+		if( currentDepth != null && (depth != null || stencil != null) ) {
+			final currentDepth:DX11Texture = currentDepth;
 			Driver.clearDepthStencilView(currentDepth.depthView, depth, stencil);
+		}
 	}
 
 	override function getDriverName(details:Bool) {
@@ -371,7 +384,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	override function disposeDepthBuffer(b:h3d.mat.Texture) @:privateAccess {
-		var d = b.t;
+		final d:DX11Texture = b.t;
 		b.t = null;
 		d.depthView.release();
 		d.readOnlyDepthView.release();
@@ -484,7 +497,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	override function disposeTexture( t : h3d.mat.Texture ) {
-		var tt = t.t;
+		var tt:DX11Texture = t.t;
 		if( tt == null ) return;
 		t.t = null;
 		if( tt.view != null ) tt.view.release();
@@ -500,12 +513,13 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	override function disposeBuffer(b:Buffer) {
-		b.vbuf.release();
+		(cast b.vbuf : dx.Resource).release();
 	}
 
 	override function generateMipMaps(texture:h3d.mat.Texture) {
 		if( hasDeviceError ) return;
-		Driver.generateMips(texture.t.view);
+		final t:DX11Texture = texture.t;
+		Driver.generateMips(t.view);
 	}
 
 	function updateBuffer( res : dx.Resource, bytes : hl.Bytes, startByte : Int, bytesCount : Int ) {
@@ -522,7 +536,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	override function uploadIndexData(i:Buffer, startIndice:Int, indiceCount:Int, buf:hxd.IndexBuffer, bufPos:Int) {
 		if( hasDeviceError ) return;
 		var bits = i.format.strideBytes >> 1;
-		updateBuffer(i.vbuf, hl.Bytes.getArray(buf.getNative()).offset(bufPos << bits), startIndice << bits, indiceCount << bits);
+		updateBuffer((cast i.vbuf : dx.Resource), hl.Bytes.getArray(buf.getNative()).offset(bufPos << bits), startIndice << bits, indiceCount << bits);
 	}
 
 	override function uploadBufferData(b:Buffer, startVertex:Int, vertexCount:Int, buf:hxd.FloatBuffer, bufPos:Int) {
@@ -530,26 +544,28 @@ class DirectXDriver extends h3d.impl.Driver {
 		var data = hl.Bytes.getArray(buf.getNative()).offset(bufPos<<2);
 		if( b.flags.has(UniformBuffer) ) {
 			if( startVertex != 0 ) throw "assert";
-			var ptr = b.vbuf.map(0, WriteDiscard, true, null);
+			final vbuf:dx.Resource = b.vbuf;
+			var ptr = vbuf.map(0, WriteDiscard, true, null);
 			if( ptr == null ) throw "Can't map buffer";
 			ptr.blit(0, data, 0, vertexCount * b.format.strideBytes);
-			b.vbuf.unmap(0);
+			vbuf.unmap(0);
 			return;
 		}
-		updateBuffer(b.vbuf, data, startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+		updateBuffer((cast b.vbuf : dx.Resource), data, startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
 	}
 
 	override function uploadBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
 		if( hasDeviceError ) return;
 		if( b.flags.has(UniformBuffer) ) {
 			if( startVertex != 0 ) throw "assert";
-			var ptr = b.vbuf.map(0, WriteDiscard, true, null);
+			final vbuf:dx.Resource = b.vbuf;
+			var ptr = vbuf.map(0, WriteDiscard, true, null);
 			if( ptr == null ) throw "Can't map buffer";
 			ptr.blit(0, buf, 0, vertexCount * b.format.strideBytes);
-			b.vbuf.unmap(0);
+			vbuf.unmap(0);
 			return;
 		}
-		updateBuffer(b.vbuf, @:privateAccess buf.b.offset(bufPos), startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+		updateBuffer((cast b.vbuf : dx.Resource), @:privateAccess buf.b.offset(bufPos), startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
 	}
 
 	override function readBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
@@ -610,6 +626,7 @@ class DirectXDriver extends h3d.impl.Driver {
 		if( tmp == null )
 			throw "Capture failed: can't create tmp texture";
 
+		final texture:DX11Texture = tex.t;
 		if (x != 0 || y != 0) {
 			box.left = x;
 			box.right = x + desc.width;
@@ -617,9 +634,9 @@ class DirectXDriver extends h3d.impl.Driver {
 			box.bottom = y + desc.height;
 			box.back = 1;
 			box.front = 0;
-			tmp.copySubresourceRegion(0,0,0,0,tex.t.res,tex.mipLevels * layer + mipLevel, box);
+			tmp.copySubresourceRegion(0,0,0,0,texture.res,tex.mipLevels * layer + mipLevel, box);
 		} else {
-			tmp.copySubresourceRegion(0,0,0,0,tex.t.res,tex.mipLevels * layer + mipLevel, null);
+			tmp.copySubresourceRegion(0,0,0,0,texture.res,tex.mipLevels * layer + mipLevel, null);
 		}
 
 		var pitch = 0;
@@ -656,7 +673,8 @@ class DirectXDriver extends h3d.impl.Driver {
 		case S3TC(n): stride = pixels.width * ((n == 1 || n == 4) ? 2 : 4); // "uncompressed" stride ?
 		default:
 		}
-		t.t.res.updateSubresource(mipLevel + side * mipLevels, null, (pixels.bytes:hl.Bytes).offset(pixels.offset), stride, 0);
+		final texture:DX11Texture = t.t;
+		texture.res.updateSubresource(mipLevel + side * mipLevels, null, (pixels.bytes:hl.Bytes).offset(pixels.offset), stride, 0);
 		updateResCount++;
 		t.flags.set(WasCleared);
 	}
@@ -939,7 +957,9 @@ class DirectXDriver extends h3d.impl.Driver {
 			if( from.t == null ) throw "assert";
 			if( to.t == null ) return false;
 		}
-		to.t.res.copyResource(from.t.res);
+		final toTexture:DX11Texture = to.t;
+		final fromTexture:DX11Texture = from.t;
+		toTexture.res.copyResource(fromTexture.res);
 		to.flags.set(WasCleared);
 		return true;
 	}
@@ -952,6 +972,7 @@ class DirectXDriver extends h3d.impl.Driver {
 			currentTargets[0] = defaultTarget;
 			currentTargetResources[0] = null;
 			targetsCount = 1;
+			final currentDepth:DX11Texture = currentDepth;
 			var depthView = switch (depthBinding) {
 			case NotBound:
 				null;
@@ -1006,23 +1027,24 @@ class DirectXDriver extends h3d.impl.Driver {
 				tex.alloc();
 				if( hasDeviceError ) return;
 			}
-			if( tex.t.rt == null )
+			final target:DX11Texture = tex.t;
+			if( target.rt == null )
 				throw "Can't render to texture which is not allocated with Target flag";
 			var index = mipLevel * tex.layerCount + layer;
-			var rt = tex.t.rt[index];
+			var rt = target.rt[index];
 			if( rt == null ) {
 				var arr = tex.flags.has(Cube) || tex.flags.has(IsArray);
 				var v = new dx.Driver.RenderTargetDesc(getTextureFormat(tex), arr ? Texture2DArray : Texture2D);
 				v.mipMap = mipLevel;
 				v.firstSlice = layer;
 				v.sliceCount = 1;
-				rt = Driver.createRenderTargetView(tex.t.res, v);
-				tex.t.rt[index] = rt;
+				rt = Driver.createRenderTargetView(target.res, v);
+				target.rt[index] = rt;
 			}
 			tex.lastFrame = frame;
 			currentTargets[i] = rt;
-			currentTargetResources[i] = tex.t.view;
-			unbind(tex.t.view);
+			currentTargetResources[i] = target.view;
+			unbind(target.view);
 			// prevent garbage
 			if( !tex.flags.has(WasCleared) ) {
 				tex.flags.set(WasCleared);
@@ -1032,6 +1054,7 @@ class DirectXDriver extends h3d.impl.Driver {
 		var depthView = if ( currentDepth == null )
 			null;
 		else {
+			final currentDepth:DX11Texture = currentDepth;
 			switch ( depthBinding ) {
 			case NotBound:
 				null;
@@ -1057,6 +1080,7 @@ class DirectXDriver extends h3d.impl.Driver {
 			return;
 		currentDepth = @:privateAccess (depthBuffer == null ? null : depthBuffer.t);
 		depthBuffer.lastFrame = frame;
+		final currentDepth:DX11Texture = currentDepth;
 		unbind(currentDepth.view);
 		Driver.omSetRenderTargets(0, null, currentDepth.depthView);
 		targetsCount = 0;
@@ -1336,16 +1360,17 @@ class DirectXDriver extends h3d.impl.Driver {
 				}
 				t.lastFrame = frame;
 
-				var view = t.t.view;
+				final texture:DX11Texture = t.t;
+				var view = texture.view;
 				if( t.startingMip > 0 ) {
-					if( t.t.views == null ) t.t.views = [];
-					view = t.t.views[t.startingMip];
+					if( texture.views == null ) texture.views = [];
+					view = texture.views[t.startingMip];
 					if( view == null ) {
-						view = makeTexView(t, t.t.res, t.startingMip);
-						t.t.views[t.startingMip] = view;
+						view = makeTexView(t, texture.res, t.startingMip);
+						texture.views[t.startingMip] = view;
 					}
 				}
-				if( view != state.resources[i] || t.t.depthView != null ) {
+				if( view != state.resources[i] || texture.depthView != null ) {
 					state.resources[i] = view;
 					max = i;
 					if( start < 0 ) start = i;

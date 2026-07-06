@@ -1,10 +1,13 @@
 package h3d.impl;
 
-#if (hlsdl && vulkan)
+#if (hlsdl && (gfx_vulkan || vulkan))
 import h3d.impl.Driver;
 import sdl.Vulkan;
 
-class CompiledShaderData {
+private typedef VulkanIndexBuffer = { buf : VkBuffer, mem : VkDeviceMemory, stride : Int };
+private typedef VulkanVertexBuffer = { buf : VkBuffer, mem : VkDeviceMemory, stride : Int };
+
+class VulkanVulkanCompiledShaderData {
 	public var vertex : Bool;
 	public var module : VkShaderModule;
 	public var stageFlags : haxe.EnumFlags<VkShaderStageFlag>;
@@ -14,10 +17,10 @@ class CompiledShaderData {
 	}
 }
 
-class CompiledShader {
+class VulkanCompiledShader {
 	public var shader : hxsl.RuntimeShader;
-	public var vertex : CompiledShaderData;
-	public var fragment : CompiledShaderData;
+	public var vertex : VulkanVulkanCompiledShaderData;
+	public var fragment : VulkanVulkanCompiledShaderData;
 	public var stages : ArrayStruct<VkPipelineShaderStage>;
 	public var input : VkPipelineVertexInput;
 	public var format : hxd.BufferFormat;
@@ -55,8 +58,8 @@ class VulkanOutImage {
 class VulkanDriver extends Driver {
 
 	var ctx : VkContext;
-	var currentShader : CompiledShader;
-	var programs : Map<Int,CompiledShader> = new Map();
+	var currentShader : VulkanCompiledShader;
+	var programs : Map<Int,VulkanCompiledShader> = new Map();
 	var command : VkCommandBuffer;
 	var commandPool : VkCommandPool;
 	var samplerPool : VkDescriptorPool;
@@ -494,7 +497,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		var bytes = sdl.Vulkan.compileShader(source, "", "main", shader.kind == Vertex ? Vertex : Fragment);
 		var mod = ctx.createShaderModule(bytes, bytes.length);
 		if( mod == null ) throw "assert";
-		var sh = new CompiledShaderData();
+		var sh = new VulkanVulkanCompiledShaderData();
 		sh.vertex = shader.kind == Vertex;
 		sh.module = mod;
 		sh.stageFlags = new haxe.EnumFlags<VkShaderStageFlag>();
@@ -516,7 +519,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	function compileShader( shader : hxsl.RuntimeShader ) {
-		var c = new CompiledShader(shader);
+		var c = new VulkanCompiledShader(shader);
 		c.vertex = compile(shader.vertex, 0);
 		c.fragment = compile(shader.fragment, shader.vertex.globalsSize + shader.vertex.paramsSize);
 		inline function makeStage(module,t) {
@@ -888,7 +891,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	override function selectBuffer( v : h3d.Buffer ) {
-		command.bindVertexBuffer(0, @:privateAccess v.vbuf.buf, 0);
+		final vbuf:VulkanVertexBuffer = @:privateAccess v.vbuf;
+		command.bindVertexBuffer(0, vbuf.buf, 0);
 	}
 
 	override function selectMultiBuffers( format : hxd.BufferFormat.MultiFormat, buffers : Array<h3d.Buffer> ) {
@@ -896,13 +900,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		var map = format.resolveMapping(currentShader.format);
 		for( inf in map ) {
 			var b = buffers[inf.bufferIndex];
-			arr.push(@:privateAccess b.vbuf.buf);
+			final vbuf:VulkanVertexBuffer = @:privateAccess b.vbuf;
+			arr.push(vbuf.buf);
 			offsets.push(new VkDeviceSize(inf.offset));
 		}
 		var count = arr.length;
-		var arr = makeArray(arr, false);
-		var offsets = makeArray(offsets, false);
-		command.bindVertexBuffers(0, count, arr, offsets);
+		var nativeBuffers = makeArray(arr, false);
+		var nativeOffsets = makeArray(offsets, false);
+		command.bindVertexBuffers(0, count, nativeBuffers, nativeOffsets);
 	}
 
 	override function allocBuffer( b : h3d.Buffer ) : GPUBuffer {
@@ -913,8 +918,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	override function disposeBuffer( b : h3d.Buffer ) {
 		if( b.vbuf == null )
 			return;
-		ctx.destroyBuffer(b.vbuf.buf);
-		ctx.freeMemory(b.vbuf.mem);
+		final vbuf:VulkanVertexBuffer = b.vbuf;
+		ctx.destroyBuffer(vbuf.buf);
+		ctx.freeMemory(vbuf.mem);
 	}
 
 	function updateBuffer( mem : VkDeviceMemory, bytes : hl.Bytes, offset : Int, size : Int ) {
@@ -925,18 +931,18 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	override function uploadIndexData( i : h3d.Buffer, startIndice : Int, indiceCount : Int, buf : hxd.IndexBuffer, bufPos : Int ) {
-		var ibuf = @:privateAccess i.vbuf;
-		updateBuffer(ibuf.mem, hl.Bytes.getArray(buf.getNative()).offset(bufPos * ibuf.stride), startIndice * ibuf.stride, indiceCount * ibuf.stride);
+		var ibuf:VulkanIndexBuffer = @:privateAccess i.vbuf;
+		updateBuffer(ibuf.mem, hl.Bytes.getArray(buf.getNative()).offset(Std.int(bufPos * ibuf.stride)), Std.int(startIndice * ibuf.stride), Std.int(indiceCount * ibuf.stride));
 	}
 
 	override function uploadBufferData( v : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
-		var vbuf = @:privateAccess v.vbuf;
-		updateBuffer(vbuf.mem, hl.Bytes.getArray(buf.getNative()).offset(bufPos<<2), startVertex * vbuf.stride, vertexCount * vbuf.stride);
+		var vbuf:VulkanVertexBuffer = @:privateAccess v.vbuf;
+		updateBuffer(vbuf.mem, hl.Bytes.getArray(buf.getNative()).offset(bufPos<<2), Std.int(startVertex * vbuf.stride), Std.int(vertexCount * vbuf.stride));
 	}
 
 	override function uploadBufferBytes( v : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
-		var vbuf = @:privateAccess v.vbuf;
-		updateBuffer(vbuf.mem, @:privateAccess buf.b.offset(bufPos), startVertex * vbuf.stride, vertexCount * vbuf.stride);
+		var vbuf:VulkanVertexBuffer = @:privateAccess v.vbuf;
+		updateBuffer(vbuf.mem, @:privateAccess buf.b.offset(bufPos), Std.int(startVertex * vbuf.stride), Std.int(vertexCount * vbuf.stride));
 	}
 
 	override function selectMaterial( pass : h3d.mat.Pass ) {
@@ -1016,7 +1022,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		uploadBuffer(buf, currentShader.fragment, buf.fragment, which);
 	}
 
-	function uploadBuffer( buffer : h3d.shader.Buffers, s : CompiledShaderData, buf : h3d.shader.Buffers.ShaderBuffers, which : h3d.shader.Buffers.BufferKind ) {
+	function uploadBuffer( buffer : h3d.shader.Buffers, s : VulkanVulkanCompiledShaderData, buf : h3d.shader.Buffers.ShaderBuffers, which : h3d.shader.Buffers.BufferKind ) {
 		switch( which ) {
 		case Globals:
 			if( buf.globals.length > 0 ) {

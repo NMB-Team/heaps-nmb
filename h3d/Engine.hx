@@ -1,5 +1,7 @@
 package h3d;
 import h3d.mat.Data;
+import hxd.GraphicsDriverConfig;
+import hxd.GraphicsDriverApi;
 
 #if (dx11 && dx12)
 #error "Do not compile with both -D dx11 and -D dx12"
@@ -92,28 +94,70 @@ class Engine {
 		lastTime = haxe.Timer.stamp();
 		window.addResizeEvent(onWindowResize);
 		setCurrent();
+		driver = createDriver();
+	}
+
+	function createDriver():h3d.impl.Driver {
 		#if macro
-		driver = new h3d.impl.NullDriver();
-		#elseif (hlsdl && dx12)
-		driver = new h3d.impl.DX12Driver();
-		#elseif (hlsdl && dx11)
-		driver = new h3d.impl.DirectXDriver();
-		#elseif (hlsdl && vulkan)
-		driver = new h3d.impl.VulkanDriver();
-		#elseif (js || hlsdl || usegl)
+		return new h3d.impl.NullDriver();
+		#elseif hlsdl
+		return switch (GraphicsDriverConfig.getCurrentOrDefault()) {
+			case GraphicsDriverApi.Dx12:
+				#if (gfx_dx12 || dx12)
+				new h3d.impl.DX12Driver();
+				#else
+				createFallbackDriver();
+				#end
+			case GraphicsDriverApi.Dx11:
+				#if (gfx_dx11 || dx11)
+				new h3d.impl.DirectXDriver();
+				#else
+				createFallbackDriver();
+				#end
+			case GraphicsDriverApi.Vulkan:
+				#if (gfx_vulkan || vulkan)
+				new h3d.impl.VulkanDriver();
+				#else
+				createFallbackDriver();
+				#end
+			case GraphicsDriverApi.OpenGL | GraphicsDriverApi.Auto:
+				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !dx11 && !dx12 && !vulkan))
+				new h3d.impl.GlDriver(antiAlias);
+				#else
+				createFallbackDriver();
+				#end
+		}
+		#elseif (js || usegl)
 		#if js
-		driver = js.Browser.supported ? new h3d.impl.GlDriver(antiAlias) : new h3d.impl.NullDriver();
+		return js.Browser.supported ? new h3d.impl.GlDriver(antiAlias) : new h3d.impl.NullDriver();
 		#else
-		driver = new h3d.impl.GlDriver(antiAlias);
+		return new h3d.impl.GlDriver(antiAlias);
 		#end
 		#elseif (hldx && dx12)
-		driver = new h3d.impl.DX12Driver();
+		return new h3d.impl.DX12Driver();
 		#elseif hldx
-		driver = new h3d.impl.DirectXDriver();
+		return new h3d.impl.DirectXDriver();
 		#elseif usesys
-		driver = new haxe.GraphicsDriver(antiAlias);
+		return new haxe.GraphicsDriver(antiAlias);
 		#else
 		#if sys Sys.println #else trace #end("No output driver available." #if hl + " Compile with -lib hlsdl or -lib hldx" #end);
+		return new h3d.impl.NullDriver();
+		#end
+	}
+
+	function createFallbackDriver():h3d.impl.Driver {
+		#if macro
+		return new h3d.impl.NullDriver();
+		#elseif (hlsdl && (gfx_dx11 || dx11))
+		return new h3d.impl.DirectXDriver();
+		#elseif (hlsdl && (gfx_dx12 || dx12))
+		return new h3d.impl.DX12Driver();
+		#elseif (hlsdl && (gfx_vulkan || vulkan))
+		return new h3d.impl.VulkanDriver();
+		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !dx11 && !dx12 && !vulkan)))
+		return new h3d.impl.GlDriver(antiAlias);
+		#else
+		return new h3d.impl.NullDriver();
 		#end
 	}
 
