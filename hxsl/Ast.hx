@@ -345,6 +345,11 @@ enum TGlobal {
 	TexelLod;
 	ResolveSampler;
 	ResolveBuffer;
+	FindLSB;
+	FindMSB;
+	AtomicAnd;
+	AtomicOr;
+	BitCount;
 }
 
 enum SyntaxArgAccess {
@@ -590,7 +595,7 @@ class Tools {
 			return true;
 		case TCall(e, pl):
 			switch( e.e ) {
-			case TGlobal( ImageStore | AtomicAdd | GroupMemoryBarrier | ResolveSampler | ResolveBuffer ):
+			case TGlobal( ImageStore | AtomicAdd | AtomicAnd | AtomicOr | GroupMemoryBarrier | ResolveSampler | ResolveBuffer ):
 				return true;
 			case TGlobal(g):
 			default:
