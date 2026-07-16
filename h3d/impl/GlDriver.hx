@@ -4,7 +4,7 @@ import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
+#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl && !gfx_angle))
 
 #if js
 import hxd.impl.TypedArray;
@@ -135,6 +135,9 @@ class GlDriver extends Driver {
 
 	var drawMode : Int;
 	var isIntelGpu : Bool;
+	#if hlsdl
+	var capabilities:sdl.GLCapabilities;
+	#end
 
 	static var BLACK = new h3d.Vector4(0,0,0,0);
 
@@ -146,7 +149,7 @@ class GlDriver extends Driver {
 
 	public function new(antiAlias=0) {
 		#if (hlsdl >= version("1.15.0"))
-		if ( computeEnabled )
+		if ( computeEnabled && !hxd.GraphicsDriverConfig.usesAngle() )
 			sdl.Sdl.setGLVersion(4, 3);
 		#end
 
@@ -173,15 +176,18 @@ class GlDriver extends Driver {
 		frame = hxd.Timer.frameCount;
 
 		#if hlsdl
-		hasMultiIndirect = gl.getConfigParameter(0) > 0;
-		maxCompressedTexturesSupport = 7;
-		hasRGTCSupport = true;
+		capabilities = gl.getCapabilities();
+		hasMultiIndirect = capabilities.indirectDraw;
+		hasMultiIndirectCount = capabilities.indirectCount;
+		hasRGTCSupport = capabilities.rgtc;
+		if (capabilities.isGLES) {
+			maxCompressedTexturesSupport = gl.hasExtension("GL_EXT_texture_compression_s3tc") ? 3 : 0;
+			if (gl.hasExtension("GL_EXT_texture_compression_bptc"))
+				maxCompressedTexturesSupport = 7;
+		} else
+			maxCompressedTexturesSupport = 7;
 		var driver = getDriverName(false).toLowerCase();
 		isIntelGpu = ~/intel.*(graphics|gpu)/.match(driver);
-		#end
-
-		#if (hlsdl >= version("1.15.0"))
-		hasMultiIndirectCount = gl.hasExtension("GL_ARB_indirect_parameters");
 		#end
 
 		#if hlmesa
@@ -196,10 +202,8 @@ class GlDriver extends Driver {
 			glES = Std.parseFloat(reg.matched(1));
 
 		#if !js
-		if( glES == null ) {
-			commonVA = gl.createVertexArray();
-			gl.bindVertexArray( commonVA );
-		}
+		commonVA = gl.createVertexArray();
+		gl.bindVertexArray( commonVA );
 		#end
 
 		var reg = ~/[0-9]+\.[0-9]+/;
@@ -212,8 +216,12 @@ class GlDriver extends Driver {
 		}
 
 		#if (hlsdl >= version("1.15.0"))
-		if ( computeEnabled )
+		if ( computeEnabled && !capabilities.isANGLE )
 			shaderVersion = 430;
+		#end
+		#if hlsdl
+		if (capabilities.isANGLE)
+			shaderVersion = 300;
 		#end
 
 		drawMode = GL.TRIANGLES;
@@ -232,7 +240,12 @@ class GlDriver extends Driver {
 		// setup shader optim
 		hxsl.SharedShader.UNROLL_LOOPS = !hasFeature(ShaderModel3);
 		#else
+		#if hlsdl
+		if (capabilities.textureCubeMapSeamless)
+			gl.enable(GL.TEXTURE_CUBE_MAP_SEAMLESS);
+		#else
 		gl.enable(GL.TEXTURE_CUBE_MAP_SEAMLESS);
+		#end
 		gl.finish(); // prevent glError() on first bufferData
 		#end
 		gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
@@ -243,6 +256,8 @@ class GlDriver extends Driver {
 	static var computeEnabled : Bool = false;
 	public static function enableComputeShaders() {
 		#if (hlsdl >= version("1.15.0"))
+		if (hxd.GraphicsDriverConfig.usesAngle())
+			throw "Compute shaders are not enabled for the ANGLE GLES backend.";
 		computeEnabled = true;
 		#else
 		throw "enableComputeShaders() requires hlsdl 1.15+";
@@ -299,9 +314,13 @@ class GlDriver extends Driver {
 
 	override public function getDriverName(details:Bool) {
 		var render = gl.getParameter(GL.RENDERER);
-		if( details )
+		if( details ) {
 			render = getRendererName() + " " + render + " GLv" + gl.getParameter(GL.VERSION);
-		else
+			#if hlsdl
+			if (capabilities.isANGLE)
+				render += " GLSL " + gl.getParameter(GL.SHADING_LANGUAGE_VERSION) + " ANGLE " + sdl.Angle.getRevision();
+			#end
+		} else
 			render = render.split("/").shift(); // GeForce reports "/PCIe/SSE2" extension
 		#if js
 		render = render.split("WebGL ").join("");
@@ -310,6 +329,15 @@ class GlDriver extends Driver {
 	}
 
 	override public function getRendererName() {
+		#if hlsdl
+		if (capabilities != null && capabilities.isANGLE)
+			return switch (sdl.Angle.getActiveBackend()) {
+				case Vulkan: "ANGLE Vulkan";
+				case Metal: "ANGLE Metal";
+				case Auto: "ANGLE";
+				default: "ANGLE";
+			};
+		#end
 		return "OpenGL";
 	}
 
@@ -1949,6 +1977,13 @@ class GlDriver extends Driver {
 
 	override function setDepthClamp( enabled : Bool ) {
 		#if !js
+		#if hlsdl
+		if (capabilities.isGLES) {
+			if (enabled)
+				throw "Depth clamp is unavailable under GLES.";
+			return;
+		}
+		#end
 		useDepthClamp = enabled;
 		if ( useDepthClamp )
 			gl.enable(GL.DEPTH_CLAMP);
@@ -1991,6 +2026,16 @@ class GlDriver extends Driver {
 			false;
 		case DLSS:
 			false;
+		#if hlsdl
+		case Wireframe:
+			capabilities.polygonMode;
+		case MultipleRenderTargets:
+			capabilities.drawBuffers;
+		case Queries:
+			capabilities.queries;
+		case FloatTextures if (capabilities.isGLES):
+			gl.hasExtension("GL_EXT_color_buffer_float") || gl.hasExtension("GL_EXT_color_buffer_half_float");
+		#end
 		default:
 			#if js
 			features.get(f);

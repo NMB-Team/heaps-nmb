@@ -46,6 +46,7 @@ HashLink SDL builds use `-lib hlsdl`. Enable the graphics backends that should b
 -D gfx_dx12
 -D gfx_vulkan
 -D gfx_opengl
+-D gfx_angle
 ```
 
 Only compiled backends can be selected at runtime. A full Windows SDL build can include all of them:
@@ -56,6 +57,7 @@ Only compiled backends can be selected at runtime. A full Windows SDL build can 
 -D gfx_dx12
 -D gfx_vulkan
 -D gfx_opengl
+-D gfx_angle
 ```
 
 To choose the default backend for `hxd.GraphicsDriverConfig`, add one default define:
@@ -65,15 +67,30 @@ To choose the default backend for `hxd.GraphicsDriverConfig`, add one default de
 -D default_gfx_dx12
 -D default_gfx_vulkan
 -D default_gfx_opengl
+-D default_gfx_angle
 ```
 
 If no `default_gfx_*` define is set, the default order is:
 
 ```text
-gfx_dx12 -> gfx_dx11 -> gfx_vulkan -> OpenGL
+Windows: gfx_dx12 -> gfx_dx11 -> gfx_vulkan -> gfx_angle -> OpenGL
+Linux: gfx_vulkan -> gfx_angle -> OpenGL
+macOS: gfx_angle -> OpenGL
 ```
 
 OpenGL is used when no explicit backend define is provided, or when `gfx_opengl` is the selected/default backend.
+
+The GL-backed defines select different context providers:
+
+```text
+gfx_opengl -> GlDriver using system desktop OpenGL
+gfx_angle  -> GlDriver using OpenGL ES through ANGLE
+gfx_vulkan -> native VulkanDriver
+```
+
+ANGLE maps to Vulkan on Windows and Linux, and Metal on macOS. It does not replace the native DX11, DX12, Vulkan, or system OpenGL backends.
+
+Games can implement their own runtime selection by parsing their preferred configuration or command-line arguments and calling `hxd.GraphicsDriverConfig.setCurrent()` before creating `hxd.App`.
 
 Pure HashLink DirectX builds can still use `-lib hldx`. Use `-D gfx_dx12` for DX12; without it, `hldx` uses DX11.
 

@@ -8,7 +8,7 @@ typedef Query = {};
 typedef GPUBuffer = js.html.webgl.Buffer;
 typedef Texture = { t : js.html.webgl.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 typedef Query = {};
-#elseif (hlsdl && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))
+#elseif (hlsdl && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl || gfx_angle)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl || gfx_angle)) || (gfx_vulkan && (gfx_opengl || gfx_angle))))
 typedef GPUBuffer = Dynamic;
 typedef Texture = Dynamic;
 typedef Query = Dynamic;

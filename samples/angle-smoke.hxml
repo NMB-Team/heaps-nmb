@@ -1,0 +1,6 @@
+-lib heaps
+-lib hlsdl
+-main AngleSmoke
+-hl angle-smoke.hl
+-D gfx_angle
+-D default_gfx_angle
