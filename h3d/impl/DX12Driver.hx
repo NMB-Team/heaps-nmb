@@ -71,11 +71,13 @@ class BufferMemType extends MemoryType {
 	var heapType : HeapType;
 	var startState : ResourceState;
 	var uav : Bool;
+	var resourceName : String;
 
-	public function new( heapType, startState, uav = false ) {
+	public function new( heapType, startState, uav = false, resourceName = "BufferAllocator" ) {
 		this.heapType = heapType;
 		this.startState = startState;
 		this.uav = uav;
+		this.resourceName = resourceName;
 		alignment = 256;
 	}
 
@@ -97,6 +99,7 @@ class BufferMemType extends MemoryType {
 
 		var res = Dx12.createCommittedResource(heap, flags, desc, startState, null);
 		if( res == null ) return null;
+		res.setName(resourceName+"Page");
 		var cpuAddress = res.map(0, null);
 		return new MemoryPage(cpuAddress, res.getGpuVirtualAddress(), size, res);
 	}
@@ -776,7 +779,7 @@ class DX12Driver extends h3d.impl.Driver {
 		var policy = new ScalePolicy(INITIAL_BUFFER_ALLOCATOR_SIZE, 2);
 		policy.garbageMem = function() Engine.getCurrent().mem.tryFreeMemory();
 
-		uploadBufferAlloc = new FreeListAllocator(new BufferMemType(UPLOAD,GENERIC_READ,false),policy);
+		uploadBufferAlloc = new FreeListAllocator(new BufferMemType(UPLOAD, GENERIC_READ, false, "UploadBuffer"), policy);
 		uploadBufferAlloc.name = "UploadBuffer";
 
 		for(i in 0...BUFFER_COUNT) {
@@ -790,7 +793,7 @@ class DX12Driver extends h3d.impl.Driver {
 			f.copyCommandList.close();
 			f.srvHeapCache = new ScratchHeapArray(CBV_SRV_UAV, INITIAL_SRV_COUNT + INITIAL_BINDLESS_SRV_COUNT);
 			f.samplerHeapCache = new ScratchHeapArray(SAMPLER, INITIAL_SAMPLER_COUNT + INITIAL_BINDLESS_SAMPLER_COUNT);
-			f.dynamicBufferAlloc = new BlockAllocator(uploadBufferAlloc.mem, policy);
+			f.dynamicBufferAlloc = new BlockAllocator(new BufferMemType(UPLOAD, GENERIC_READ, false, "DynamicBuffer#"+i), policy);
 			f.dynamicBufferAlloc.name = "DynamicBuffer#"+i;
 			frames.push(f);
 		}
@@ -868,6 +871,7 @@ class DX12Driver extends h3d.impl.Driver {
 		desc.format = R8G8B8A8_UNORM;
 		tmp.heap.type = DEFAULT;
 		errorTexture.res = Driver.createCommittedResource(tmp.heap, flags, desc, COMMON, null);
+		errorTexture.res.setName("errorTex");
 		errorTex.preventAutoDispose();
 
 		bindlessSrvHeap = new BlockHeap(CBV_SRV_UAV, INITIAL_BINDLESS_SRV_COUNT, false);
@@ -1071,6 +1075,7 @@ class DX12Driver extends h3d.impl.Driver {
 		tmp.clearValue.depth = DEFAULT_DEPTH_VALUE;
 		@:privateAccess tmp.clearValue.color.g = 0.;
 		depthTexture.res = Driver.createCommittedResource(tmp.heap, flags, desc, DEPTH_WRITE, tmp.clearValue);
+		depthTexture.res.setName("defaultDepth");
 
 		beginFrame();
 	}
@@ -1483,6 +1488,7 @@ class DX12Driver extends h3d.impl.Driver {
 		Driver.getCopyableFootprints(srcDesc, src.subResourceIndex, 1, 0, dst.placedFootprint, null, null, totalSize);
 
 		var tmpBuf = allocGPU(totalSize[0].low, READBACK, COPY_DEST);
+		@:privateAccess tmpBuf.setName("Readback_" + (tex.name ?? 'Texture#${tex.id}'));
 
 		var box = new Box();
 		box.left = x;
@@ -2008,6 +2014,7 @@ class DX12Driver extends h3d.impl.Driver {
 		buf.res = allocGPU(bufSize, DEFAULT, COMMON,  m.flags.has(ReadWriteBuffer));
 		if( buf.res == null )
 			return null;
+		@:privateAccess buf.res.setName('Buffer#${m.id}');
 		if( m.flags.has(UniformBuffer) ) {
 			// no view
 		} else if( m.flags.has(IndexBuffer) ) {
@@ -2032,6 +2039,7 @@ class DX12Driver extends h3d.impl.Driver {
 		var buf = new BufferData();
 		buf.state = buf.targetState = COPY_DEST;
 		buf.res = allocGPU(dataSize, DEFAULT, COMMON);
+		buf.res.setName("InstanceBuffer");
 		var alloc = allocDynamicBuffer(bytes, dataSize);
 		frame.commandList.copyBufferRegion(buf.res, 0, getRes(alloc), alloc.offset, dataSize);
 		b.data = buf;
@@ -2095,6 +2103,7 @@ class DX12Driver extends h3d.impl.Driver {
 		var totalSize = vertexCount*stride;
 
 		var tmpBuf = allocGPU(totalSize, READBACK, COPY_DEST);
+		tmpBuf.setName("ReadbackBuffer");
 
 		final vbuf:BufferData = b.vbuf;
 		transition(vbuf, COPY_SOURCE);
@@ -2140,6 +2149,7 @@ class DX12Driver extends h3d.impl.Driver {
 						if ( (asyncReadbackBuffer == null || asyncReadbackBufferSize < totalBatchSize) && totalBatchSize > 0 ) {
 							asyncReadbackBuffer?.release();
 							asyncReadbackBuffer = allocGPU(totalBatchSize, READBACK, COPY_DEST);
+							asyncReadbackBuffer.setName("AsyncReadbackBuffer");
 							asyncReadbackBufferSize = totalBatchSize;
 						}
 
@@ -3276,8 +3286,10 @@ class DX12Driver extends h3d.impl.Driver {
 			frame.queryCurrentHeap++;
 		if( frame.queryCurrentHeap == 0 )
 			return;
-		if( frame.queryBuffer == null )
+		if( frame.queryBuffer == null ) {
 			frame.queryBuffer = allocGPU(frame.queryHeaps.length * QUERY_COUNT * 8, READBACK, COPY_DEST);
+			frame.queryBuffer.setName("QueryBuffer");
+		}
 		var position = 0;
 		for( i in 0...frame.queryCurrentHeap ) {
 			var count = i < frame.queryCurrentHeap - 1 ? QUERY_COUNT : frame.queryHeapOffset;

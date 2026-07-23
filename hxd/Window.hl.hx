@@ -72,6 +72,11 @@ class Window {
 	public var visible(default, set) : Bool = true;
 	public static var useRelativeMousePolling = true;
 
+	/**
+		Get the preferred scaling ratio for high dpi displays for this window
+	**/
+	public var displayScale(get, never) : Float;
+
 	public var title(get, set) : String;
 	public var displayMode(get, set) : DisplayMode;
 	#if (hl_ver >= version("1.12.0"))
@@ -998,5 +1003,13 @@ class Window {
 			inst.processRelativeMouseDelta(dx, dy);
 	}
 	#end
+
+	function get_displayScale() {
+		#if (hlsdl >= version("1.16.0") || hldx >= version("1.16.0"))
+		return window.displayScale;
+		#else
+		return 1.0;
+		#end
+	}
 
 }
