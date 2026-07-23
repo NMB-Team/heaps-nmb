@@ -136,7 +136,7 @@ class GlDriver extends Driver {
 	var drawMode : Int;
 	var isIntelGpu : Bool;
 	#if hlsdl
-	var capabilities:sdl.GLCapabilities;
+	var capabilities:sdl.GL.GLCapabilities;
 	#end
 
 	static var BLACK = new h3d.Vector4(0,0,0,0);
