@@ -93,7 +93,7 @@ class Engine {
 		driver = createDriver();
 	}
 
-	private function createDriver():h3d.impl.Driver {
+	function createDriver():h3d.impl.Driver {
 		#if macro
 		return new h3d.impl.NullDriver();
 		#elseif hlsdl
@@ -116,14 +116,8 @@ class Engine {
 				#else
 				createFallbackDriver();
 				#end
-			case GraphicsDriverApi.Angle:
-				#if gfx_angle
-				new h3d.impl.GlDriver(antiAlias);
-				#else
-				throw "ANGLE was explicitly selected, but Heaps was compiled without -D gfx_angle.";
-				#end
 			case GraphicsDriverApi.OpenGL | GraphicsDriverApi.Auto:
-				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !gfx_angle))
+				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))
 				new h3d.impl.GlDriver(antiAlias);
 				#else
 				createFallbackDriver();
@@ -147,33 +141,18 @@ class Engine {
 		#end
 	}
 
-	private function createFallbackDriver():h3d.impl.Driver {
+	function createFallbackDriver():h3d.impl.Driver {
 		#if macro
 		return new h3d.impl.NullDriver();
 		#elseif (hlsdl && gfx_dx11)
-		#if sys
-		Sys.println('Graphics backend ${GraphicsDriverConfig.getCurrentOrDefault()} is unavailable; falling back to Direct3D 11.');
-		#end
 		return new h3d.impl.DirectXDriver();
 		#elseif (hlsdl && gfx_dx12)
-		#if sys
-		Sys.println('Graphics backend ${GraphicsDriverConfig.getCurrentOrDefault()} is unavailable; falling back to Direct3D 12.');
-		#end
 		return new h3d.impl.DX12Driver();
 		#elseif (hlsdl && gfx_vulkan)
-		#if sys
-		Sys.println('Graphics backend ${GraphicsDriverConfig.getCurrentOrDefault()} is unavailable; falling back to Vulkan.');
-		#end
 		return new h3d.impl.VulkanDriver();
-		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan && !gfx_angle)))
-		#if sys
-		Sys.println('Graphics backend ${GraphicsDriverConfig.getCurrentOrDefault()} is unavailable; falling back to OpenGL.');
-		#end
+		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan)))
 		return new h3d.impl.GlDriver(antiAlias);
 		#else
-		#if sys
-		Sys.println('Graphics backend ${GraphicsDriverConfig.getCurrentOrDefault()} is unavailable; no fallback backend was compiled.');
-		#end
 		return new h3d.impl.NullDriver();
 		#end
 	}

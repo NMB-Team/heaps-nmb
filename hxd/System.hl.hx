@@ -194,15 +194,6 @@ class System {
 		#else
 		timeoutTick();
 		#if hlsdl
-		if (hxd.GraphicsDriverConfig.usesAngle()) {
-			#if gfx_angle
-			if (!sdl.Angle.isAvailable())
-				throw "ANGLE was selected, but sdl.hdll was built without ANGLE support.";
-			sdl.Sdl.configureGLProvider(sdl.GLContextProvider.Angle);
-			#else
-			throw "ANGLE was selected, but Heaps was compiled without -D gfx_angle.";
-			#end
-		}
 		sdl.Sdl.init();
 		@:privateAccess Window.initChars();
 		#end

@@ -40,16 +40,3 @@ jobs:
           cd samples
           haxe all.hxml
           cd ..
-      - name: Build graphics backend smoke matrix
-        run: |
-          for backend in dx11 dx12 vulkan opengl angle; do
-            haxe \
-              -cp samples \
-              -lib heaps \
-              -lib hlsdl \
-              -main AngleSmoke \
-              -hl "angle-smoke-$backend.hl" \
-              -D "gfx_$backend" \
-              -D "default_gfx_$backend" \
-              -D hl-ver=1.16.0
-          done

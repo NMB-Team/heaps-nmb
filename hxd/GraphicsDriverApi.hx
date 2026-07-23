@@ -6,5 +6,4 @@ enum abstract GraphicsDriverApi(String) from String to String {
 	final Dx12 = "dx12";
 	final Vulkan = "vulkan";
 	final OpenGL = "opengl";
-	final Angle = "angle";
 }

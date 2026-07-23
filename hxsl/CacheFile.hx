@@ -58,7 +58,6 @@ class CacheFile extends Cache {
 			case hxd.GraphicsDriverApi.Dx12: "dx12";
 			case hxd.GraphicsDriverApi.Dx11: "directx";
 			case hxd.GraphicsDriverApi.Vulkan: "vulkan";
-			case hxd.GraphicsDriverApi.Angle: "angle";
 			case hxd.GraphicsDriverApi.OpenGL | hxd.GraphicsDriverApi.Auto: "gl";
 		}
 		#elseif (hldx && gfx_dx12)
