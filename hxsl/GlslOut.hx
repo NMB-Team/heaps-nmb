@@ -95,6 +95,7 @@ class GlslOut {
 
 	var isES(get,never) : Bool;
 	var isES2(get,never) : Bool;
+	var isLegacy(get,never) : Bool;
 	var uniformBuffer : Int = 0;
 	var outIndex : Int = 0;
 	var inputIndex : Int = 0;
@@ -124,6 +125,7 @@ class GlslOut {
 
 	inline function get_isES() return glES != null;
 	inline function get_isES2() return glES != null && glES <= 2;
+	inline function get_isLegacy() return isES2 || (glES == null && version < 130);
 
 	inline function add( v : Dynamic ) {
 		buf.add(v);
@@ -314,7 +316,7 @@ class GlslOut {
 			}
 		case DFdx, DFdy, Fwidth:
 			if( isVertex ) throw "Can't use "+g+" in vertex shader";
-			if( version < 300 )
+			if( isES && version < 300 )
 				decl("#extension GL_OES_standard_derivatives:enable");
 		case Pack:
 			decl("vec4 pack( float v ) { vec4 color = fract(v * vec4(1, 255, 255.*255., 255.*255.*255.)); return color - color.yzww * vec4(1. / 255., 1. / 255., 1. / 255., 0.); }");
@@ -326,9 +328,9 @@ class GlslOut {
 			decl("vec3 unpackNormal( vec4 v ) { vec2 normalXY = (v.xy - vec2(0.5)) * vec2(2.); return vec3(normalXY, sqrt(1.0 - clamp(dot(normalXY, normalXY), 0.0, 1.0))); }");
 		case Texture:
 			switch( args[0].t ) {
-			case TSampler(T2D,_), TChannel(_) if( isES2 ):
+			case TSampler(T2D,_), TChannel(_) if( isLegacy ):
 				return "texture2D";
-			case TSampler(TCube,_) if( isES2 ):
+			case TSampler(TCube,_) if( isLegacy ):
 				return "textureCube";
 			default:
 			}
@@ -340,6 +342,12 @@ class GlslOut {
 			case TSampler(TCube,_) if( isES2 ):
 				decl("#extension GL_EXT_shader_texture_lod : enable");
 				return "textureCubeLodEXT";
+			case TSampler(T2D,_), TChannel(_) if( isLegacy ):
+				decl("#extension GL_ARB_shader_texture_lod : enable");
+				return "texture2DLod";
+			case TSampler(TCube,_) if( isLegacy ):
+				decl("#extension GL_ARB_shader_texture_lod : enable");
+				return "textureCubeLod";
 			default:
 			}
 		case Texel, TexelLod:
@@ -360,7 +368,7 @@ class GlslOut {
 			default:
 			}
 			return '_texture${sufix}Size';
-		case Mod if( rt == TInt && isES ):
+		case Mod if( rt == TInt && (isES || isLegacy) ):
 			decl("int _imod( int x, int y ) { return int(mod(float(x),float(y))); }");
 			return "_imod";
 		case Mat3 if( args[0].t == TMat3x4 ):
@@ -704,7 +712,7 @@ class GlslOut {
 		if( v.kind == Output ) {
 			if( isVertex )
 				return "gl_Position";
-			if( isES2 ) {
+			if( isLegacy ) {
 				if( outIndexes == null )
 					return "gl_FragColor";
 				return 'gl_FragData[${outIndexes.get(v.id)}]';
@@ -781,15 +789,15 @@ class GlslOut {
 		case Input:
 			if( isVulkan )
 				add('layout(location=${inputIndex++}) ');
-			add( isES2 ? "attribute " : "in ");
+			add( isLegacy ? "attribute " : "in ");
 		case Var:
 			if ( Tools.hasQualifier(v, Flat) )
 				add("flat ");
 			if( isVulkan )
 				add('layout(location=${varyingIndex++}) ');
-			add( isES2 ? "varying " : (isVertex ? "out " : "in "));
+			add( isLegacy ? "varying " : (isVertex ? "out " : "in "));
 		case Output:
-			if( isES2 ) {
+			if( isLegacy ) {
 				outIndexes.set(v.id, outIndex++);
 				return;
 			}

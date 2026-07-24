@@ -139,7 +139,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		if( driver == null ) throw "Failed to initialize DirectX driver";
 
 		var version = Driver.getSupportedVersion();
-		shaderVersion = if( version < 10 ) "3_0" else if( version < 11 ) "4_0" else "5_0";
+		shaderVersion = if( version < 9.3 ) "4_0_level_9_1" else if( version < 10 ) "4_0_level_9_3" else if( version < 10.1 ) "4_0" else if( version < 11 ) "4_1" else "5_0";
 
 		Driver.iaSetPrimitiveTopology(TriangleList);
 		for( i in 0...VIEWPORTS_ELTS )

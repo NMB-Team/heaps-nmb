@@ -99,6 +99,7 @@ class OpenGLDriver extends Driver {
 	var glDebug : Bool;
 	var boundTextures : Array<Texture> = [];
 	var glES : Null<Float>;
+	var glVersion = 0.;
 	var shaderVersion : Null<Int>;
 	var firstShader = true;
 	var rightHanded = false;
@@ -147,10 +148,22 @@ class OpenGLDriver extends Driver {
 		defStencil = new Stencil();
 		frame = hxd.Timer.frameCount;
 
+		var version : String = gl.getParameter(GL.VERSION);
+		var esVersion = ~/ES ([0-9]+\.[0-9]+)/;
+		if( esVersion.match(version) )
+			glES = Std.parseFloat(esVersion.matched(1));
+		else {
+			var desktopVersion = ~/[0-9]+\.[0-9]+/;
+			if( desktopVersion.match(version) )
+				glVersion = Std.parseFloat(desktopVersion.matched(0));
+		}
+
 		#if hlsdl
-		hasMultiIndirect = gl.getConfigParameter(0) > 0;
-		maxCompressedTexturesSupport = 7;
-		hasRGTCSupport = true;
+		hasMultiIndirect = glVersion >= 4.3 || gl.hasExtension("GL_ARB_multi_draw_indirect");
+		maxCompressedTexturesSupport = gl.hasExtension("GL_EXT_texture_compression_s3tc") ? 3 : 0;
+		if( gl.hasExtension("GL_ARB_texture_compression_bptc") )
+			maxCompressedTexturesSupport = 7;
+		hasRGTCSupport = glVersion >= 3 || gl.hasExtension("GL_ARB_texture_compression_rgtc") || gl.hasExtension("GL_EXT_texture_compression_rgtc");
 		var driver = getDriverName(false).toLowerCase();
 		isIntelGpu = ~/intel.*(graphics|gpu)/.match(driver);
 		#end
@@ -165,21 +178,16 @@ class OpenGLDriver extends Driver {
 		hasRGTCSupport = true;
 		#end
 
-		var v : String = gl.getParameter(GL.VERSION);
-		var reg = ~/ES ([0-9]+\.[0-9]+)/;
-		if( reg.match(v) )
-			glES = Std.parseFloat(reg.matched(1));
-
 		#if !js
-		if( glES == null ) {
+		if( glES != null ? glES >= 3 : glVersion >= 3 ) {
 			commonVA = gl.createVertexArray();
 			gl.bindVertexArray( commonVA );
 		}
 		#end
 
 		var reg = ~/[0-9]+\.[0-9]+/;
-		var v : String = gl.getParameter(GL.SHADING_LANGUAGE_VERSION);
-		if( reg.match(v) ) {
+		var shadingLanguageVersion : String = gl.getParameter(GL.SHADING_LANGUAGE_VERSION);
+		if( reg.match(shadingLanguageVersion) ) {
 			#if js
 			glES = Std.parseFloat(reg.matched(0));
 			#end
@@ -207,7 +215,8 @@ class OpenGLDriver extends Driver {
 		// setup shader optim
 		hxsl.SharedShader.UNROLL_LOOPS = !hasFeature(ShaderModel3);
 		#else
-		gl.enable(GL.TEXTURE_CUBE_MAP_SEAMLESS);
+		if( glES == null && glVersion >= 3.2 )
+			gl.enable(GL.TEXTURE_CUBE_MAP_SEAMLESS);
 		gl.finish(); // prevent glError() on first bufferData
 		#end
 		gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
@@ -275,7 +284,7 @@ class OpenGLDriver extends Driver {
 	override public function getDriverName(details:Bool) {
 		var render = gl.getParameter(GL.RENDERER);
 		if( details )
-			render = getRendererName() + " " + render + " GLv" + gl.getParameter(GL.VERSION);
+			render = getRendererName() + " " + render;
 		else
 			render = render.split("/").shift(); // GeForce reports "/PCIe/SSE2" extension
 		#if js
@@ -285,7 +294,12 @@ class OpenGLDriver extends Driver {
 	}
 
 	override public function getRendererName() {
-		return "OpenGL";
+		var version : String = gl.getParameter(GL.VERSION);
+		var versionPattern = ~/[0-9]+\.[0-9]+/;
+		var renderer = version.indexOf("WebGL") >= 0 ? "WebGL" : version.indexOf("ES") >= 0 ? "OpenGL ES" : "OpenGL";
+		return versionPattern.match(version)
+			? renderer + " " + versionPattern.matched(0)
+			: renderer;
 	}
 
 	function compileShader( glout : ShaderCompiler, shader : hxsl.RuntimeShader.RuntimeShaderData ) {
@@ -460,7 +474,7 @@ class OpenGLDriver extends Driver {
 
 			p.p = gl.createProgram();
 			#if ((hlsdl || usegl) && !hlmesa)
-			if( glES == null && shader.fragment != null ) {
+			if( glES == null && shaderVersion >= 130 && shader.fragment != null ) {
 				var outCount = 0;
 				for( v in shader.fragment.data.vars )
 					switch( v.kind ) {
@@ -1961,18 +1975,40 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function hasFeature( f : Feature ) : Bool {
+		#if js
+		return features.get(f);
+		#else
 		return switch(f) {
-		case Bindless:
-			false;
-		case DLSS:
-			false;
-		default:
-			#if js
-			features.get(f);
-			#else
+		case HardwareAccelerated, AllocDepthBuffer, BottomLeftCoords:
 			true;
-			#end
+		case Wireframe:
+			glES == null;
+		case StandardDerivatives:
+			glES == null || glES >= 3 || gl.hasExtension("GL_OES_standard_derivatives");
+		case FloatTextures:
+			glES != null
+				? glES >= 3 || gl.hasExtension("GL_OES_texture_float")
+				: glVersion >= 3 || gl.hasExtension("GL_ARB_texture_float");
+		case MultipleRenderTargets:
+			glES != null
+				? glES >= 3
+				: glVersion >= 2;
+		case Queries:
+			glES != null ? glES >= 3 : glVersion >= 1.5;
+		case SRGBTextures:
+			glES != null
+				? glES >= 3 || gl.hasExtension("GL_EXT_sRGB")
+				: glVersion >= 2.1 || gl.hasExtension("GL_EXT_texture_sRGB");
+		case ShaderModel3:
+			glES != null ? glES >= 3 : shaderVersion >= 130;
+		case InstancedRendering:
+			glES != null
+				? glES >= 3
+				: glVersion >= 3.3 || gl.hasExtension("GL_ARB_instanced_arrays") && gl.hasExtension("GL_ARB_draw_instanced");
+		case Bindless, DLSS:
+			false;
 		};
+		#end
 	}
 
 	#if js
