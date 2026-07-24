@@ -30,6 +30,12 @@ class BackendSmoke {
 		var blockAllocator : Class<h3d.impl.allocator.BlockAllocator> = h3d.impl.allocator.BlockAllocator;
 		var freeListAllocator : Class<h3d.impl.allocator.FreeListAllocator> = h3d.impl.allocator.FreeListAllocator;
 		var freeList : Class<h3d.impl.allocator.FreeList> = h3d.impl.allocator.FreeList;
+		var window : Class<hxd.Window> = hxd.Window;
+		var pad : Class<hxd.Pad> = hxd.Pad;
+		var event = new hxd.Event(EKeyDown);
+		event.timestamp = 0.;
+		event.isRepeat = false;
+		var padEvent : hxd.Pad.PadEvent = { kind: EPadConnect, pad: null, timestamp: 0. };
 
 		#if gfx_dx11
 		var dx11Driver : Class<h3d.impl.driver.dx11.DX11Driver> = h3d.impl.driver.dx11.DX11Driver;

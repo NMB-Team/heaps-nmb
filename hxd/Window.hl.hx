@@ -515,6 +515,7 @@ class Window {
 			@:privateAccess hxd.Pad.onEvent( e );
 		case KeyDown:
 			eh = new Event(EKeyDown, curMouseX, curMouseY);
+			eh.isRepeat = e.keyRepeat;
 			if( e.keyCode & (1 << 30) != 0 ) e.keyCode = (e.keyCode & ((1 << 30) - 1)) + 1000;
 			eh.keyCode = CODEMAP[e.keyCode];
 			if( eh.keyCode & (K.LOC_LEFT | K.LOC_RIGHT) != 0 ) {
@@ -612,7 +613,12 @@ class Window {
 		#end
 		// default:
 		}
-		if( eh != null ) event(eh);
+		if( eh != null ) {
+			#if hlsdl
+			eh.timestamp = e.timestamp;
+			#end
+			event(eh);
+		}
 		return true;
 	}
 

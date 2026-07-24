@@ -66,6 +66,10 @@ class PadEvent {
 	public var value : Float = 0.0;
 	public var axis : Int = 0;
 	public var pad : Pad;
+	/**
+		Monotonic timestamp of the native controller event, in seconds.
+	**/
+	public var timestamp : Float = 0.;
 }
 
 class Pad {
@@ -346,7 +350,7 @@ class Pad {
 			#if (hlsdl >= version("1.16.0"))
 			var sticks = sdl.Sdl.getJoysticks();
 			for( stick in sticks )
-				initPad( stick );
+				initPad( stick, sdl.Sdl.getTime() ); // startup enumeration records when heaps discovers the device
 			#else
 			var c = @:privateAccess GameController.gctrlCount();
 			for( idx in 0...c )
@@ -428,7 +432,7 @@ class Pad {
 		return values[ axisId ];
 	}
 
-	static function initPad( index ){
+	private static function initPad( index, timestamp : Float = 0. ){
 		var sp = new GameController( index );
 		if( @:privateAccess sp.ptr == null )
 			return;
@@ -449,19 +453,19 @@ class Pad {
 			p._setButton( button + 6, sp.getButton(button) );
 		waitPad( p );
 		if (p.onPadEvent != null)
-			p.onPadEvent( { kind: EPadConnect, pad:p } );
+			p.onPadEvent( { kind: EPadConnect, pad:p, timestamp: timestamp } );
 	}
 
-	static function onEvent( e : Event ){
+	private static function onEvent( e : Event ){
 		var p = pads.get( e.controller );
 		switch( e.type ){
 			case GControllerAdded:
 				if( initDone )
-					initPad(e.controller);
+					initPad(e.controller, e.timestamp);
 			case GControllerRemoved:
 				if( p != null ){
 					if (p.onPadEvent != null)
-						p.onPadEvent( { kind: EPadDisconnect, pad:p } );
+						p.onPadEvent( { kind: EPadDisconnect, pad:p, timestamp: e.timestamp } );
 					pads.remove( p.index );
 					p.d.close();
 					p.connected = false;
@@ -471,19 +475,19 @@ class Pad {
 				if( p != null && e.button > -1 ) {
 					p._setButton( e.button + 6, true );
 					if (p.onPadEvent != null)
-						p.onPadEvent( { kind: EPadPush, button: e.button + 6, value: 1, pad: p } );
+						p.onPadEvent( { kind: EPadPush, button: e.button + 6, value: 1, pad: p, timestamp: e.timestamp } );
 				}
 			case GControllerUp:
 				if( p != null && e.button > -1 ) {
 					p._setButton( e.button + 6, false );
 					if (p.onPadEvent != null)
-						p.onPadEvent( { kind: EPadRelease, button: e.button + 6, value: 0, pad: p } );
+						p.onPadEvent( { kind: EPadRelease, button: e.button + 6, value: 0, pad: p, timestamp: e.timestamp } );
 				}
 			case GControllerAxis:
 				if( p != null && e.button > -1 && e.button < 6 ) {
 					var value = p._setAxis( e.button, e.value );
 					if (p.onPadEvent != null)
-						p.onPadEvent( { kind: EPadAxis, axis: e.button, value: value, pad: p } );
+						p.onPadEvent( { kind: EPadAxis, axis: e.button, value: value, pad: p, timestamp: e.timestamp } );
 				}
 			default:
 		}
