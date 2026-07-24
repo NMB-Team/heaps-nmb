@@ -75,7 +75,7 @@ class CacheFileBuilder {
 	public var shaderLib : Map<String,String> = new Map();
 	public var dxInitDone = false;
 	#if ((hldx || hlsdl) && gfx_dx12)
-	public var dx12Driver : h3d.impl.DX12Driver;
+	public var dx12Driver : h3d.impl.driver.dx12.DX12Driver;
 	#end
 	public var dxShaderVersion = "5_0";
 	public var dxcShaderVersion = "6_1";
@@ -198,7 +198,7 @@ class CacheFileBuilder {
 				win.visible = false;
 				#end
 				dxInitDone = true;
-				dx12Driver = new h3d.impl.DX12Driver();
+				dx12Driver = new h3d.impl.driver.dx12.DX12Driver();
 			}
 			var out = new HlslOut();
 			var tmpFile = "tmp";

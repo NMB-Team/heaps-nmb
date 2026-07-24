@@ -22,7 +22,7 @@ class Texture {
 	public static var TRILINEAR_FILTERING_ENABLED : Bool = true;
 	public static var DEFAULT_WRAP : Wrap = Clamp;
 
-	var t : h3d.impl.Driver.Texture;
+	var t : h3d.impl.driver.Texture;
 	var mem : h3d.impl.MemoryManager;
 	var allocPos : hxd.impl.AllocPos;
 	public var id(default, null) : Int;

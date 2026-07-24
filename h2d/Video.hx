@@ -397,7 +397,7 @@ class Video extends Drawable {
 		if( frameReady && time >= videoTime ) {
 			texture.alloc();
 			texture.checkSize(videoWidth, videoHeight, 0);
-			@:privateAccess cast (@:privateAccess texture.mem.driver, h3d.impl.GlDriver).uploadTextureVideoElement(texture, v, 0, 0);
+			@:privateAccess cast (@:privateAccess texture.mem.driver, h3d.impl.driver.opengl.OpenGLDriver).uploadTextureVideoElement(texture, v, 0, 0);
 			texture.flags.set(WasCleared);
 			texture.checkMipMapGen(0, 0);
 		}

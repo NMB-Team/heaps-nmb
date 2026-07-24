@@ -1,7 +1,7 @@
 package h3d;
 import h3d.mat.Data;
 import hxd.GraphicsDriverConfig;
-import hxd.GraphicsDriverApi;
+import h3d.impl.driver.DriverFactory;
 
 private class TargetTmp {
 	public var t : h3d.mat.Texture;
@@ -32,7 +32,7 @@ class Engine {
 	public var id(default, null) : Int;
 	#end
 
-	public var driver(default,null) : h3d.impl.Driver;
+	public var driver(default,null) : h3d.impl.driver.Driver;
 
 	public var mem(default,null) : h3d.impl.MemoryManager;
 
@@ -93,68 +93,8 @@ class Engine {
 		driver = createDriver();
 	}
 
-	function createDriver():h3d.impl.Driver {
-		#if macro
-		return new h3d.impl.NullDriver();
-		#elseif hlsdl
-		return switch (GraphicsDriverConfig.getCurrentOrDefault()) {
-			case GraphicsDriverApi.Dx12:
-				#if gfx_dx12
-				new h3d.impl.DX12Driver();
-				#else
-				createFallbackDriver();
-				#end
-			case GraphicsDriverApi.Dx11:
-				#if gfx_dx11
-				new h3d.impl.DirectXDriver();
-				#else
-				createFallbackDriver();
-				#end
-			case GraphicsDriverApi.Vulkan:
-				#if gfx_vulkan
-				new h3d.impl.VulkanDriver();
-				#else
-				createFallbackDriver();
-				#end
-			case GraphicsDriverApi.OpenGL | GraphicsDriverApi.Auto:
-				#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))
-				new h3d.impl.GlDriver(antiAlias);
-				#else
-				createFallbackDriver();
-				#end
-		}
-		#elseif (js || usegl)
-		#if js
-		return js.Browser.supported ? new h3d.impl.GlDriver(antiAlias) : new h3d.impl.NullDriver();
-		#else
-		return new h3d.impl.GlDriver(antiAlias);
-		#end
-		#elseif (hldx && gfx_dx12)
-		return new h3d.impl.DX12Driver();
-		#elseif hldx
-		return new h3d.impl.DirectXDriver();
-		#elseif usesys
-		return new haxe.GraphicsDriver(antiAlias);
-		#else
-		#if sys Sys.println #else trace #end("No output driver available." #if hl + " Compile with -lib hlsdl or -lib hldx" #end);
-		return new h3d.impl.NullDriver();
-		#end
-	}
-
-	function createFallbackDriver():h3d.impl.Driver {
-		#if macro
-		return new h3d.impl.NullDriver();
-		#elseif (hlsdl && gfx_dx11)
-		return new h3d.impl.DirectXDriver();
-		#elseif (hlsdl && gfx_dx12)
-		return new h3d.impl.DX12Driver();
-		#elseif (hlsdl && gfx_vulkan)
-		return new h3d.impl.VulkanDriver();
-		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan)))
-		return new h3d.impl.GlDriver(antiAlias);
-		#else
-		return new h3d.impl.NullDriver();
-		#end
+	function createDriver():h3d.impl.driver.Driver {
+		return DriverFactory.create(GraphicsDriverConfig.getCurrentOrDefault(), antiAlias);
 	}
 
 	static var CURRENT : Engine = null;

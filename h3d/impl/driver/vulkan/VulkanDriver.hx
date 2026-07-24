@@ -1,59 +1,18 @@
-package h3d.impl;
+package h3d.impl.driver.vulkan;
 
 #if (hlsdl && gfx_vulkan)
-import h3d.impl.Driver;
+import h3d.impl.driver.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.Texture;
+import h3d.impl.driver.vulkan.frame.VulkanFrame;
+import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
+import h3d.impl.driver.vulkan.shader.VulkanShaderStageData;
+import h3d.impl.driver.vulkan.swapchain.VulkanSwapchainImage;
 import sdl.Vulkan;
 
 private typedef VulkanIndexBuffer = { buf : VkBuffer, mem : VkDeviceMemory, stride : Int };
 private typedef VulkanVertexBuffer = { buf : VkBuffer, mem : VkDeviceMemory, stride : Int };
-
-class VulkanVulkanCompiledShaderData {
-	public var vertex : Bool;
-	public var module : VkShaderModule;
-	public var stageFlags : haxe.EnumFlags<VkShaderStageFlag>;
-	public var pushConstantsOffset : Int;
-	public var globalsOffset : Int;
-	public function new() {
-	}
-}
-
-class VulkanCompiledShader {
-	public var shader : hxsl.RuntimeShader;
-	public var vertex : VulkanVulkanCompiledShaderData;
-	public var fragment : VulkanVulkanCompiledShaderData;
-	public var stages : ArrayStruct<VkPipelineShaderStage>;
-	public var input : VkPipelineVertexInput;
-	public var format : hxd.BufferFormat;
-	public var layout : VkPipelineLayout;
-	public var samplerSets : hl.NativeArray<VkDescriptorSet>;
-	public var samplerTextures : Array<h3d.mat.Texture>;
-	public var pipelines : Map<Int,VkGraphicsPipeline> = new Map();
-	public function new(shader) {
-		this.shader = shader;
-	}
-}
-
-class VulkanFrame {
-	public var command : VkCommandBuffer;
-	public var fence : VkFence;
-	public var submit : VkSubmitInfo;
-	public var imageAvailable : VkSemaphore;
-	public var renderFinished : VkSemaphore;
-	public function new() {
-	}
-}
-
-class VulkanOutImage {
-	public var img : VkImage;
-	public var view : VkImageView;
-	public var depth : VkImage;
-	public var depthView : VkImageView;
-	public var depthMem : VkDeviceMemory;
-	public var framebuffer : VkFramebuffer;
-	public var fence : VkFence;
-	public function new() {
-	}
-}
 
 class VulkanDriver extends Driver {
 
@@ -77,7 +36,7 @@ class VulkanDriver extends Driver {
 	var queueFamily : Int;
 	var depthFormat : VkFormat;
 	var outImageFormat : VkFormat;
-	var outImages : Array<VulkanOutImage>;
+	var outImages : Array<VulkanSwapchainImage>;
 	var viewportWidth : Int;
 	var viewportHeight : Int;
 	var swapchainVsync : Bool;
@@ -220,7 +179,7 @@ class VulkanDriver extends Driver {
 			framebuffer.attachments = makeArray([view,depthView]); // abstract
 
 			var fb = ctx.createFramebuffer(framebuffer);
-			var out = new VulkanOutImage();
+			var out = new VulkanSwapchainImage();
 			out.img = img;
 			out.view = view;
 			out.depth = depth;
@@ -497,7 +456,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		var bytes = sdl.Vulkan.compileShader(source, "", "main", shader.kind == Vertex ? Vertex : Fragment);
 		var mod = ctx.createShaderModule(bytes, bytes.length);
 		if( mod == null ) throw "assert";
-		var sh = new VulkanVulkanCompiledShaderData();
+		var sh = new VulkanShaderStageData();
 		sh.vertex = shader.kind == Vertex;
 		sh.module = mod;
 		sh.stageFlags = new haxe.EnumFlags<VkShaderStageFlag>();
@@ -1022,7 +981,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		uploadBuffer(buf, currentShader.fragment, buf.fragment, which);
 	}
 
-	function uploadBuffer( buffer : h3d.shader.Buffers, s : VulkanVulkanCompiledShaderData, buf : h3d.shader.Buffers.ShaderBuffers, which : h3d.shader.Buffers.BufferKind ) {
+	function uploadBuffer( buffer : h3d.shader.Buffers, s : VulkanShaderStageData, buf : h3d.shader.Buffers.ShaderBuffers, which : h3d.shader.Buffers.BufferKind ) {
 		switch( which ) {
 		case Globals:
 			if( buf.globals.length > 0 ) {

@@ -1,5 +1,9 @@
 package h3d.impl;
-import h3d.impl.Driver;
+import h3d.impl.driver.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.Query;
+import h3d.impl.driver.Texture;
 
 #if render_graph
 class RenderGraphDriver extends Driver {

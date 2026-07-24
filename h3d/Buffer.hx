@@ -31,7 +31,7 @@ class Buffer {
 	var engine : h3d.Engine;
 	var lastFrame : Int;
 
-	@:allow(h3d.impl.Driver) var vbuf : h3d.impl.Driver.GPUBuffer;
+	@:allow(h3d.impl.driver.Driver) var vbuf : h3d.impl.driver.GPUBuffer;
 	public var vertices(default,null) : Int;
 	public var format(default,null) : hxd.BufferFormat;
 	public var flags(default, null) : haxe.EnumFlags<BufferFlag>;

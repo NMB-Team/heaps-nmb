@@ -1,6 +1,6 @@
 package h3d.impl;
 
-@:allow(h3d.impl.Driver)
+@:allow(h3d.impl.driver.Driver)
 class InstanceBuffer {
 
 	/**
@@ -13,10 +13,10 @@ class InstanceBuffer {
 	**/
 	public static var ELEMENT_SIZE = 20;
 
-	var countBuffer : h3d.impl.Driver.GPUBuffer;
-	var data : h3d.impl.Driver.GPUBuffer;
+	var countBuffer : h3d.impl.driver.GPUBuffer;
+	var data : h3d.impl.driver.GPUBuffer;
 	var cpuData : Array<Int>;
-	var driver : h3d.impl.Driver;
+	var driver : h3d.impl.driver.Driver;
 
 	var offset : Int = 0;
 	var countOffset : Int;

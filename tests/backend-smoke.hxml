@@ -1,0 +1,5 @@
+-lib heaps
+-main tests.BackendSmoke
+-hl backend-smoke.hl
+--no-output
+-D hl-ver=1.15.0

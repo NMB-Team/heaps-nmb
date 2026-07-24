@@ -1,8 +1,19 @@
-package h3d.impl;
-import h3d.impl.Driver;
+package h3d.impl.driver.opengl;
+import h3d.impl.driver.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.QueryKind;
+import h3d.impl.driver.RenderFlag;
+#if js
+import h3d.impl.driver.Query;
+import h3d.impl.driver.Texture;
+#end
 import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import h3d.mat.Data;
+import h3d.impl.driver.opengl.CompiledAttribute;
+import h3d.impl.driver.opengl.CompiledProgram;
+import h3d.impl.driver.opengl.CompiledShader;
 
 #if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
 
@@ -20,7 +31,7 @@ private typedef Program = sdl.GL.Program;
 private typedef GLShader = sdl.GL.Shader;
 private typedef Framebuffer = sdl.GL.Framebuffer;
 private typedef Texture = { t : sdl.GL.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
-private typedef Query = h3d.impl.Driver.Query;
+private typedef Query = h3d.impl.driver.Query;
 private typedef GlQuery = { q : sdl.GL.Query, kind : QueryKind };
 private typedef VertexArray = sdl.GL.VertexArray;
 #elseif usegl
@@ -29,8 +40,8 @@ private typedef Uniform = haxe.GLTypes.Uniform;
 private typedef Program = haxe.GLTypes.Program;
 private typedef GLShader = haxe.GLTypes.Shader;
 private typedef Framebuffer = haxe.GLTypes.Framebuffer;
-private typedef Texture = h3d.impl.Driver.Texture;
-private typedef Query = h3d.impl.Driver.Query;
+private typedef Texture = h3d.impl.driver.Texture;
+private typedef Query = h3d.impl.driver.Query;
 private typedef VertexArray = haxe.GLTypes.VertexArray;
 #end
 
@@ -40,47 +51,11 @@ private typedef ShaderCompiler = haxe.GLTypes.ShaderCompiler;
 private typedef ShaderCompiler = hxsl.GlslOut;
 #end
 
-private class CompiledShader {
-	public var s : GLShader;
-	public var kind : hxsl.Ast.FunctionKind;
-	public var globals : Uniform;
-	public var params : Uniform;
-	public var textures : Array<{ u : Uniform, t : hxsl.Ast.Type, mode : Int }>;
-	public var buffers : Array<Int>;
-	public var bufferTypes : Array<hxsl.Ast.BufferKind>;
-	public var shader : hxsl.RuntimeShader.RuntimeShaderData;
-	public function new(s,kind,shader) {
-		this.s = s;
-		this.kind = kind;
-		this.shader = shader;
-	}
-}
-
-private class CompiledAttribute {
-	public var index : Int;
-	public var type : Int;
-	public var size : Int;
-	public var divisor : Int;
-	public function new() {
-	}
-}
-
-private class CompiledProgram {
-	public var p : Program;
-	public var vertex : CompiledShader;
-	public var fragment : CompiledShader;
-	public var format : hxd.BufferFormat;
-	public var attribs : Array<CompiledAttribute>;
-	public var hasAttribIndex : Int;
-	public function new() {
-	}
-}
-
 @:access(h3d.impl.Shader)
 #if (hlsdl||usegl)
 @:build(h3d.impl.MacroHelper.replaceGL())
 #end
-class GlDriver extends Driver {
+class OpenGLDriver extends Driver {
 
 	#if js
 	var canvas : js.html.CanvasElement;
@@ -2250,7 +2225,7 @@ class GlDriver extends Driver {
 
 #else
 
-class GlDriver extends Driver {
+class OpenGLDriver extends Driver {
 	public static var hasMultiIndirectCount = false;
 }
 

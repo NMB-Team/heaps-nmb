@@ -1,11 +1,15 @@
-package h3d.impl;
+package h3d.impl.driver.dx11;
 
 #if ((hldx && !gfx_dx12) || (hlsdl && gfx_dx11))
 
-import h3d.impl.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.Texture;
 import dx.Driver;
 import dx.Resource.MapType;
 import h3d.mat.Pass;
+import h3d.impl.driver.dx11.CompiledShader;
+import h3d.impl.driver.dx11.ShaderContext;
 
 private typedef DX11Texture = {
 	res : dx.Resource,
@@ -16,55 +20,7 @@ private typedef DX11Texture = {
 	?views : Array<dx.Driver.ShaderResourceView>
 }
 
-private class ShaderContext {
-	public var shader : Shader;
-	public var globalsSize : Int;
-	public var paramsSize : Int;
-	public var texturesCount : Int;
-	public var bufferCount : Int;
-	public var paramsContent : hl.Bytes;
-	public var globals : dx.Resource;
-	public var params : dx.Resource;
-	public var samplersMap : Array<Int>;
-	public var texturesTypes : Array<hxsl.Ast.Type>;
-	#if debug
-	public var debugSource : String;
-	#end
-	public function new(shader) {
-		this.shader = shader;
-	}
-}
-
-private class CompiledShader {
-	public var vertex : ShaderContext;
-	public var fragment : ShaderContext;
-	public var format : hxd.BufferFormat;
-	public var perInst : Array<Int>;
-	public var layouts : Map<Int, Layout>;
-	public var vertexBytes : haxe.io.Bytes;
-	public var semanticNames : Array<String>;
-	public function new() {
-	}
-}
-
-enum PipelineKind {
-	Vertex;
-	Pixel;
-}
-
-class PipelineState {
-	public var kind : PipelineKind;
-	public var samplers = new hl.NativeArray<SamplerState>(64);
-	public var samplerBits = new Array<Int>();
-	public var resources = new hl.NativeArray<dx.Driver.ShaderResourceView>(64);
-	public var buffers = new hl.NativeArray<dx.Resource>(16);
-	public function new(kind) {
-		this.kind = kind;
-		for(i in 0...64 ) samplerBits[i] = -1;
-	}
-}
-
-class DirectXDriver extends h3d.impl.Driver {
+class DX11Driver extends h3d.impl.driver.Driver {
 
 	static inline var NTARGETS = 8;
 	static inline var VIEWPORTS_ELTS = 6 * NTARGETS;

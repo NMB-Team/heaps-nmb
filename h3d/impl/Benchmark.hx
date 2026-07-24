@@ -2,9 +2,9 @@ package h3d.impl;
 
 private class QueryObject {
 
-	var driver : h3d.impl.Driver;
+	var driver : h3d.impl.driver.Driver;
 
-	public var q : h3d.impl.Driver.Query;
+	public var q : h3d.impl.driver.Query;
 	public var value : Float;
 	public var name : String;
 	public var drawCalls : Int;

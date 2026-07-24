@@ -1,6 +1,6 @@
 package h3d.mat;
 
-@:allow(h3d.impl.Driver)
+@:allow(h3d.impl.driver.Driver)
 class TextureHandle {
 	public var texture(default, null) : h3d.mat.Texture;
 	public var handle(default, null) : haxe.Int64;

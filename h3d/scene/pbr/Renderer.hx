@@ -1,6 +1,9 @@
 package h3d.scene.pbr;
 
-import h3d.impl.Driver;
+import h3d.impl.driver.dlss.DLSSMode;
+import h3d.impl.driver.dlss.DLSSParams;
+import h3d.impl.driver.dlss.DLSSQuality;
+import h3d.impl.driver.dlss.DLSSTag;
 #if dlss
 import heaps.dlss.Dlss;
 #end
@@ -490,8 +493,8 @@ class Renderer extends h3d.scene.Renderer {
 		#end
 	}
 
-	static var resources : Map<h3d.impl.Driver.DLSSTag, h3d.mat.Texture> = new Map();
-	static var constants = new h3d.impl.Driver.DLSSParams();
+	static var resources : Map<DLSSTag, h3d.mat.Texture> = new Map();
+	static var constants = new DLSSParams();
 	static var viewToViewPrev = new h3d.Matrix();
 	static var tmp = new h3d.Matrix();
 	static var clipToPrevClip = new h3d.Matrix();

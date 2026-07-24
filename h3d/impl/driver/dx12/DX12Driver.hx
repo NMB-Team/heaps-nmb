@@ -1,4 +1,4 @@
-package h3d.impl;
+package h3d.impl.driver.dx12;
 
 #if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
 
@@ -6,7 +6,16 @@ package h3d.impl;
 #error "DX12Driver requires at least -D hl_ver=1.14.0"
 #end
 
-import h3d.impl.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.Query;
+import h3d.impl.driver.QueryKind;
+import h3d.impl.driver.Texture;
+import h3d.impl.driver.dlss.DLSSMode;
+import h3d.impl.driver.dlss.DLSSParams;
+import h3d.impl.driver.dlss.DLSSQuality;
+import h3d.impl.driver.dlss.DLSSSettings;
+import h3d.impl.driver.dlss.DLSSTag;
 import dx.Dx12;
 import dx.Dx12.Dx12Blend;
 import dx.Dx12.Dx12BlendOp;
@@ -23,7 +32,25 @@ import haxe.Int64;
 import h3d.mat.Pass;
 import h3d.mat.Stencil;
 import haxe.MainLoop;
-import h3d.impl.Allocator;
+import h3d.impl.allocator.Allocator;
+import h3d.impl.allocator.BlockAllocator;
+import h3d.impl.allocator.FreeListAllocator;
+import h3d.impl.allocator.MemoryBlock;
+import h3d.impl.allocator.ScalePolicy;
+import h3d.impl.driver.dx12.descriptor.BlockHeap;
+import h3d.impl.driver.dx12.descriptor.ScratchHeap;
+import h3d.impl.driver.dx12.descriptor.ScratchHeapArray;
+import h3d.impl.driver.dx12.frame.DX12Frame;
+import h3d.impl.driver.dx12.memory.BufferMemoryType;
+import h3d.impl.driver.dx12.memory.HeapMemoryType;
+import h3d.impl.driver.dx12.query.QueryData;
+import h3d.impl.driver.dx12.readback.AsyncReadbackRequest;
+import h3d.impl.driver.dx12.resource.BufferData;
+import h3d.impl.driver.dx12.resource.ResourceData;
+import h3d.impl.driver.dx12.resource.TextureData;
+import h3d.impl.driver.dx12.shader.CompiledShader;
+import h3d.impl.driver.dx12.shader.ShaderRegisters;
+import h3d.impl.driver.dx12.TempObjects;
 
 #if dlss
 import heaps.dlss.Dlss;
@@ -31,551 +58,7 @@ import heaps.dlss.Dlss;
 
 private typedef Driver = Dx12;
 
-class HeapMemType extends MemoryType {
-
-	var type : DescriptorHeapType;
-	var shaderVisible : Bool;
-
-	public function new(type,shaderVisible) {
-		this.type = type;
-		this.shaderVisible = shaderVisible;
-		this.stride = Dx12.getDescriptorHandleIncrementSize(type);
-	}
-
-	public function alloc( size : Int ) {
-		var desc = new DescriptorHeapDesc();
-		desc.type = type;
-		desc.numDescriptors = size;
-		if( shaderVisible ) desc.flags = SHADER_VISIBLE;
-		var heap = new DescriptorHeap(desc);
-		if( heap == null ) return null;
-		#if (haxe_ver < 5)
-		var address = new hl.NativeArray<haxe.Int64>(1);
-		address[0] = heap.getHandle(false).value;
-		var cpuAddress = (cast address : hl.NativeArray<hl.Bytes>)[0];
-		#else
-		var cpuAddress : hl.Bytes = hl.Api.unsafeCast(heap.getHandle(false));
-		#end
-		return new MemoryPage(cpuAddress, heap.getHandle(true).value, size, heap);
-	}
-
-	function free( mem : MemoryPage ) {
-		var heap : DescriptorHeap = mem.ref;
-		(heap : Dx12Resource).release();
-	}
-
-}
-
-class BufferMemType extends MemoryType {
-
-	var heapType : HeapType;
-	var startState : ResourceState;
-	var uav : Bool;
-	var resourceName : String;
-
-	public function new( heapType, startState, uav = false, resourceName = "BufferAllocator" ) {
-		this.heapType = heapType;
-		this.startState = startState;
-		this.uav = uav;
-		this.resourceName = resourceName;
-		alignment = 256;
-	}
-
-	function alloc( size : Int ) {
-		var heap = new HeapProperties();
-		heap.type = heapType;
-		var desc = new ResourceDesc();
-		desc.dimension = BUFFER;
-		desc.width = size;
-		desc.height = 1;
-		desc.depthOrArraySize = 1;
-		desc.mipLevels = 1;
-		desc.sampleDesc.count = 1;
-		desc.layout = ROW_MAJOR;
-
-		var flags = new haxe.EnumFlags();
-		flags.set(CREATE_NOT_ZEROED);
-		if( uav ) desc.flags.set(ALLOW_UNORDERED_ACCESS);
-
-		var res = Dx12.createCommittedResource(heap, flags, desc, startState, null);
-		if( res == null ) return null;
-		res.setName(resourceName+"Page");
-		var cpuAddress = res.map(0, null);
-		return new MemoryPage(cpuAddress, res.getGpuVirtualAddress(), size, res);
-	}
-
-	function free( mem : MemoryPage ) {
-		var res : GpuResource = mem.ref;
-		res.unmap(0, null);
-		res.release();
-	}
-
-}
-
-class ScratchHeapArray {
-	var heaps : Array<ScratchHeap>;
-	var type : DescriptorHeapType;
-	var size : Int;
-	var cursor : Int;
-
-	public function new(type,size) {
-		this.type = type;
-		this.size = size;
-		heaps = [];
-	}
-
-	public function reset() {
-		cursor = 0;
-	}
-
-	public function next() {
-		var h = heaps[cursor++];
-		if( h == null ) {
-			h = new ScratchHeap(type, size);
-			heaps.push(h);
-		} else
-			h.clear();
-		return h;
-	}
-
-	public function getSize() {
-		var size : Float = 0;
-		for( h in heaps )
-			size += h.getSize();
-		return size;
-	}
-
-}
-
-class DxFrame {
-	public var backBuffer : ResourceData;
-	public var backBufferView : Address;
-	public var depthBuffer : GpuResource;
-	public var allocator : CommandAllocator;
-	public var commandList : CommandList;
-	public var copyAllocator : CommandAllocator;
-	public var copyCommandList : CommandList;
-	public var fenceValue : Int64;
-	public var toRelease : Array<Dx12Resource> = [];
-	public var texHandlesToRelease : Array<h3d.mat.TextureHandle> = [];
-	public var bufHandlesToRelease : Array<h3d.BufferHandle> = [];
-	public var srvHeap : ScratchHeap;
-	public var samplerHeap : ScratchHeap;
-	public var srvHeapCache : ScratchHeapArray;
-	public var samplerHeapCache : ScratchHeapArray;
-	public var queryHeaps : Array<QueryHeap> = [];
-	public var queriesPending : Array<Query> = [];
-	public var queryCurrentHeap : Int;
-	public var queryHeapOffset : Int;
-	public var queryBuffer : GpuResource;
-	public var dynamicBufferAlloc : BlockAllocator;
-	public var pendingCopyBuffers : Array<MemoryBlock> = [];
-
-	public function new() {
-	}
-	public function getSize() {
-		var size : Float = 0;
-		// both srvHeap and samplerHeap are from cache
-		size += srvHeapCache.getSize();
-		size += samplerHeapCache.getSize();
-		return size;
-	}
-}
-
-class ShaderRegisters {
-	public var globals : Int;
-	public var params : Int;
-	public var buffers : Int;
-	public var cbvCount : Int;
-	public var storageCount : Int;
-	public var textures : Int;
-	public var samplers : Int;
-	public var texturesCount : Int;
-	public var texturesTypes : Array<hxsl.Ast.Type>;
-	public var bufferTypes : Array<hxsl.Ast.BufferKind>;
-	public var bufferStrides : Array<Int>;
-	public var srv : Address;
-	public var samplersView : Address;
-	public var lastHeapCount : Int;
-	public var lastTextures : Array<Texture> = [];
-	public var lastTexturesBits : Array<Int>= [];
-	public function new() {
-	}
-}
-
-class CompiledShader {
-	public var vertexRegisters : ShaderRegisters;
-	public var fragmentRegisters : ShaderRegisters;
-	public var format : hxd.BufferFormat;
-	public var pipeline : GraphicsPipelineStateDesc;
-	public var pipelines : PipelineCache<GraphicsPipelineState> = new PipelineCache();
-	public var rootSignature : RootSignature;
-	public var inputLayout : hl.CArray<InputElementDesc>;
-	public var inputCount : Int;
-	public var shader : hxsl.RuntimeShader;
-	public var isCompute : Bool;
-	public var computePipeline : ComputePipelineState;
-	public function new() {
-	}
-}
-
-@:struct class TempObjects {
-
-	public var renderTargets : hl.BytesAccess<Address>;
-	public var depthStencils : hl.BytesAccess<Address>;
-	public var copyableInfosBytes : hl.Bytes;
-	public var vertexViews : hl.CArray<VertexBufferView>;
-	public var vertexViewCount : Int;
-	public var descriptors2 : hl.NativeArray<DescriptorHeap>;
-	public var barriers : hl.CArray<ResourceBarrier>;
-	public var resourcesToTransition : hl.NativeArray<ResourceData>;
-	public var maxBarriers : Int;
-	public var barrierCount : Int;
-	public var needUAVBarrier : Bool = false;
-	@:packed public var heap(default,null) : HeapProperties;
-	@:packed public var barrier(default,null) : ResourceBarrier;
-	@:packed public var clearColor(default,null) : ClearColor;
-	@:packed public var clearValue(default,null) : ClearValue;
-	@:packed public var viewport(default,null) : Viewport;
-	@:packed public var rect(default,null) : Rect;
-	@:packed public var bufferSRV(default,null) : BufferSRV;
-	@:packed public var texViewDesc(default,null) : Tex2DSRV;
-	@:packed public var samplerDesc(default,null) : Dx12SamplerDesc;
-	@:packed public var vertexGlobalDesc(default,null) : ConstantBufferViewDesc;
-	@:packed public var fragmentGlobalDesc(default,null) : ConstantBufferViewDesc;
-	@:packed public var cbvDesc(default,null) : ConstantBufferViewDesc;
-	@:packed public var rtvDesc(default,null) : RenderTargetViewDesc;
-	@:packed public var uavDesc(default,null) : UAVBufferViewDesc;
-	@:packed public var wtexDesc(default,null) : UAVTextureViewDesc;
-	@:packed public var subResourceData(default, null) : SubResourceData;
-	@:packed public var srcTextureLocation(default, null) : TextureCopyLocation;
-	@:packed public var dstTextureLocation(default, null) : TextureCopyLocation;
-	@:packed public var dstStencilViewDesc(default,null) : DepthStencilViewDesc;
-
-	public var pass : h3d.mat.Pass;
-
-	public function new() {
-		renderTargets = new hl.Bytes(8 * 8);
-		depthStencils = new hl.Bytes(8);
-		copyableInfosBytes = new hl.Bytes(8 * 3);
-		vertexViewCount = 16;
-		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
-		maxBarriers = 100;
-		barriers = hl.CArray.alloc( ResourceBarrier, maxBarriers );
-		var allSubresource = #if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0"))) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
-		for ( i in 0...maxBarriers )
-			barriers[i].subResource = allSubresource;
-		resourcesToTransition = new hl.NativeArray(maxBarriers);
-		barrierCount = 0;
-		pass = new h3d.mat.Pass("default");
-		pass.stencil = new h3d.mat.Stencil();
-		bufferSRV.dimension = BUFFER;
-		bufferSRV.flags = RAW;
-		bufferSRV.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
-		samplerDesc.comparisonFunc = NEVER;
-		samplerDesc.maxLod = 1e30;
-		descriptors2 = new hl.NativeArray(2);
-		uavDesc.viewDimension = BUFFER;
-		barrier.subResource = -1; // all
-	}
-
-}
-
-class BaseHeap {
-	public var stride(default,null) : Int;
-	public var size(default,null) : Int;
-	public var address(default,null) : Address;
-	var type : DescriptorHeapType;
-	var heap : DescriptorHeap;
-	var cpuToGpu : Int64;
-	var shaderVisible : Bool;
-
-	public function new(type,size=8,shaderVisible=true) {
-		this.type = type;
-		this.shaderVisible = shaderVisible && (type == CBV_SRV_UAV || type == SAMPLER);
-		this.stride = Driver.getDescriptorHandleIncrementSize(type);
-		allocHeap(size);
-	}
-
-	public function getSize() {
-		return size * stride;
-	}
-
-	function allocHeap( size : Int ) {
-		var desc = new DescriptorHeapDesc();
-		desc.type = type;
-		desc.numDescriptors = size;
-		if( shaderVisible )
-			desc.flags = SHADER_VISIBLE;
-		heap = DX12Driver.allocCheck(() -> new DescriptorHeap(desc));
-		this.size = size;
-		address = heap.getHandle(false);
-		cpuToGpu = desc.flags == SHADER_VISIBLE ? ( heap.getHandle(true).value - address.value ) : 0;
-	}
-
-	public dynamic function onFree( prev : DescriptorHeap, prevSize : Int  ) {
-		throw "Too many buffers";
-	}
-
-	public inline function toGPU( address : Address ) : Address {
-		return new Address(address.value + cpuToGpu);
-	}
-
-	public inline function getIndex( cpuAddress : Address ) : Int {
-		return Std.int((cpuAddress.value - address.value).low / stride);
-	}
-
-	public inline function getCpuAddressAt( index : Int ) : Address {
-		return address.offset(index * stride);
-	}
-
-	inline function getNextHeapSize() : Int {
-		return (size * 3) >> 1;
-	}
-}
-
-class ScratchHeap extends BaseHeap {
-	var cursor : Int;
-	public var available(get,never) : Int;
-
-	override function allocHeap( size : Int ) {
-		cursor = 0;
-		if ( type == SAMPLER && size > 2048)
-			throw "Max heap size reached";
-		super.allocHeap(size);
-	}
-
-	public function alloc( count : Int ) {
-		if( cursor + count > size ) {
-			var prevCursor = cursor;
-			cursor = 0;
-			var prev = heap;
-			allocHeap(getNextHeapSize());
-			onFree(prev, prevCursor);
-		}
-		var pos = cursor;
-		cursor += count;
-		return address.offset(pos * stride);
-	}
-
-	inline function get_available() {
-		return size - cursor;
-	}
-
-	public function clear() {
-		cursor = 0;
-	}
-}
-
-class BlockHeap extends BaseHeap {
-	var freeList : Array<Int>;
-	public var available(get,never) : Int;
-
-	override public function new(type,size,shaderVisible) {
-		if ( shaderVisible )
-			throw "BlockHeap cannot be shader visible as its content is copied on resize";
-		super(type, size, false);
-		freeList = [for (i in 0...size) i];
-	}
-
-	function resize() {
-		var prevSize = size;
-		var prev = heap;
-		allocHeap(getNextHeapSize());
-		for ( i in prevSize + 1...size)
-			freeList.push(i);
-		onFree(prev, prevSize);
-	}
-
-	public function allocIndex() : Int {
-		var idx = freeList.pop();
-		if ( idx == null ) {
-			idx = size;
-			resize();
-		}
-		return idx;
-	}
-
-	public function disposeIndex( index : Int ) {
-		freeList.push(index);
-	}
-
-	inline function get_available() {
-		return freeList.length;
-	}
-
-	public inline function isEmpty() {
-		return available == size;
-	}
-}
-
-class ResourceData {
-	public var res : GpuResource;
-	public var state : ResourceState;
-	public var targetState : ResourceState;
-	public function new() {
-	}
-}
-
-class BufferData extends ResourceData {
-	public var view : dx.Dx12.VertexBufferView;
-	public var iview : dx.Dx12.IndexBufferView;
-	public var handle : h3d.BufferHandle = null;
-	public var cViewIndex : Int = -1;
-	public var sViewIndex : Int = -1;
-	public var sViewStride : Int = -1;
-	public var sViewsMap : Map<Int, Int>;
-	public var uViewIndex : Int = -1;
-	public var uViewStride : Int = -1;
-	public var uViewsMap : Map<Int, Int>;
-	public var size : Int;
-
-	inline public function getSRV(stride:Int) {
-		if( sViewStride == stride )
-			return sViewIndex;
-		if( sViewsMap != null ) {
-			var idx = sViewsMap.get(stride);
-			return idx != null ? idx : -1;
-		}
-		return -1;
-	}
-
-	public function setSRV(stride:Int, idx:Int) {
-		if( sViewIndex < 0 ) {
-			sViewIndex = idx;
-			sViewStride = stride;
-			return;
-		}
-		if( sViewsMap == null )
-			sViewsMap = new Map();
-		sViewsMap.set(stride, idx);
-	}
-
-	inline public function getUAV(stride:Int) {
-		if( uViewStride == stride )
-			return uViewIndex;
-		if( uViewsMap != null ) {
-			var idx = uViewsMap.get(stride);
-			return idx != null ? idx : -1;
-		}
-		return -1;
-	}
-
-	public function setUAV(stride:Int, idx:Int) {
-		if( uViewIndex < 0 ) {
-			uViewIndex = idx;
-			uViewStride = stride;
-			return;
-		}
-		if( uViewsMap == null )
-			uViewsMap = new Map();
-		uViewsMap.set(stride, idx);
-	}
-
-	public function disposeViews(heap : BlockHeap) {
-		if ( cViewIndex != -1 ) {
-			heap.disposeIndex(cViewIndex);
-			cViewIndex = -1;
-		}
-		if(sViewIndex >= 0) {
-			heap.disposeIndex(sViewIndex);
-			sViewIndex = -1;
-			sViewStride = -1;
-		}
-		if( sViewsMap != null ) {
-			for( v in sViewsMap )
-				heap.disposeIndex(v);
-			sViewsMap = null;
-		}
-		if(uViewIndex >= 0) {
-			heap.disposeIndex(uViewIndex);
-			uViewIndex = -1;
-			uViewStride = -1;
-		}
-		if( uViewsMap != null ) {
-			for( v in uViewsMap )
-				heap.disposeIndex(v);
-			uViewsMap = null;
-		}
-	}
-}
-
-class TextureData extends ResourceData {
-	public var format : DxgiFormat;
-	public var color : h3d.Vector4;
-	var clearColorChanges : Int;
-	var cpuViewBits : Int = -1;
-	var cpuViewIndex : Int = -1;
-	var cpuViewsMap : Map<Int, Int>;
-
-	inline public function getView(bits: Int) {
-		if( cpuViewBits == bits )
-			return cpuViewIndex;
-		if( cpuViewsMap != null ) {
-			var idx = cpuViewsMap.get(bits);
-			return idx != null ? idx : -1;
-		}
-		return -1;
-	}
-
-	public function setView(bits: Int, idx: Int) {
-		if( cpuViewIndex < 0 ) {
-			cpuViewIndex = idx;
-			cpuViewBits = bits;
-			return;
-		}
-		if( cpuViewsMap == null )
-			cpuViewsMap = new Map();
-		cpuViewsMap.set(bits, idx);
-	}
-
-	public function setClearColor( c : h3d.Vector4 ) {
-		var color = color;
-		if( clearColorChanges > 10 || (color.r == c.r && color.g == c.g && color.b == c.b && color.a == c.a) )
-			return false;
-		clearColorChanges++;
-		color.load(c);
-		return true;
-	}
-
-	public function disposeViews(heap: BlockHeap) {
-		if(cpuViewIndex >= 0) {
-			heap.disposeIndex(cpuViewIndex);
-			cpuViewIndex = -1;
-			cpuViewBits = -1;
-		}
-		if( cpuViewsMap != null ) {
-			for( v in cpuViewsMap )
-				heap.disposeIndex(v);
-			cpuViewsMap = null;
-		}
-	}
-}
-
-class QueryData {
-	public var heap : Int;
-	public var offset : Int;
-	public var result : Float;
-	public function new() {
-	}
-}
-
-class AsyncReadbackRequest {
-	public var b : Buffer;
-	public var startVertex : Int;
-	public var vertexCount : Int;
-	public var buf : haxe.io.Bytes;
-	public var bufPos : Int;
-	public var callback : Void -> Void;
-	public var tmpBufOffset : Int;
-    public var tmpBufSize : Int;
-	public var barrier : ResourceBarrier;
-	public var frame : Int;
-	public function new() {
-	}
-}
-
-class DX12Driver extends h3d.impl.Driver {
+class DX12Driver extends h3d.impl.driver.Driver {
 
 	var pipelineBuilder = new PipelineCache.PipelineBuilder();
 
@@ -583,8 +66,8 @@ class DX12Driver extends h3d.impl.Driver {
 	var hasDeviceError = false;
 	var window : #if hlsdl sdl.Window #else dx.Window #end;
 	var onContextLost : Void -> Void;
-	var frames : Array<DxFrame>;
-	var frame : DxFrame;
+	var frames : Array<DX12Frame>;
+	var frame : DX12Frame;
 	var fence : Fence;
 	var fenceEvent : WaitEvent;
 
@@ -677,7 +160,9 @@ class DX12Driver extends h3d.impl.Driver {
 	public static var SUPPRESSED_MESSAGE_IDS : Array<Int> = [];
 	public static var DLSS = true;
 
-	@:allow(h3d.impl) static function allocCheck<T>( f : Void -> T ) {
+	@:allow(h3d.impl)
+	@:allow(h3d.impl.driver.dx12.descriptor)
+	static function allocCheck<T>( f : Void -> T ) {
 		var ret = f();
 		if( ret == null ) {
 			var mem = Engine.getCurrent().mem;
@@ -779,11 +264,11 @@ class DX12Driver extends h3d.impl.Driver {
 		var policy = new ScalePolicy(INITIAL_BUFFER_ALLOCATOR_SIZE, 2);
 		policy.garbageMem = function() Engine.getCurrent().mem.tryFreeMemory();
 
-		uploadBufferAlloc = new FreeListAllocator(new BufferMemType(UPLOAD, GENERIC_READ, false, "UploadBuffer"), policy);
+		uploadBufferAlloc = new FreeListAllocator(new BufferMemoryType(UPLOAD, GENERIC_READ, false, "UploadBuffer"), policy);
 		uploadBufferAlloc.name = "UploadBuffer";
 
 		for(i in 0...BUFFER_COUNT) {
-			var f = new DxFrame();
+			var f = new DX12Frame();
 			f.backBuffer = new ResourceData();
 			f.allocator = new CommandAllocator(DIRECT);
 			f.commandList = new CommandList(DIRECT, f.allocator, null);
@@ -793,7 +278,7 @@ class DX12Driver extends h3d.impl.Driver {
 			f.copyCommandList.close();
 			f.srvHeapCache = new ScratchHeapArray(CBV_SRV_UAV, INITIAL_SRV_COUNT + INITIAL_BINDLESS_SRV_COUNT);
 			f.samplerHeapCache = new ScratchHeapArray(SAMPLER, INITIAL_SAMPLER_COUNT + INITIAL_BINDLESS_SAMPLER_COUNT);
-			f.dynamicBufferAlloc = new BlockAllocator(new BufferMemType(UPLOAD, GENERIC_READ, false, "DynamicBuffer#"+i), policy);
+			f.dynamicBufferAlloc = new BlockAllocator(new BufferMemoryType(UPLOAD, GENERIC_READ, false, "DynamicBuffer#"+i), policy);
 			f.dynamicBufferAlloc.name = "DynamicBuffer#"+i;
 			frames.push(f);
 		}
@@ -3548,7 +3033,7 @@ class DX12Driver extends h3d.impl.Driver {
 		#end
 	}
 
-	override function applyDLSS( resources : Map<h3d.impl.Driver.DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
+	override function applyDLSS( resources : Map<DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
 		#if dlss
 		if ( !dlssReady ) return;
 		switch (mode) {

@@ -1,4 +1,5 @@
 package h3d.impl;
+import h3d.impl.driver.Driver;
 
 typedef StackStats = {
 	var stats: Array<TextureStat>;

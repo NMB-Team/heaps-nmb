@@ -40,3 +40,32 @@ jobs:
           cd samples
           haxe all.hxml
           cd ..
+  graphics-backends:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: dx11
+            flags: -lib hlsdl -D gfx_dx11
+          - backend: dx12
+            flags: -lib hlsdl -D gfx_dx12
+          - backend: vulkan
+            flags: -lib hlsdl -D gfx_vulkan
+          - backend: opengl
+            flags: -lib hlsdl -D gfx_opengl
+          - backend: multidriver
+            flags: -lib hlsdl -D gfx_dx11 -D gfx_dx12 -D gfx_vulkan -D gfx_opengl
+    runs-on: ubuntu-latest
+    name: Graphics backend (${{ matrix.backend }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: krdlab/setup-haxe@master
+        with:
+          haxe-version: latest
+      - name: Install haxelib deps
+        run: |
+          haxelib dev heaps .
+          haxelib git format https://github.com/HaxeFoundation/format
+          haxelib git hlsdl https://github.com/NMB-Team/hashlink-nmb master libs/sdl
+      - name: Compile backend
+        run: haxe tests/backend-smoke.hxml ${{ matrix.flags }}

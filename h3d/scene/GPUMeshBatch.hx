@@ -293,7 +293,7 @@ class GPUMeshBatch extends MeshBatch {
 
 	inline function isCountBufferAllowed() {
 		#if hlsdl
-		return h3d.impl.GlDriver.hasMultiIndirectCount;
+		return h3d.impl.driver.opengl.OpenGLDriver.hasMultiIndirectCount;
 		#else
 		return true;
 		#end
