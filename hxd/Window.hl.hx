@@ -387,17 +387,6 @@ class Window {
 		return b;
 	}
 
-	function set_visible( v : Bool ) : Bool {
-		if( visible == v )
-			return v;
-		#if (hldx || hlsdl)
-		window.visible = v;
-		#end
-		if( flags != null )
-			flags.hidden = !v;
-		return visible = v;
-	}
-
 	function get_isFocused() : Bool return !wasBlurred;
 
 	var wasBlurred : Bool;
@@ -767,6 +756,17 @@ class Window {
 	}
 
 	#end
+
+	function set_visible( v : Bool ) : Bool {
+		if( visible == v )
+			return v;
+		#if (hldx || hlsdl)
+		window.visible = v;
+		#end
+		if( flags != null )
+			flags.hidden = !v;
+		return visible = v;
+	}
 
 	function get_displayMode() : DisplayMode {
 		#if (hldx || hlsdl)
