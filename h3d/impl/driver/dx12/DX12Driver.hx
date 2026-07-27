@@ -561,6 +561,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		@:privateAccess tmp.clearValue.color.g = 0.;
 		depthTexture.res = Driver.createCommittedResource(tmp.heap, flags, desc, DEPTH_WRITE, tmp.clearValue);
 		depthTexture.res.setName("defaultDepth");
+		depthTexture.state = defaultDepth.t.targetState = DEPTH_WRITE;
 
 		beginFrame();
 	}
