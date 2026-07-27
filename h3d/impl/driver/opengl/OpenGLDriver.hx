@@ -15,7 +15,7 @@ import h3d.impl.driver.opengl.CompiledAttribute;
 import h3d.impl.driver.opengl.CompiledProgram;
 import h3d.impl.driver.opengl.CompiledShader;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
+#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
 
 #if js
 import hxd.impl.TypedArray;
@@ -24,16 +24,17 @@ private typedef Uniform = js.html.webgl.UniformLocation;
 private typedef Program = js.html.webgl.Program;
 private typedef GLShader = js.html.webgl.Shader;
 private typedef Framebuffer = js.html.webgl.Framebuffer;
-#elseif hlsdl
-import sdl.GL;
-private typedef Uniform = sdl.GL.Uniform;
-private typedef Program = sdl.GL.Program;
-private typedef GLShader = sdl.GL.Shader;
-private typedef Framebuffer = sdl.GL.Framebuffer;
-private typedef Texture = { t : sdl.GL.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
+#elseif limen
+import limen.graphics.opengl.internal.OpenGLBindings as GL;
+import limen.graphics.opengl.Context;
+private typedef Uniform = limen.graphics.opengl.OpenGLTypes.Uniform;
+private typedef Program = limen.graphics.opengl.OpenGLTypes.Program;
+private typedef GLShader = limen.graphics.opengl.OpenGLTypes.Shader;
+private typedef Framebuffer = limen.graphics.opengl.OpenGLTypes.Framebuffer;
+private typedef Texture = { t : limen.graphics.opengl.OpenGLTypes.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 private typedef Query = h3d.impl.driver.Query;
-private typedef GlQuery = { q : sdl.GL.Query, kind : QueryKind };
-private typedef VertexArray = sdl.GL.VertexArray;
+private typedef GlQuery = { q : limen.graphics.opengl.OpenGLTypes.Query, kind : QueryKind };
+private typedef VertexArray = limen.graphics.opengl.OpenGLTypes.VertexArray;
 #elseif usegl
 import haxe.GLTypes;
 private typedef Uniform = haxe.GLTypes.Uniform;
@@ -52,10 +53,14 @@ private typedef ShaderCompiler = hxsl.GlslOut;
 #end
 
 @:access(h3d.impl.Shader)
-#if (hlsdl||usegl)
+#if (limen||usegl)
 @:build(h3d.impl.MacroHelper.replaceGL())
 #end
 class OpenGLDriver extends Driver {
+
+	#if limen
+	var context : Context;
+	#end
 
 	#if js
 	var canvas : js.html.CanvasElement;
@@ -65,7 +70,7 @@ class OpenGLDriver extends Driver {
 	public static var ALLOW_WEBGL2 = true;
 	#end
 
-	#if (hlsdl||usegl)
+	#if (limen||usegl)
 	var commonVA : VertexArray;
 	#end
 
@@ -121,9 +126,14 @@ class OpenGLDriver extends Driver {
 	public static var outOfMemoryCheck = #if js false #else true #end;
 
 	public function new(antiAlias=0) {
-		#if (hlsdl >= version("1.15.0"))
-		if ( computeEnabled )
-			sdl.Sdl.setGLVersion(4, 3);
+		#if limen
+		var nativeWindow = @:privateAccess hxd.Window.getInstance().window;
+		context = Context.create(nativeWindow, {
+			minimumMajor: computeEnabled ? 4 : 2,
+			minimumMinor: computeEnabled ? 3 : 1,
+			samples: antiAlias > 0 ? antiAlias : 1,
+			vsync: hxd.Window.getInstance().vsync
+		});
 		#end
 
 		#if js
@@ -158,7 +168,7 @@ class OpenGLDriver extends Driver {
 				glVersion = Std.parseFloat(desktopVersion.matched(0));
 		}
 
-		#if hlsdl
+		#if limen
 		hasMultiIndirect = glVersion >= 4.3 || gl.hasExtension("GL_ARB_multi_draw_indirect");
 		maxCompressedTexturesSupport = gl.hasExtension("GL_EXT_texture_compression_s3tc") ? 3 : 0;
 		if( gl.hasExtension("GL_ARB_texture_compression_bptc") )
@@ -168,7 +178,7 @@ class OpenGLDriver extends Driver {
 		isIntelGpu = ~/intel.*(graphics|gpu)/.match(driver);
 		#end
 
-		#if (hlsdl >= version("1.15.0"))
+		#if (limen >= version("1.15.0"))
 		hasMultiIndirectCount = gl.hasExtension("GL_ARB_indirect_parameters");
 		#end
 
@@ -194,7 +204,7 @@ class OpenGLDriver extends Driver {
 			shaderVersion = Math.round( Std.parseFloat(reg.matched(0)) * 100 );
 		}
 
-		#if (hlsdl >= version("1.15.0"))
+		#if (limen >= version("1.15.0"))
 		if ( computeEnabled )
 			shaderVersion = 430;
 		#end
@@ -223,13 +233,13 @@ class OpenGLDriver extends Driver {
 		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
 	}
 
-	#if hlsdl
+	#if limen
 	static var computeEnabled : Bool = false;
 	public static function enableComputeShaders() {
-		#if (hlsdl >= version("1.15.0"))
+		#if (limen >= version("1.15.0"))
 		computeEnabled = true;
 		#else
-		throw "enableComputeShaders() requires hlsdl 1.15+";
+		throw "enableComputeShaders() requires limen 1.15+";
 		#end
 	}
 	#end
@@ -366,7 +376,7 @@ class OpenGLDriver extends Driver {
 					case [T3D, false]: GL.TEXTURE_3D;
 					case [TCube, false]: GL.TEXTURE_CUBE_MAP;
 					case [T2D, true]: GL.TEXTURE_2D_ARRAY;
-					#if (hlsdl > version("1.15.0"))
+					#if (limen > version("1.15.0"))
 					case [T1D, false]: GL.TEXTURE_1D;
 					case [T1D, true]: GL.TEXTURE_1D_ARRAY;
 					case [TCube, true]: GL.TEXTURE_CUBE_MAP_ARRAY;
@@ -375,7 +385,7 @@ class OpenGLDriver extends Driver {
 					}
 					"Textures" + (dim == T2D ? "" : dim.getName().substr(1))+(arr ? "Array" : "");
 				case TRWTexture(dim, arr, chans):
-					#if (js || hlsdl < version("1.15.0"))
+					#if (js || limen < version("1.15.0"))
 					throw "Texture not supported "+tt;
 					#else
 					mode = switch( [dim, arr] ) {
@@ -473,7 +483,7 @@ class OpenGLDriver extends Driver {
 				p.fragment = compileShader(glout,shader.fragment);
 
 			p.p = gl.createProgram();
-			#if ((hlsdl || usegl) && !hlmesa)
+			#if ((limen || usegl) && !hlmesa)
 			if( glES == null && shaderVersion >= 130 && shader.fragment != null ) {
 				var outCount = 0;
 				for( v in shader.fragment.data.vars )
@@ -502,7 +512,7 @@ class OpenGLDriver extends Driver {
 				#if js
 				gl.deleteProgram(p.p);
 				#end
-				#if hlsdl
+				#if limen
 				/*
 					Tentative patch on some driver that report an higher shader version that it's allowed to use.
 				*/
@@ -701,8 +711,8 @@ class OpenGLDriver extends Driver {
 					}
 					if( fmt == 0 )
 						throw "Texture format does not match: "+t+"["+t.format+"] should be "+hxsl.Ast.Tools.toString(pt.t);
-					#if (hlsdl < version("1.15.0"))
-					throw "RWTextures support requires hlsdl 1.15+";
+					#if (limen < version("1.15.0"))
+					throw "RWTextures support requires limen 1.15+";
 					#else
 					gl.bindImageTexture(imageBindingIdx++, cast t.t.t, 0, tdim == T3D ? true : false, 0, GL.READ_WRITE, fmt);
 					#end
@@ -791,7 +801,7 @@ class OpenGLDriver extends Driver {
 					i++;
 				} while ( mi > 0 );
 				#else
-				throw "GL ColorMaski support requires hlsdl 1.14+";
+				throw "GL ColorMaski support requires limen 1.14+";
 				#end
 			}
 			curColorMask = m;
@@ -821,7 +831,7 @@ class OpenGLDriver extends Driver {
 			return;
 
 		var wireframe = bits & Pass.wireframe_mask != 0;
-		#if hlsdl
+		#if limen
 		if ( wireframe ) {
 			gl.polygonMode(GL.FRONT_AND_BACK, GL.LINE);
 			// Force set to cull = None
@@ -963,7 +973,7 @@ class OpenGLDriver extends Driver {
 		if( color != null ) {
 			gl.colorMask(true, true, true, true);
 			curColorMask = 15;
-			#if hlsdl
+			#if limen
 			// clear does not take gamma correction into account in GL/Windows
 			if( curTarget != null && curTarget.isSRGB() )
 				gl.clearColor(Math.pow(color.r, 1/2.2), Math.pow(color.g, 1/2.2), Math.pow(color.b, 1/2.2), color.a);
@@ -989,7 +999,7 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function resize(width, height) {
-		#if hlsdl
+		#if limen
 		hxd.Window.getInstance().setCurrent();
 		#end
 		#if js
@@ -1051,7 +1061,7 @@ class OpenGLDriver extends Driver {
 		case GL.TEXTURE_3D: "TEXTURE_3D";
 		case GL.TEXTURE_CUBE_MAP: "TEXTURE_CUBE_MAP";
 		case GL.TEXTURE_2D_ARRAY: "TEXTURE_2D_ARRAY";
-		#if (hlsdl > version("1.15.0"))
+		#if (limen > version("1.15.0"))
 		case GL.TEXTURE_CUBE_MAP_ARRAY: "TEXTURE_CUBE_MAP_ARRAY";
 		#end
 		default: "UNKNOWN_TEXTURE_TYPE";
@@ -1063,7 +1073,7 @@ class OpenGLDriver extends Driver {
 			return GL.TEXTURE_3D;
 		var isArray = t.flags.has(IsArray);
 		if( t.flags.has(Cube) )
-			return #if (hlsdl > version("1.15.0")) isArray ? GL.TEXTURE_CUBE_MAP_ARRAY : #end GL.TEXTURE_CUBE_MAP;
+			return #if (limen > version("1.15.0")) isArray ? GL.TEXTURE_CUBE_MAP_ARRAY : #end GL.TEXTURE_CUBE_MAP;
 		return isArray ? GL.TEXTURE_2D_ARRAY : GL.TEXTURE_2D;
 	}
 
@@ -1169,7 +1179,7 @@ class OpenGLDriver extends Driver {
 			return false;
 		}
 
-		#if (js || (hlsdl >= version("1.12.0")))
+		#if (js || (limen >= version("1.12.0")))
 		gl.texParameteri(bind, GL.TEXTURE_BASE_LEVEL, t.startingMip);
 		gl.texParameteri(bind, GL.TEXTURE_MAX_LEVEL, t.mipLevels-1);
 		#end
@@ -1250,7 +1260,7 @@ class OpenGLDriver extends Driver {
 		t.flags.unset(WasCleared);
 		gl.bindTexture(tt.bind, tt.t);
 
-		#if (js || (hlsdl >= version("1.12.0")))
+		#if (js || (limen >= version("1.12.0")))
 		gl.texParameteri(tt.bind, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
 		gl.texParameteri(tt.bind, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
 		gl.texParameteri(tt.bind, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
@@ -1436,16 +1446,16 @@ class OpenGLDriver extends Driver {
 		var stream = streamData(pixels.bytes.getData(),pixels.offset,dataLen);
 		if( t.format.match(S3TC(_)) ) {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
-				#if (hlsdl >= version("1.12.0"))
+				#if (limen >= version("1.12.0"))
 				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, t.t.internalFmt, dataLen, stream);
-				#else throw "TextureArray support requires hlsdl 1.12+"; #end
+				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
 				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, dataLen, stream);
 		} else {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
-				#if (hlsdl >= version("1.12.0"))
+				#if (limen >= version("1.12.0"))
 				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, stream);
-				#else throw "TextureArray support requires hlsdl 1.12+"; #end
+				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
 				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, stream);
 		}
@@ -1674,7 +1684,7 @@ class OpenGLDriver extends Driver {
 				var commandOffset : hl.Bytes = hl.Api.unsafeCast(haxe.Int64.make(0, commands.offset * InstanceBuffer.ELEMENT_SIZE));
 			#end
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, commands.data);
-			#if (hlsdl >= version("1.15.0"))
+			#if (limen >= version("1.15.0"))
 			if ( commands.countBuffer != null && hasMultiIndirectCount ) {
 				#if (haxe_ver < 5)
 					var arr = new hl.NativeArray<Int>(1);
@@ -1706,8 +1716,9 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function present() {
-		#if hlsdl
-		@:privateAccess hxd.Window.inst.window.present();
+		#if limen
+		context.vsync = hxd.Window.getInstance().vsync;
+		context.present();
 		#elseif usesys
 		haxe.System.present();
 		#end
@@ -1734,7 +1745,7 @@ class OpenGLDriver extends Driver {
 			gl.drawBuffers(CBUFFERS[k]);
 		else if( mrtExt != null )
 			mrtExt.drawBuffersWEBGL(CBUFFERS[k]);
-		#elseif (hlsdl || usegl)
+		#elseif (limen || usegl)
 		gl.drawBuffers(k, CBUFFERS);
 		#end
 	}
@@ -1955,7 +1966,7 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
-		#if hlsdl
+		#if limen
 		hxd.Window.getInstance().setCurrent();
 		#end
 		#if js
@@ -2249,7 +2260,7 @@ class OpenGLDriver extends Driver {
 	];
 
 	static var CBUFFERS =
-		#if (hlsdl || usegl)
+		#if (limen || usegl)
 			hl.Bytes.getArray([for( i in 0...32 ) GL.COLOR_ATTACHMENT0 + i]);
 		#elseif js
 			[for( i in 0...32 ) [for( k in 0...i ) GL.COLOR_ATTACHMENT0 + k]];

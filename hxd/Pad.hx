@@ -1,13 +1,12 @@
 package hxd;
 
 #if hl
-#if hlsdl
-import sdl.Event;
-import sdl.GameController;
+#if limen
+import limen.platform.event.Event;
+import limen.platform.input.gamepad.Gamepad as GameController;
+import limen.platform.event.EventType.*;
 #elseif (usesys && !hlmesa)
 import haxe.GameController;
-#elseif hldx
-import dx.GameController;
 #else
 private typedef Event = {
 }
@@ -74,7 +73,7 @@ class PadEvent {
 
 class Pad {
 
-	#if hlsdl
+	#if limen
 	/**
 		Works with both DualShock and XBox controllers
 	**/
@@ -206,8 +205,8 @@ class Pad {
 	#end
 
 	public static var DEFAULT_CONFIG : PadConfig =
-		#if hlsdl CONFIG_SDL
-		#elseif (hldx || usesys) GameController.CONFIG
+		#if limen CONFIG_SDL
+		#elseif usesys GameController.CONFIG
 		#elseif js  CONFIG_JS_STD
 		#else ({}:Dynamic) #end;
 
@@ -276,9 +275,9 @@ class Pad {
 	}
 
 	public function rumble( strength : Float, time_s : Float ){
-		#if hlsdl
+		#if limen
 		d.rumble( strength, Std.int(time_s*1000.) );
-		#elseif (hldx || usesys)
+		#elseif usesys
 		d.rumble( strength, time_s );
 		#elseif js
 		var d: Dynamic = d;
@@ -306,7 +305,7 @@ class Pad {
 
 	function get_name() {
 		if( index < 0 ) return "Dummy GamePad";
-		#if (hldx || hlsdl || usesys)
+		#if (limen || usesys)
 		return d.name;
 		#elseif js
 		return d.id;
@@ -330,7 +329,7 @@ class Pad {
 	#if js
 	var d : js.html.Gamepad;
 	static var pads : Map<Int, hxd.Pad> = new Map();
-	#elseif (hldx || hlsdl || usesys)
+	#elseif (limen || usesys)
 	var d : GameController;
 	static var pads : Map<Int, hxd.Pad> = new Map();
 	#end
@@ -344,21 +343,15 @@ class Pad {
 			return;
 		#end
 		waitPad = onPad;
-		#if hlsdl
+		#if limen
 		if( !initDone ) {
 			initDone = true;
-			#if (hlsdl >= version("1.16.0"))
-			var sticks = sdl.Sdl.getJoysticks();
+			var sticks = limen.platform.Platform.getJoysticks();
 			for( stick in sticks )
-				initPad( stick, sdl.Sdl.getTime() ); // startup enumeration records when heaps discovers the device
-			#else
-			var c = @:privateAccess GameController.gctrlCount();
-			for( idx in 0...c )
-				initPad( idx );
-			#end
+				initPad( stick, limen.platform.Platform.getTime() ); // startup enumeration records when heaps discovers the device
 			haxe.MainLoop.add(syncPads, -1);
 		}
-		#elseif (hldx || usesys)
+		#elseif usesys
 		if( !initDone ){
 			initDone = true;
 			GameController.init();
@@ -407,7 +400,7 @@ class Pad {
 	}
 	#end
 
-	#if hlsdl
+	#if limen
 
 	inline function _setAxis( axisId : Int, value : Int ) : Float{
 		var v = value / 0x7FFF;
@@ -434,8 +427,6 @@ class Pad {
 
 	private static function initPad( index, timestamp : Float = 0. ){
 		var sp = new GameController( index );
-		if( @:privateAccess sp.ptr == null )
-			return;
 		var p = new hxd.Pad();
 		p.index = sp.id;
 		p.d = sp;
@@ -459,10 +450,10 @@ class Pad {
 	private static function onEvent( e : Event ){
 		var p = pads.get( e.controller );
 		switch( e.type ){
-			case GControllerAdded:
+			case GamepadAdded:
 				if( initDone )
 					initPad(e.controller, e.timestamp);
-			case GControllerRemoved:
+			case GamepadRemoved:
 				if( p != null ){
 					if (p.onPadEvent != null)
 						p.onPadEvent( { kind: EPadDisconnect, pad:p, timestamp: e.timestamp } );
@@ -471,19 +462,19 @@ class Pad {
 					p.connected = false;
 					p.onDisconnect();
 				}
-			case GControllerDown:
+			case GamepadButtonDown:
 				if( p != null && e.button > -1 ) {
 					p._setButton( e.button + 6, true );
 					if (p.onPadEvent != null)
 						p.onPadEvent( { kind: EPadPush, button: e.button + 6, value: 1, pad: p, timestamp: e.timestamp } );
 				}
-			case GControllerUp:
+			case GamepadButtonUp:
 				if( p != null && e.button > -1 ) {
 					p._setButton( e.button + 6, false );
 					if (p.onPadEvent != null)
 						p.onPadEvent( { kind: EPadRelease, button: e.button + 6, value: 0, pad: p, timestamp: e.timestamp } );
 				}
-			case GControllerAxis:
+			case GamepadAxis:
 				if( p != null && e.button > -1 && e.button < 6 ) {
 					var value = p._setAxis( e.button, e.value );
 					if (p.onPadEvent != null)
@@ -502,7 +493,7 @@ class Pad {
 		}
 	}
 
-	#elseif (hldx || usesys)
+	#elseif usesys
 
 	static function syncPads(){
 		GameController.detect(onDetect);

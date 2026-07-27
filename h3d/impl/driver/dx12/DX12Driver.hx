@@ -1,6 +1,6 @@
 package h3d.impl.driver.dx12;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
+#if (limen && gfx_dx12)
 
 #if (hl_ver < version("1.14.0"))
 #error "DX12Driver requires at least -D hl_ver=1.14.0"
@@ -16,18 +16,61 @@ import h3d.impl.driver.dlss.DLSSParams;
 import h3d.impl.driver.dlss.DLSSQuality;
 import h3d.impl.driver.dlss.DLSSSettings;
 import h3d.impl.driver.dlss.DLSSTag;
-import dx.Dx12;
-import dx.Dx12.Dx12Blend;
-import dx.Dx12.Dx12BlendOp;
-import dx.Dx12.Dx12ComparisonFunc;
-import dx.Dx12.Dx12CullMode;
-import dx.Dx12.Dx12DriverInitFlag;
-import dx.Dx12.Dx12DriverInitFlags;
-import dx.Dx12.Dx12DriverInstance;
-import dx.Dx12.Dx12Resource;
-import dx.Dx12.Dx12SamplerDesc;
-import dx.Dx12.Dx12ShaderResourceViewDesc;
-import dx.Dx12.Dx12StencilOp;
+
+import limen.graphics.d3d12.DX12Core.Address;
+import limen.graphics.d3d12.DX12Core.Box;
+import limen.graphics.d3d12.DX12Core.DxgiFormat;
+import limen.graphics.d3d12.command.Commands.CommandAllocator;
+import limen.graphics.d3d12.command.Commands.CommandList;
+import limen.graphics.d3d12.command.Commands.CommandQueue;
+import limen.graphics.d3d12.command.Commands.CommandSignature;
+import limen.graphics.d3d12.command.Commands.CommandSignatureDesc;
+import limen.graphics.d3d12.command.Commands.Fence;
+import limen.graphics.d3d12.command.Commands.IndexBufferView;
+import limen.graphics.d3d12.command.Commands.IndirectArgumentDesc;
+import limen.graphics.d3d12.command.Commands.VertexBufferView;
+import limen.graphics.d3d12.command.Commands.WaitEvent;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorRange;
+import limen.graphics.d3d12.descriptor.ResourceViews.Dx12ShaderResourceViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
+import limen.graphics.d3d12.descriptor.ResourceViews.Tex2DArraySRV;
+import limen.graphics.d3d12.descriptor.ResourceViews.Tex2DSRV;
+import limen.graphics.d3d12.descriptor.ResourceViews.Tex3DSRV;
+import limen.graphics.d3d12.descriptor.ResourceViews.TexCubeSRV;
+import limen.graphics.d3d12.internal.D3D12Bindings as Driver;
+import limen.graphics.d3d12.internal.D3D12Bindings.Constant;
+import limen.graphics.d3d12.internal.D3D12Bindings.Dx12DriverInitFlag;
+import limen.graphics.d3d12.internal.D3D12Bindings.Dx12DriverInitFlags;
+import limen.graphics.d3d12.internal.D3D12Bindings.Dx12DriverInstance;
+import limen.graphics.d3d12.internal.D3D12Bindings.InfoQueueFilter;
+import limen.graphics.d3d12.internal.D3D12Bindings.QueryVideoMemoryInfo;
+import limen.graphics.d3d12.pipeline.InputLayout.InputElementDesc;
+import limen.graphics.d3d12.pipeline.Pipeline.ComputePipelineStateDesc;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12Blend;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12BlendOp;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12ComparisonFunc;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12CullMode;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12StencilOp;
+import limen.graphics.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
+import limen.graphics.d3d12.pipeline.Pipeline.PipelineState;
+import limen.graphics.d3d12.pipeline.RootSignature.RootParameterConstants;
+import limen.graphics.d3d12.pipeline.RootSignature.RootParameterDescriptorTable;
+import limen.graphics.d3d12.pipeline.RootSignature.RootSignature;
+import limen.graphics.d3d12.pipeline.RootSignature.RootSignatureDesc;
+import limen.graphics.d3d12.pipeline.RootSignature.RootSignatureFlag;
+import limen.graphics.d3d12.query.Queries.QueryHeapDesc;
+import limen.graphics.d3d12.resource.Resources.Dx12Resource;
+import limen.graphics.d3d12.resource.Resources.GpuResource;
+import limen.graphics.d3d12.resource.Resources.HeapProperties;
+import limen.graphics.d3d12.resource.Resources.HeapFlag.CREATE_NOT_ZEROED;
+import limen.graphics.d3d12.resource.Resources.ResourceBarrier;
+import limen.graphics.d3d12.resource.Resources.ResourceDesc;
+import limen.graphics.d3d12.resource.Resources.ResourceFlag;
+import limen.graphics.d3d12.resource.Resources.ResourceState;
+import limen.graphics.d3d12.shader.ShaderCompiler;
+
 import haxe.Int64;
 import h3d.mat.Pass;
 import h3d.mat.Stencil;
@@ -52,11 +95,9 @@ import h3d.impl.driver.dx12.shader.CompiledShader;
 import h3d.impl.driver.dx12.shader.ShaderRegisters;
 import h3d.impl.driver.dx12.TempObjects;
 
-#if dlss
-import heaps.dlss.Dlss;
+#if dlss_allowed
+import h3d.impl.driver.dlss.Dlss;
 #end
-
-private typedef Driver = Dx12;
 
 class DX12Driver extends h3d.impl.driver.Driver {
 
@@ -64,7 +105,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	var driver : Dx12DriverInstance;
 	var hasDeviceError = false;
-	var window : #if hlsdl sdl.Window #else dx.Window #end;
+	var window : limen.platform.Window;
 	var onContextLost : Void -> Void;
 	var frames : Array<DX12Frame>;
 	var frame : DX12Frame;
@@ -135,7 +176,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	var asyncComputeCommandList : CommandList;
 	var asyncComputeAllocator : CommandAllocator;
 
-	#if dlss
+	#if dlss_allowed
 	var dlssReady : Bool;
 	var dlssFrameToken : DLSSFrameToken;
 	#end
@@ -174,13 +215,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	public function new() {
-		window = #if hlsdl @:privateAccess sdl.Window.windows[0] #else @:privateAccess dx.Window.windows[0] #end;
+		window = @:privateAccess limen.platform.Window.windows[0];
 		reset();
 	}
 
 	override function getMemoryUsage() {
 		var mem = new QueryVideoMemoryInfo();
-		Dx12.queryVideoMemoryInfo(0, mem);
+		Driver.queryVideoMemoryInfo(0, mem);
 		inline function toF( v : haxe.Int64 ) return (v / 1024).low * 1024.;
 		return { total : toF(mem.budget), allocated : toF(mem.currentUsage), free : toF(mem.budget - mem.currentUsage) };
 	}
@@ -205,7 +246,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			return true;
 
 		var hasSM6_6 = false;
-		#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+		#if (limen >= version("1.16.0"))
 		var shaderModel = new hl.Bytes(4);
 		shaderModel.setI32(0, HIGHEST_SHADER_MODEL);
 		Driver.checkFeatureSupport(SHADER_MODEL, shaderModel, 4);
@@ -231,7 +272,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	function reset() {
 		disposeAllocators();
 
-		#if dlss
+		#if dlss_allowed
 		if ( DLSS ) {
 			var result = Dlss.init(false);
 			dlssReady = result == 0;
@@ -244,13 +285,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if( DEBUG ) suppressDebugMessages();
 		frames = [];
 
-		#if ((hldx >= version("1.15.0") || hlsdl >= version("1.15.0")))
+		#if (limen >= version("1.15.0"))
 		textureAlignment = Driver.getConstant(TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 		#else
 		textureAlignment = 512;
 		#end
 
-		#if dlss
+		#if dlss_allowed
 		if ( dlssReady ) {
 			var device = Driver.getDevice();
 			Dlss.setDevice(device);
@@ -444,7 +485,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		frame.samplerHeapCache.reset();
 		flushHeaps();
 
-		#if dlss
+		#if dlss_allowed
 		if ( dlssReady ) dlssFrameToken = Dlss.getNewFrameToken(frameCount);
 		#end
 	}
@@ -640,7 +681,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			flushTransitions();
 			tmp.maxBarriers += 100;
 			tmp.barriers = hl.CArray.alloc(ResourceBarrier, tmp.maxBarriers);
-			var allSubresource = #if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0"))) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
+			var allSubresource = #if (limen >= version("1.16.0")) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
 			for ( i in 0...tmp.maxBarriers )
 				tmp.barriers[i].subResource = allSubresource;
 			tmp.resourcesToTransition = new hl.NativeArray<ResourceData>(tmp.maxBarriers);
@@ -680,7 +721,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 
 		if (totalBarrier > 0)
-			#if ((hldx >= version("1.15.0") || hlsdl >= version("1.15.0")))
+			#if (limen >= version("1.15.0"))
 			frame.commandList.resourceBarriers(tmp.barriers, totalBarrier);
 			#else
 			for (i in 0...totalBarrier)
@@ -1133,7 +1174,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			var rangeArr = hl.CArray.alloc(DescriptorRange,rangeCount);
 			for ( i in 0...rangeCount) {
 				var range = rangeArr[i];
-				#if ((hldx >= version("1.15.0") || hlsdl >= version("1.15.0")))
+				#if (limen >= version("1.15.0"))
 				range.offsetInDescriptorsFromTableStart = Driver.getConstant(DESCRIPTOR_RANGE_OFFSET_APPEND);
 				#else
 				range.offsetInDescriptorsFromTableStart = 0xffffffff;
@@ -2130,7 +2171,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	function createTexView( t : h3d.mat.Texture, srvAddr : Address) {
-		#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+		#if (limen >= version("1.16.0"))
 		var texView = getCpuTexView(t);
 		Driver.copyDescriptorsSimple(1, srvAddr, texView, CBV_SRV_UAV);
 		#else
@@ -2168,7 +2209,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	function createSampler( t : h3d.mat.Texture, samplerAddr : Address ) {
-		#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+		#if (limen >= version("1.16.0"))
 		var sampler = getCpuSampler(t);
 		Driver.copyDescriptorsSimple(1, samplerAddr, sampler, SAMPLER);
 		#else
@@ -2411,7 +2452,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 								throw "Buffer was allocated without UniformBuffer flag";
 							transition(cbv, VERTEX_AND_CONSTANT_BUFFER);
 							var cbvAddress = srv.offset(cbvIndex * frame.srvHeap.stride);
-							#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+							#if (limen >= version("1.16.0"))
 							var cViewIndex = cbv.cViewIndex;
 							if ( cViewIndex == -1 ) {
 								cbv.cViewIndex = cViewIndex = cpuSrvHeap.allocIndex();
@@ -2427,7 +2468,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 							transition(cbv, state);
 							var srvAddress = srv.offset(storageIndex * frame.srvHeap.stride);
 							var stride = regs.bufferStrides[i];
-							#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+							#if (limen >= version("1.16.0"))
 							var sViewIndex = cbv.getSRV(stride);
 							if ( sViewIndex == -1 ) {
 								sViewIndex = cpuSrvHeap.allocIndex();
@@ -2445,7 +2486,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 							transition(cbv, UNORDERED_ACCESS);
 							var uavAddress = srv.offset(uavIndex * frame.srvHeap.stride);
 							var stride = regs.bufferStrides[i];
-							#if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0")))
+							#if (limen >= version("1.16.0"))
 							var uViewIndex = cbv.getUAV(stride);
 							if ( uViewIndex == -1 ) {
 								uViewIndex = cpuSrvHeap.allocIndex();
@@ -2893,7 +2934,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		transition(frame.backBuffer, PRESENT);
 		flushTransitions();
 		flushFrame();
-		Driver.present(window.vsync);
+		Driver.present(hxd.Window.getInstance().vsync);
 
 		waitForFrame(Driver.getCurrentBackBufferIndex());
 		beginFrame();
@@ -2972,7 +3013,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		return handle;
 	}
 
-	#if dlss
+	#if dlss_allowed
 	inline static function loadDlssVec( vec : DLSSVector, v : h3d.Vector ) {
 		vec.x = cast(v.x, Single);
 		vec.y = cast(v.y, Single);
@@ -3002,7 +3043,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	#end
 
 	override function isDLSSSupported( framegen : Bool = false ) : Bool {
-		#if dlss
+		#if dlss_allowed
 		if ( !dlssReady ) return false;
 		var adapter = Driver.getAdapter();
 		var feature = framegen ? DLSSFeature.FRAMEGEN : DLSSFeature.DLSS;
@@ -3013,7 +3054,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function getDLSSOptimalSettings( mode : DLSSMode, targetWidth : Int, targetHeight : Int ) : DLSSSettings {
-		#if dlss
+		#if dlss_allowed
 		if ( !dlssReady ) return null;
 		switch (mode) {
 			case Off: dlssOptions.mode = OFF;
@@ -3036,7 +3077,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function applyDLSS( resources : Map<DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
-		#if dlss
+		#if dlss_allowed
 		if ( !dlssReady ) return;
 		switch (mode) {
 			case Off: dlssOptions.mode = OFF;

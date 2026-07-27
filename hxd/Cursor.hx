@@ -26,22 +26,20 @@ class CustomCursor {
 	var offsetY : Int;
 	#if macro
 	var alloc : Array<Dynamic>;
-	#elseif hlsdl
-	var alloc : Array<sdl.Cursor>;
-	#elseif hldx
-	var alloc : Array<dx.Cursor>;
+	#elseif limen
+	var alloc : Array<limen.platform.cursor.Cursor>;
 	#elseif js
 	var alloc : Array<String>;
 	#else
 	var alloc : Dynamic;
 	#end
-	#if (hlsdl && !macro)
-	var allocSurfaces : Array<sdl.Surface>;
+	#if (limen && !macro)
+	var allocSurfaces : Array<limen.platform.Surface>;
 	var allocPixels : Array<hxd.Pixels>;
 	#end
 
 	// Heaps-side cursor animation for target that do not support native animated cursors.
-	#if (hlsdl || hldx || js)
+	#if (limen || js)
 	var frameDelay : Float;
 	var frameTime : Float;
 	var frameIndex : Int;
@@ -52,14 +50,14 @@ class CustomCursor {
 		this.speed = speed;
 		this.offsetX = offsetX;
 		this.offsetY = offsetY;
-		#if (hlsdl || hldx || js)
+		#if (limen || js)
 		frameDelay = 1 / speed;
 		frameTime = 0;
 		frameIndex = 0;
 		#end
 	}
 
-	#if (hlsdl || hldx || js)
+	#if (limen || js)
 	public function reset() : Void {
 		frameTime = 0;
 		frameIndex = 0;
@@ -89,7 +87,7 @@ class CustomCursor {
 			f.dispose();
 		frames = [];
 		if( alloc != null ) {
-			#if (hlsdl && !macro)
+			#if (limen && !macro)
 			for (cur in alloc) {
 				cur.free();
 			}
@@ -101,10 +99,6 @@ class CustomCursor {
 			}
 			allocSurfaces = null;
 			allocPixels = null;
-			#elseif hldx
-			for (cur in alloc) {
-				cur.destroy();
-			}
 			#elseif js
 			// alloc set to null below.
 			#else

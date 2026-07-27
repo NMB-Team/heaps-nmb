@@ -1,7 +1,14 @@
 package h3d.impl.driver.dx12.descriptor;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12;
+#if (limen && gfx_dx12)
+
+import limen.graphics.d3d12.DX12Core.Address;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeap;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeapDesc;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeapFlags;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
+import limen.graphics.d3d12.internal.D3D12Bindings as Dx12;
+
 import haxe.Int64;
 import h3d.impl.driver.dx12.DX12Driver;
 

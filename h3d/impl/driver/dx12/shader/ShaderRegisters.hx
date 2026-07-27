@@ -1,7 +1,8 @@
 package h3d.impl.driver.dx12.shader;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12.Address;
+#if (limen && gfx_dx12)
+import limen.graphics.d3d12.DX12Core.Address;
+
 import h3d.impl.driver.Texture;
 
 class ShaderRegisters {

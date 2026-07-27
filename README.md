@@ -33,13 +33,12 @@ In order to compile the samples, go to the `samples` directory and run `haxe gen
 To compile:
 - For JS/WebGL: run `haxe [sample]_js.hxml`, then open `index.html` to run
 - For [HashLink](https://github.com/NMB-Team/hashlink-nmb): run `haxe [sample]_hl.hxml` then run `hl <sample>.hl` to run
-- For Flash: run `haxe [sample]_swf.hxml`, then open `<sample>.swf` to run
 - For Consoles, contact us: nicolas@haxe.org
 
 HashLink graphics backends
 --------------------------
 
-HashLink SDL builds use `-lib hlsdl`. Enable the graphics backends that should be compiled into the build with these defines:
+HashLink Lumen builds use `-lib limen`. Enable the graphics backends that should be compiled into the build with these defines:
 
 ```hxml
 -D gfx_dx11
@@ -48,10 +47,10 @@ HashLink SDL builds use `-lib hlsdl`. Enable the graphics backends that should b
 -D gfx_opengl
 ```
 
-Only compiled backends can be selected at runtime. A full Windows SDL build can include all of them:
+Only compiled backends can be selected at runtime. A full Windows Lumen build can include all of them:
 
 ```hxml
--lib hlsdl
+-lib limen
 -D gfx_dx11
 -D gfx_dx12
 -D gfx_vulkan
@@ -74,8 +73,6 @@ gfx_dx12 -> gfx_dx11 -> gfx_vulkan -> OpenGL
 ```
 
 OpenGL is used when no explicit backend define is provided, or when `gfx_opengl` is the selected/default backend.
-
-Pure HashLink DirectX builds can still use `-lib hldx`. Use `-D gfx_dx12` for DX12; without it, `hldx` uses DX11.
 
 Project files for [Visual Studio Code](https://code.visualstudio.com/) are also generated.
 

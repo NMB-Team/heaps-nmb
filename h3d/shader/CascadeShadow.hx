@@ -73,7 +73,7 @@ class CascadeShadow extends DirShadow {
 				vPos /= vPos.w;
 
 				var found = false;
-				#if (hldx || (hlsdl && gfx_dx11))
+				#if (limen && gfx_dx11)
 				for ( i in 0...CASCADE_COUNT ) {
 				#else
 				@unroll for ( i in 0...MAX_CASCADE_COUNT )

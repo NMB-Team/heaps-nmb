@@ -1,12 +1,12 @@
 package h3d.impl.driver.opengl;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
+#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
 #if js
 private typedef Uniform = js.html.webgl.UniformLocation;
 private typedef GLShader = js.html.webgl.Shader;
-#elseif hlsdl
-private typedef Uniform = sdl.GL.Uniform;
-private typedef GLShader = sdl.GL.Shader;
+#elseif limen
+private typedef Uniform = limen.graphics.opengl.OpenGLTypes.Uniform;
+private typedef GLShader = limen.graphics.opengl.OpenGLTypes.Shader;
 #elseif usegl
 private typedef Uniform = haxe.GLTypes.Uniform;
 private typedef GLShader = haxe.GLTypes.Shader;

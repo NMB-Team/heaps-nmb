@@ -28,9 +28,8 @@ jobs:
           haxelib git hscript https://github.com/HaxeFoundation/hscript
           haxelib git domkit https://github.com/HeapsIO/domkit
           haxelib git hide https://github.com/HeapsIO/hide
-          haxelib git hlsdl https://github.com/NMB-Team/hashlink-nmb master libs/sdl
+          haxelib git limen https://github.com/NMB-Team/limen
           haxelib git castle https://github.com/ncannasse/castle
-          haxelib git hldx https://github.com/NMB-Team/hashlink-nmb master libs/directx
           haxelib git hlopenal https://github.com/NMB-Team/hashlink-nmb master libs/openal
       - name: Build all.hxml
         run: |
@@ -46,15 +45,15 @@ jobs:
       matrix:
         include:
           - backend: dx11
-            flags: -lib hlsdl -D gfx_dx11
+            flags: -lib limen -D gfx_dx11
           - backend: dx12
-            flags: -lib hlsdl -D gfx_dx12
+            flags: -lib limen -D gfx_dx12
           - backend: vulkan
-            flags: -lib hlsdl -D gfx_vulkan
+            flags: -lib limen -D gfx_vulkan
           - backend: opengl
-            flags: -lib hlsdl -D gfx_opengl
+            flags: -lib limen -D gfx_opengl
           - backend: multidriver
-            flags: -lib hlsdl -D gfx_dx11 -D gfx_dx12 -D gfx_vulkan -D gfx_opengl
+            flags: -lib limen -D gfx_dx11 -D gfx_dx12 -D gfx_vulkan -D gfx_opengl
     runs-on: ubuntu-latest
     name: Graphics backend (${{ matrix.backend }})
     steps:
@@ -66,6 +65,6 @@ jobs:
         run: |
           haxelib dev heaps .
           haxelib git format https://github.com/HaxeFoundation/format
-          haxelib git hlsdl https://github.com/NMB-Team/hashlink-nmb master libs/sdl
+          haxelib git limen https://github.com/NMB-Team/limen
       - name: Compile backend
         run: haxe tests/backend-smoke.hxml ${{ matrix.flags }}

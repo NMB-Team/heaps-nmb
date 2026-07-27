@@ -74,7 +74,7 @@ class CacheFileBuilder {
 	public var platforms : Array<CacheFilePlatform> = [];
 	public var shaderLib : Map<String,String> = new Map();
 	public var dxInitDone = false;
-	#if ((hldx || hlsdl) && gfx_dx12)
+	#if (limen && gfx_dx12)
 	public var dx12Driver : h3d.impl.driver.dx12.DX12Driver;
 	#end
 	public var dxShaderVersion = "5_0";
@@ -123,23 +123,28 @@ class CacheFileBuilder {
 	function generateShader( r : RuntimeShader, rd : RuntimeShader.RuntimeShaderData ) : { code : String, bytes : haxe.io.Bytes, profile : String } {
 		switch( platform ) {
 		case DirectX:
-			#if (hldx || (hlsdl && gfx_dx11 && !gfx_dx12))
+			#if (limen && gfx_dx11 && !gfx_dx12)
 			if( !dxInitDone ) {
-				#if hlsdl
-				var win = new sdl.Window("", 800, 600, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOW_HIDDEN);
-				#else
-				var win = new dx.Window("", 800, 600);
-				win.visible = false;
-				#end
+				var win = new limen.platform.Window("", 800, 600, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOW_HIDDEN);
+				limen.graphics.d3d11.internal.D3D11Bindings.create(
+					win,
+					limen.graphics.d3d11.DX11Core.Format.R8G8B8A8_UNORM,
+					limen.graphics.d3d11.internal.D3D11Bindings.Dx11DriverInitFlags.None
+				);
 				dxInitDone = true;
-				dx.Driver.create(win, R8G8B8A8_UNORM, None);
 			}
 			var out = new HlslOut();
 			var code = out.run(rd.data);
-			var bytes = dx.Driver.compileShader(code, "", "main", ((rd.kind == Vertex)?"vs_":"ps_") + dxShaderVersion, OptimizationLevel3);
+			var bytes = limen.graphics.d3d11.internal.D3D11Bindings.compileShader(
+				code,
+				"",
+				"main",
+				((rd.kind == Vertex) ? "vs_" : "ps_") + dxShaderVersion,
+				limen.graphics.d3d11.DX11Shaders.ShaderFlags.OptimizationLevel3
+			);
 			return { code : code, bytes : bytes, profile : dxShaderVersion };
 			#else
-			throw "DirectX compilation requires -lib hldx or -lib hlsdl with -D gfx_dx11";
+			throw "DirectX compilation requires -lib limen with -D gfx_dx11";
 			#end
 		case OpenGL:
 			if( rd.kind == Vertex ) {
@@ -189,14 +194,9 @@ class CacheFileBuilder {
 			sys.FileSystem.deleteFile(tmpOut);
 			return { code : code, bytes : data, profile : shaderCacheConfig };
 		case XBoxSeries, XBoxOneGDK:
-			#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
+			#if (limen && gfx_dx12)
 			if( !dxInitDone ) {
-				#if hlsdl
-				var win = new sdl.Window("", 800, 600, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOW_HIDDEN);
-				#else
-				var win = new dx.Window("", 800, 600);
-				win.visible = false;
-				#end
+				var win = new limen.platform.Window("", 800, 600, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOW_HIDDEN);
 				dxInitDone = true;
 				dx12Driver = new h3d.impl.driver.dx12.DX12Driver();
 			}
@@ -226,7 +226,7 @@ class CacheFileBuilder {
 			sys.FileSystem.deleteFile(tmpOut);
 			return { code : code, bytes : data, profile : profile };
 			#else
-			throw "-lib hldx or -lib hlsdl and -D gfx_dx12 are required to generate binaries for XBoxSeries";
+			throw "-lib limen and -D gfx_dx12 are required to generate binaries for XBoxSeries";
 			#end
 		case NX:
 			if( rd.kind == Vertex )

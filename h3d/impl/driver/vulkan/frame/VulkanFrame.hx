@@ -1,7 +1,10 @@
 package h3d.impl.driver.vulkan.frame;
 
-#if (hlsdl && gfx_vulkan)
-import sdl.Vulkan;
+#if (limen && gfx_vulkan)
+import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.vulkan.command.Commands.VkFence;
+import limen.graphics.vulkan.command.Commands.VkSemaphore;
+import limen.graphics.vulkan.command.Commands.VkSubmitInfo;
 
 class VulkanFrame {
 	public var command : VkCommandBuffer;

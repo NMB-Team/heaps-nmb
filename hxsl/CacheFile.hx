@@ -53,17 +53,13 @@ class CacheFile extends Cache {
 	function getPlatformTag() {
 		#if usesys
 		return Sys.systemName().toLowerCase();
-		#elseif hlsdl
+		#elseif limen
 		return switch (hxd.GraphicsDriverConfig.getCurrentOrDefault()) {
 			case hxd.GraphicsDriverApi.Dx12: "dx12";
 			case hxd.GraphicsDriverApi.Dx11: "directx";
 			case hxd.GraphicsDriverApi.Vulkan: "vulkan";
 			case hxd.GraphicsDriverApi.OpenGL | hxd.GraphicsDriverApi.Auto: "gl";
 		}
-		#elseif (hldx && gfx_dx12)
-		return "dx12";
-		#elseif hldx
-		return "dx";
 		#elseif hlnx
 		return "nx";
 		#else

@@ -1,10 +1,10 @@
 package h3d.impl.driver.opengl;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
+#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
 #if js
 private typedef Program = js.html.webgl.Program;
-#elseif hlsdl
-private typedef Program = sdl.GL.Program;
+#elseif limen
+private typedef Program = limen.graphics.opengl.OpenGLTypes.Program;
 #elseif usegl
 private typedef Program = haxe.GLTypes.Program;
 #end

@@ -1,7 +1,8 @@
 package h3d.impl.driver.vulkan.shader;
 
-#if (hlsdl && gfx_vulkan)
-import sdl.Vulkan;
+#if (limen && gfx_vulkan)
+import limen.graphics.vulkan.shader.ShaderModule.VkShaderModule;
+import limen.graphics.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 class VulkanShaderStageData {
 	public var vertex : Bool;

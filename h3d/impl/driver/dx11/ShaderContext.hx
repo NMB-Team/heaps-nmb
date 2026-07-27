@@ -1,7 +1,8 @@
 package h3d.impl.driver.dx11;
 
-#if ((hldx && !gfx_dx12) || (hlsdl && gfx_dx11))
-import dx.Driver.Shader;
+#if (limen && gfx_dx11)
+import limen.graphics.d3d11.DX11Core.Resource;
+import limen.graphics.d3d11.DX11Shaders.Shader;
 
 @:noCompletion
 class ShaderContext {
@@ -11,8 +12,8 @@ class ShaderContext {
 	public var texturesCount : Int;
 	public var bufferCount : Int;
 	public var paramsContent : hl.Bytes;
-	public var globals : dx.Resource;
-	public var params : dx.Resource;
+	public var globals : Resource;
+	public var params : Resource;
 	public var samplersMap : Array<Int>;
 	public var texturesTypes : Array<hxsl.Ast.Type>;
 	#if debug

@@ -1,7 +1,8 @@
 package h3d.impl.driver.dx12.resource;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12.DxgiFormat;
+#if (limen && gfx_dx12)
+import limen.graphics.d3d12.DX12Core.DxgiFormat;
+
 import h3d.impl.driver.dx12.descriptor.BlockHeap;
 
 class TextureData extends ResourceData {

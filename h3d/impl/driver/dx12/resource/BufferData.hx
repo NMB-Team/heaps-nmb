@@ -1,11 +1,14 @@
 package h3d.impl.driver.dx12.resource;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
+#if (limen && gfx_dx12)
 import h3d.impl.driver.dx12.descriptor.BlockHeap;
 
+import limen.graphics.d3d12.command.Commands.IndexBufferView;
+import limen.graphics.d3d12.command.Commands.VertexBufferView;
+
 class BufferData extends ResourceData {
-	public var view : dx.Dx12.VertexBufferView;
-	public var iview : dx.Dx12.IndexBufferView;
+	public var view : VertexBufferView;
+	public var iview : IndexBufferView;
 	public var handle : h3d.BufferHandle = null;
 	public var cViewIndex : Int = -1;
 	public var sViewIndex : Int = -1;
