@@ -73,8 +73,8 @@ class ShaderAdvanced extends hxd.App {
 			RG32F => "0000803f0000003f",
 			RGB32F => "0000803f0000003f0000803e",
 			RGBA32F => "0000803f0000003f0000803e0000003e",
-			SRGB => #if hlsdl "ffba8800" #else "ffbc8900" #end,
-			SRGB_ALPHA => #if hlsdl "ffba8820" #else "ffbc8920" #end,
+			SRGB => #if limen "ffba8800" #else "ffbc8900" #end,
+			SRGB_ALPHA => #if limen "ffba8820" #else "ffbc8920" #end,
 			RGB10A2 => "ffff0710",
 			RG11B10UF => "c0031c68",
 		];

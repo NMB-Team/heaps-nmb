@@ -14,7 +14,7 @@ class Texture {
 		The default texture color format
 	**/
 	public static var nativeFormat(default,never) : TextureFormat =
-		#if (usesys && !hldx && !hlsdl && !usegl && !macro)
+		#if (usesys && !limen && !usegl && !macro)
 			haxe.GraphicsDriver.nativeFormat
 		#else
 			RGBA
@@ -279,7 +279,7 @@ class Texture {
 	public function clear( color : Int, alpha = 1., layer = -1 ) {
 		alloc();
 		if( width == 0 || height == 0 ) return;
-		if( #if (usegl || hlsdl || js) true #else flags.has(Target) #end && (width != 1 || height != 1) ) {
+		if( #if (usegl || limen || js) true #else flags.has(Target) #end && (width != 1 || height != 1) ) {
 			var engine = h3d.Engine.getCurrent();
 			color |= Std.int(hxd.Math.clamp(alpha)*255) << 24;
 			if( layer < 0 ) {

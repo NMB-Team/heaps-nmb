@@ -1,6 +1,6 @@
 package h3d.impl.driver.opengl;
 
-#if ((js||hlsdl||usegl) && !(hlsdl && gfx_vulkan && !gfx_opengl))
+#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
 @:noCompletion
 class CompiledAttribute {
 	public var index : Int;

@@ -18,10 +18,8 @@ class LoadingScene extends h2d.Scene {
 
 	#if usesys
 		haxe.System.emitEvents(@:privateAccess hxd.Window.inst.event);
-	#elseif hldx
-		dx.Loop.processEvents(@:privateAccess hxd.Window.inst.onEvent);
-	#elseif hlsdl
-		sdl.Sdl.processEvents(@:privateAccess hxd.Window.inst.onEvent);
+	#elseif limen
+		limen.platform.Platform.processEvents(@:privateAccess hxd.Window.inst.onEvent);
 	#end
 
 		if ( renderTarget.width != engine.width || renderTarget.height != engine.height) {
@@ -40,5 +38,5 @@ class LoadingScene extends h2d.Scene {
 		super.onRemove();
 		if ( renderTarget != null )
 			renderTarget.dispose();
-	} 
+	}
 }

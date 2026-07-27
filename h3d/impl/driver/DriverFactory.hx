@@ -7,7 +7,7 @@ final class DriverFactory {
 	public static function create(api:GraphicsDriverApi, antiAlias:Int):Driver {
 		#if macro
 		return new h3d.impl.driver.nulls.NullDriver();
-		#elseif hlsdl
+		#elseif limen
 		return switch (api) {
 			case Dx12:
 				#if gfx_dx12
@@ -40,14 +40,10 @@ final class DriverFactory {
 		#else
 		return new h3d.impl.driver.opengl.OpenGLDriver(antiAlias);
 		#end
-		#elseif (hldx && gfx_dx12)
-		return new h3d.impl.driver.dx12.DX12Driver();
-		#elseif hldx
-		return new h3d.impl.driver.dx11.DX11Driver();
 		#elseif usesys
 		return new haxe.GraphicsDriver(antiAlias);
 		#else
-		#if sys Sys.println #else trace #end("No output driver available." #if hl + " Compile with -lib hlsdl or -lib hldx" #end);
+		#if sys Sys.println #else trace #end("No output driver available." #if hl + " Compile with -lib limen" #end);
 		return new h3d.impl.driver.nulls.NullDriver();
 		#end
 	}
@@ -55,13 +51,13 @@ final class DriverFactory {
 	private static function createFallback(antiAlias:Int):Driver {
 		#if macro
 		return new h3d.impl.driver.nulls.NullDriver();
-		#elseif (hlsdl && gfx_dx11)
+		#elseif (limen && gfx_dx11)
 		return new h3d.impl.driver.dx11.DX11Driver();
-		#elseif (hlsdl && gfx_dx12)
+		#elseif (limen && gfx_dx12)
 		return new h3d.impl.driver.dx12.DX12Driver();
-		#elseif (hlsdl && gfx_vulkan)
+		#elseif (limen && gfx_vulkan)
 		return new h3d.impl.driver.vulkan.VulkanDriver();
-		#elseif (hlsdl && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan)))
+		#elseif (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan)))
 		return new h3d.impl.driver.opengl.OpenGLDriver(antiAlias);
 		#else
 		return new h3d.impl.driver.nulls.NullDriver();

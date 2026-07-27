@@ -4,22 +4,18 @@ package h3d.impl.driver;
 typedef GPUBuffer = {};
 #elseif js
 typedef GPUBuffer = js.html.webgl.Buffer;
-#elseif (hlsdl && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))
+#elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))
 typedef GPUBuffer = Dynamic;
-#elseif (hlsdl && gfx_vulkan)
-typedef GPUBuffer = { buf : sdl.Vulkan.VkBuffer, mem : sdl.Vulkan.VkDeviceMemory, stride : Int };
-#elseif (hlsdl && gfx_dx12)
+#elseif (limen && gfx_vulkan)
+typedef GPUBuffer = { buf : limen.graphics.vulkan.memory.Memory.VkBuffer, mem : limen.graphics.vulkan.memory.Memory.VkDeviceMemory, stride : Int };
+#elseif (limen && gfx_dx12)
 typedef GPUBuffer = h3d.impl.driver.dx12.resource.BufferData;
-#elseif (hlsdl && gfx_dx11)
-typedef GPUBuffer = dx.Resource;
-#elseif hlsdl
-typedef GPUBuffer = sdl.GL.Buffer;
+#elseif (limen && gfx_dx11)
+typedef GPUBuffer = limen.graphics.d3d11.DX11Core.Resource;
+#elseif limen
+typedef GPUBuffer = limen.graphics.opengl.OpenGLTypes.Buffer;
 #elseif usegl
 typedef GPUBuffer = haxe.GLTypes.Buffer;
-#elseif (hldx && gfx_dx12)
-typedef GPUBuffer = h3d.impl.driver.dx12.resource.BufferData;
-#elseif hldx
-typedef GPUBuffer = dx.Resource;
 #elseif usesys
 typedef GPUBuffer = haxe.GraphicsDriver.GPUBuffer;
 #else

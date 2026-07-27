@@ -1,15 +1,13 @@
 package hxd;
+
 import hxd.Key in K;
 import hxd.impl.MouseMode;
-
-#if (hlsdl && hldx)
-#error "You shouldn't use both -lib hlsdl and -lib hldx"
+#if limen
+import limen.platform.event.EventType.*;
 #end
 
-#if hlsdl
-typedef DisplayMode = sdl.Window.DisplayMode;
-#elseif hldx
-typedef DisplayMode = dx.Window.DisplayMode;
+#if limen
+typedef DisplayMode = limen.platform.Window.WindowMode;
 #else
 enum DisplayMode {
 	Windowed; // 0
@@ -83,11 +81,8 @@ class Window {
 	public var currentMonitorIndex(get,never) : Int;
 	#end
 
-	#if hlsdl
-	var window : sdl.Window;
-	#elseif hldx
-	var window : dx.Window;
-	var _mouseClip : Bool;
+	#if limen
+	var window : limen.platform.Window;
 	#end
 	var windowWidth = 800;
 	var windowHeight = 600;
@@ -97,11 +92,12 @@ class Window {
 	var startMouseY = 0;
 	var savedSize : { x : Int, y : Int, width : Int, height : Int };
 	var flags : { fixed: Bool, hidden: Bool };
+	var _vsync = true;
 
 	static var CODEMAP = [for( i in 0...2048 ) i];
 	static var MIN_HEIGHT = 720;
 	static var MIN_FRAMERATE = 60; // 30 and 60 are always allowed
-	#if hlsdl
+	#if limen
 	static inline var TOUCH_SCALE = #if (hl_ver >= version("1.12.0")) 10000 #else 100 #end;
 	#end
 
@@ -114,26 +110,21 @@ class Window {
 		this.flags = flags;
 		var fixed = flags != null && flags.fixed != null ? flags.fixed : false;
 		var hidden = flags != null && flags.hidden != null ? flags.hidden : false;
-		#if hlsdl
+		#if limen
 		var sdlFlags = 0;
-		if (!fixed) sdlFlags |= sdl.Window.SDL_WINDOW_RESIZABLE;
-		if (hidden) sdlFlags |= sdl.Window.SDL_WINDOW_HIDDEN;
-		else sdlFlags |= sdl.Window.SDL_WINDOW_SHOWN;
-		sdl.Window.directXMode = hxd.GraphicsDriverConfig.usesDirectX();
+		if (!fixed) sdlFlags |= limen.platform.Window.SDL_WINDOW_RESIZABLE;
+		if (hidden) sdlFlags |= limen.platform.Window.SDL_WINDOW_HIDDEN;
+		else sdlFlags |= limen.platform.Window.SDL_WINDOW_SHOWN;
 		#if gfx_vulkan
 		if( hxd.GraphicsDriverConfig.usesVulkan() )
-			sdlFlags |= sdl.Window.SDL_WINDOW_VULKAN;
+			sdlFlags |= limen.platform.Window.SDL_WINDOW_VULKAN;
+		else
 		#end
-		window = new sdl.Window(title, width, height, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdlFlags);
+		if( !hxd.GraphicsDriverConfig.usesDirectX() )
+			sdlFlags |= limen.platform.Window.SDL_WINDOW_OPENGL;
+		window = new limen.platform.Window(title, width, height, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, sdlFlags);
 		this.windowWidth = window.width;
 		this.windowHeight = window.height;
-		#elseif hldx
-		var dxFlags = 0;
-		if (!fixed) dxFlags |= dx.Window.RESIZABLE;
-		if (hidden) dxFlags |= dx.Window.HIDDEN;
-		window = new dx.Window(title, width, height, dx.Window.CW_USEDEFAULT, dx.Window.CW_USEDEFAULT, dxFlags);
-		#end
-		#if (hldx || hlsdl)
 		if( hidden )
 			window.visible = false;
 		#end
@@ -158,7 +149,7 @@ class Window {
 	public function close() {
 		if( !WINDOWS.remove(this) )
 			return;
-		#if (multidriver && (hlsdl || hldx))
+		#if (multidriver && limen)
 		window.destroy();
 		#end
 	}
@@ -198,12 +189,12 @@ class Window {
 	}
 
 	public function resize( width : Int, height : Int ) : Void {
-		#if (hldx || hlsdl)
+		#if limen
 		if( window.displayMode == Fullscreen ) {
-			#if (hlsdl && hl_ver >= version("1.12.0") )
+			#if (limen && hl_ver >= version("1.12.0") )
 			var mode = getBestDisplayMode(width, height, framerate);
 			if(mode != null) {
-				@:privateAccess sdl.Window.winSetDisplayMode(window.win, mode.mode.width, mode.mode.height, mode.mode.framerate);
+				window.setDisplayMode(mode.mode.width, mode.mode.height, mode.mode.framerate);
 				width = mode.mode.width;
 				height = mode.mode.height;
 			}
@@ -217,13 +208,11 @@ class Window {
 	}
 
 	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
+		#if (limen >= version("1.14.0"))
 		if (dropTargets.length == 0) {
-			#if (hlsdl >= version("1.14.0"))
-			sdl.Sdl.setDragAndDropEnabled(true);
-			#elseif (hldx >= version("1.14.0"))
-			window.dragAndDropEnabled = true;
-			#end
+			limen.platform.Platform.setDragAndDropEnabled(true);
 		}
+		#end
 		dropTargets.push(f);
 	}
 
@@ -234,18 +223,14 @@ class Window {
 				break;
 			}
 		if ( dropTargets.length == 0 ) {
-			#if (hlsdl >= version("1.14.0"))
-			sdl.Sdl.setDragAndDropEnabled(false);
-			#elseif (hldx >= version("1.14.0"))
-			window.dragAndDropEnabled = false;
+			#if (limen >= version("1.14.0"))
+			limen.platform.Platform.setDragAndDropEnabled(false);
 			#end
 		}
 	}
 
 	public function setCursorPos( x : Int, y : Int, emitEvent : Bool = false ) : Void {
-		#if hldx
-		if (mouseMode == Absolute) window.setCursorPosition(x, y);
-		#elseif hlsdl
+		#if limen
 		if (mouseMode == Absolute) window.warpMouse(x, y);
 		#else
 		throw "Not implemented";
@@ -256,14 +241,14 @@ class Window {
 	}
 
 	public function captureMouseEvents(enable: Bool) : Void {
-		#if (hldx >= version("1.16.0") || hlsdl >= version("1.16.0"))
+		#if (limen >= version("1.16.0"))
 		window.captureMouseEvents(enable);
 		#end
 	}
 
 	@:deprecated("Use the displayMode property instead")
 	public function setFullScreen( v : Bool ) : Void {
-		#if (hldx || hlsdl)
+		#if limen
 		window.displayMode = v ? BorderlessFixed : Windowed;
 		#end
 	}
@@ -293,9 +278,7 @@ class Window {
 	}
 
 	function get_mouseClip() : Bool {
-		#if hldx
-		return _mouseClip;
-		#elseif hlsdl
+		#if limen
 		return window.grab;
 		#else
 		return false;
@@ -303,10 +286,7 @@ class Window {
 	}
 
 	function set_mouseClip( v : Bool ) : Bool {
-		#if hldx
-		window.clipCursor(v);
-		return _mouseClip = v;
-		#elseif hlsdl
+		#if limen
 		return window.grab = v;
 		#else
 		if( v ) throw "Not implemented";
@@ -320,18 +300,15 @@ class Window {
 		var forced = onMouseModeChange(mouseMode, v);
 		if (forced != null) v = forced;
 
-		#if hldx
-		window.setRelativeMouseMode(v != Absolute);
-		return mouseMode = v;
-		#elseif hlsdl
+		#if limen
 		var relative = v != Absolute;
-		sdl.Sdl.setRelativeMouseMode(relative);
+		limen.platform.Platform.setRelativeMouseMode(relative);
 		if( useRelativeMousePolling ) {
-			sdl.Sdl.setMouseMotionEvents(!relative);
+			limen.platform.Platform.setMouseMotionEvents(!relative);
 			if( relative ) {
 				var dx = 0;
 				var dy = 0;
-				sdl.Sdl.getRelativeMouseState(dx, dy);
+				limen.platform.Platform.getRelativeMouseState(dx, dy);
 			}
 		}
 		#else
@@ -348,9 +325,7 @@ class Window {
 						curMouseX = hxd.Math.iclamp(curMouseX, 0, width);
 						curMouseY = hxd.Math.iclamp(curMouseY, 0, height);
 					}
-					#if hldx
-					window.setCursorPosition(curMouseX, curMouseY);
-					#elseif hlsdl
+					#if limen
 					window.warpMouse(curMouseX, curMouseY);
 					#end
 				default:
@@ -365,33 +340,32 @@ class Window {
 
 	#if usesys
 
-		function get_vsync() : Bool return haxe.System.vsync;
-
-		function set_vsync( b : Bool ) : Bool {
-			return haxe.System.vsync = b;
-		}
-
-		function get_isFocused() : Bool return true;
-
-		function onEvent( e : Event ) : Bool {
-			event(e);
-			return true;
-		}
-
-	#elseif (hldx||hlsdl)
-
-	function get_vsync() : Bool return window.vsync;
+	function get_vsync() : Bool return haxe.System.vsync;
 
 	function set_vsync( b : Bool ) : Bool {
-		window.vsync = b;
-		return b;
+		return haxe.System.vsync = b;
+	}
+
+	function get_isFocused() : Bool return true;
+
+	function onEvent( e : Event ) : Bool {
+		event(e);
+		return true;
+	}
+
+	#elseif limen
+
+	function get_vsync() : Bool return _vsync;
+
+	function set_vsync( b : Bool ) : Bool {
+		return _vsync = b;
 	}
 
 	function get_isFocused() : Bool return !wasBlurred;
 
 	var wasBlurred : Bool;
 
-	function onEvent( e : #if hldx dx.Event #else sdl.Event #end ) : Bool {
+	function onEvent( e : limen.platform.event.Event ) : Bool {
 		var eh = null;
 		switch( e.type ) {
 		default:
@@ -403,34 +377,12 @@ class Window {
 				windowHeight = window.height;
 				onResize(null);
 			case Focus:
-				#if hldx
-				// return to exclusive mode
-				if( window.displayMode == Fullscreen && wasBlurred ) {
-					window.displayMode = BorderlessFixed;
-					window.displayMode = Fullscreen;
-				}
-				#end
 				wasBlurred = false;
 				event(new Event(EFocus));
 			case Blur:
 				wasBlurred = true;
 				event(new Event(EFocusLost));
-				#if hldx
-				// release all keys
-				var ev = new Event(EKeyUp);
-				for( i in 0...@:privateAccess hxd.Key.keyPressed.length )
-					if( hxd.Key.isDown(i) ) {
-						ev.keyCode = i;
-						event(ev);
-					}
-				#end
 			case Enter:
-				#if hldx
-				// Restore cursor
-				var cur = @:privateAccess hxd.System.currentNativeCursor;
-				@:privateAccess hxd.System.currentNativeCursor = null;
-				hxd.System.setNativeCursor(cur);
-				#end
 				event(new Event(EOver));
 			case Leave:
 				event(new Event(EOut));
@@ -473,7 +425,7 @@ class Window {
 					curMouseY = e.mouseY;
 					eh = new Event(EMove, e.mouseX, e.mouseY);
 				case Relative(callback, _):
-					#if (hldx || hlsdl)
+					#if limen
 					var ev = new Event(EMove, e.mouseXRel, e.mouseYRel);
 					#else
 					var ev = new Event(EMove, e.mouseX - curMouseX, e.mouseY - curMouseY);
@@ -487,7 +439,7 @@ class Window {
 						eh = ev;
 					}
 				case AbsoluteUnbound(_):
-					#if (hldx || hlsdl)
+					#if limen
 					curMouseX += e.mouseXRel;
 					curMouseY += e.mouseYRel;
 					#else
@@ -499,8 +451,8 @@ class Window {
 		case MouseWheel:
 			eh = new Event(EWheel, mouseX, mouseY);
 			eh.wheelDelta = -e.wheelDelta;
-		#if hlsdl
-		case GControllerAdded, GControllerRemoved, GControllerUp, GControllerDown, GControllerAxis:
+		#if limen
+		case GamepadAdded, GamepadRemoved, GamepadButtonUp, GamepadButtonDown, GamepadAxis:
 			@:privateAccess hxd.Pad.onEvent( e );
 		case KeyDown:
 			eh = new Event(EKeyDown, curMouseX, curMouseY);
@@ -531,79 +483,47 @@ class Window {
 			else
 				((c & 0x0F) << 18) | (((e.keyCode >> 8) & 0x7F) << 12) | (((e.keyCode >> 16) & 0x7F) << 6) | ((e.keyCode >> 24) & 0x7F);
 		case TouchDown if (hxd.System.getValue(IsTouch)):
-			#if hlsdl
-				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			#end
+			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(EPush, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
 		case TouchMove if (hxd.System.getValue(IsTouch)):
-			#if hlsdl
-				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			#end
+			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(EMove, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
 		case TouchUp if (hxd.System.getValue(IsTouch)):
-			#if hlsdl
-				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			#end
+			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(ERelease, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
-
-		#elseif hldx
-		case KeyDown:
-			eh = new Event(EKeyDown, curMouseX, curMouseY);
-			eh.keyCode = e.keyCode;
-			if( eh.keyCode & (K.LOC_LEFT | K.LOC_RIGHT) != 0 ) {
-				e.keyCode = eh.keyCode & 0xFF;
-				onEvent(e);
-			}
-		case KeyUp:
-			eh = new Event(EKeyUp, curMouseX, curMouseY);
-			eh.keyCode = CODEMAP[e.keyCode];
-			if( eh.keyCode & (K.LOC_LEFT | K.LOC_RIGHT) != 0 ) {
-				e.keyCode = eh.keyCode & 0xFF;
-				onEvent(e);
-			}
-		case TextInput:
-			eh = new Event(ETextInput, mouseX, mouseY);
-			eh.charCode = e.keyCode;
-		#end
-		#if (hlsdl >= version("1.14.0") || hldx >= version("1.14.0"))
 		case DropStart:
 			dropFiles = [];
+		#end
 		case DropFile:
-			#if hlsdl
+			#if limen
 			dropFiles.push(new NativeDroppedFile(@:privateAccess String.fromUTF8(e.dropFile)));
 			#else
 			dropFiles.push(new NativeDroppedFile(@:privateAccess String.fromUCS2(e.dropFile)));
 			#end
+		#if limen
 		case DropEnd:
 			var event = new DropFileEvent(
 				dropFiles,
-				#if hldx
-				e.mouseX, e.mouseY
-				#else
 				mouseX, mouseY
-				#end
 			);
 			for ( dt in dropTargets ) dt(event);
 			dropFiles = null;
-		#end
-		#if (hlsdl >= version("1.16.0") || hldx >= version("1.16.0"))
 		case KeyMapChanged:
 			hxd.System.onKeyboardLayoutChange();
-		#end
-		#if !hlsdl // hlsdl post both Close+Quit
+		#else // limen post both Close+Quit
 		case Quit:
 			return onCloseEvent();
 		#end
 		// default:
 		}
 		if( eh != null ) {
-			#if hlsdl
+			#if limen
 			eh.timestamp = e.timestamp;
 			#end
 			event(eh);
@@ -623,7 +543,7 @@ class Window {
 		return ret;
 	}
 
-	#if hlsdl
+	#if limen
 	function processRelativeMouseDelta(dx:Int, dy:Int) {
 		switch (mouseMode) {
 			case Relative(callback, _):
@@ -731,7 +651,7 @@ class Window {
 			1071 => K.SCROLL_LOCK,
 			1072 => K.PAUSE_BREAK,
 			1083 => K.NUM_LOCK,
-			// LowerThan on AZERTY, none on QWERTY because hlsdl uses sym code, instead of scancode - INTL_BACKSLASH always reports 0x5C, e.g. regular slash.
+			// LowerThan on AZERTY, none on QWERTY because limen uses sym code, instead of scancode - INTL_BACKSLASH always reports 0x5C, e.g. regular slash.
 			60 => K.INTL_BACKSLASH,
 
 			//1070 => K.PRINT_SCREEN
@@ -760,7 +680,7 @@ class Window {
 	function set_visible( v : Bool ) : Bool {
 		if( visible == v )
 			return v;
-		#if (hldx || hlsdl)
+		#if limen
 		window.visible = v;
 		#end
 		if( flags != null )
@@ -769,14 +689,14 @@ class Window {
 	}
 
 	function get_displayMode() : DisplayMode {
-		#if (hldx || hlsdl)
+		#if limen
 		return window.displayMode;
 		#end
 		return Windowed;
 	}
 
 	function set_displayMode( m : DisplayMode ) : DisplayMode {
-		#if (hldx || hlsdl)
+		#if limen
 		var oldMode = window.displayMode;
 		#if (hl_ver >= version("1.12.0"))
 		if( window.displayMode != m ) {
@@ -803,15 +723,7 @@ class Window {
 			var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
 			if(dm != null)
 				window.displaySetting = dm.mode;
-			#if hldx
-			var mon = selectedMonitor();
-			window.selectedMonitor = mon != null ? mon.name : null;
-			#end
 			window.displayMode = m;
-			#if hldx
-			if(dm != null)
-				window.resize(dm.mode.width, dm.mode.height);
-			#end
 		}
 		else {
 			window.displayMode = m;
@@ -833,15 +745,13 @@ class Window {
 	}
 
 	public function setIcon(icon: hxd.BitmapData) : Void {
-		#if (hlsdl >= version("1.16.0") || hldx >= version("1.16.0"))
+		#if (limen >= version("1.16.0"))
 		var pixels = icon.getPixels();
 		pixels.convert(BGRA);
-		#if hlsdl
-		var surf = sdl.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
+		#if limen
+		var surf = limen.platform.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
 		window.setIcon(surf);
 		surf.free();
-		#elseif hldx
-		window.setIcon(pixels.width, pixels.height, pixels.bytes);
 		#end
 		pixels.dispose();
 		#end
@@ -849,17 +759,18 @@ class Window {
 
 	#if (hl_ver >= version("1.12.0"))
 	public static function getMonitors() : Array<Monitor> {
-		return [for(m in #if hldx dx.Window.getMonitors() #elseif hlsdl sdl.Sdl.getDisplays() #else [] #end) { name: m.name, width: m.right-m.left, height: m.bottom-m.top}];
+		#if limen
+		return [for(m in limen.platform.Platform.getDisplays()) { name: m.name, width: m.width, height: m.height}];
+		#else
+		return [];
+		#end
 	}
 
 	// If registry is set, return the default DisplaySetting when it's currently modified by the application.
 	public function getCurrentDisplaySetting(?monitorId : Int, registry : Bool = false) : DisplaySetting {
-		#if hldx
-		var mon = monitorId != null ? getMonitors()[monitorId] : null;
-		return dx.Window.getCurrentDisplaySetting(mon == null ? null : mon.name, registry);
-		#elseif hlsdl
-		var mon = sdl.Sdl.getDisplays()[monitorId == null ? 0 : monitorId];
-		return sdl.Sdl.getCurrentDisplayMode(mon.handle, true);
+		#if limen
+		var mon = limen.platform.Platform.getDisplays()[monitorId == null ? 0 : monitorId];
+		return limen.platform.Platform.getCurrentDisplayMode(mon.id, true);
 		#else
 		return null;
 		#end
@@ -870,12 +781,9 @@ class Window {
 		var f = [];
 		if(monitorId == null)
 			monitorId = monitor;
-		#if hldx
-		var m = dx.Window.getMonitors()[monitorId];
-		var l = m != null ? dx.Window.getDisplaySettings(m.name) : [];
-		#elseif hlsdl
-		var m = sdl.Sdl.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
-		var l = sdl.Sdl.getDisplayModes(m.handle);
+		#if limen
+		var m = limen.platform.Platform.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
+		var l = limen.platform.Platform.getDisplayModes(m.id);
 		#else
 		var l = [];
 		#end
@@ -892,10 +800,8 @@ class Window {
 
 	function selectedMonitor() : Dynamic {
 		var m = if(monitor == null) currentMonitorIndex else monitor;
-		#if hldx
-		return dx.Window.getMonitors()[m];
-		#elseif hlsdl
-		return sdl.Sdl.getDisplays()[m];
+		#if limen
+		return limen.platform.Platform.getDisplays()[m];
 		#else
 		return null;
 		#end
@@ -933,17 +839,10 @@ class Window {
 	}
 
 	function get_currentMonitorIndex() : Int {
-		#if hldx
-		var current = window.getCurrentMonitor();
-		for(i => m in getMonitors()) {
-			if(m.name == current)
-				return i;
-		}
-		return 0;
-		#elseif hlsdl
+		#if limen
 		var current = window.currentMonitor;
-		for(i => m in sdl.Sdl.getDisplays()) {
-			if(m.handle == current)
+		for(i => m in limen.platform.Platform.getDisplays()) {
+			if(m.id == current)
 				return i;
 		}
 		return 0;
@@ -954,23 +853,24 @@ class Window {
 
 	#end
 	function get_title() : String {
-		#if (hldx || hlsdl)
+		#if limen
 		return window.title;
 		#end
 		return "";
 	}
 	function set_title( t : String ) : String {
-		#if (hldx || hlsdl)
+		#if limen
 		return window.title = t;
 		#end
 		return "";
 	}
 
 	public function setCurrent() {
-		inst = this;
-		#if hlsdl
-		window.renderTo();
+		#if limen
+		if( !hxd.GraphicsDriverConfig.usesDirectX() && !hxd.GraphicsDriverConfig.usesVulkan() )
+			window.setCurrent();
 		#end
+		inst = this;
 	}
 
 	static var inst : Window = null;
@@ -996,13 +896,13 @@ class Window {
 		#end
 	}
 
-	#if hlsdl
+	#if limen
 	static function processRelativeMouseEvents() {
 		if( !useRelativeMousePolling )
 			return;
 		var dx = 0;
 		var dy = 0;
-		sdl.Sdl.getRelativeMouseState(dx, dy);
+		limen.platform.Platform.getRelativeMouseState(dx, dy);
 		if( dx == 0 && dy == 0 )
 			return;
 		if( inst != null )
@@ -1011,7 +911,7 @@ class Window {
 	#end
 
 	function get_displayScale() {
-		#if (hlsdl >= version("1.16.0") || hldx >= version("1.16.0"))
+		#if (limen >= version("1.16.0"))
 		return window.displayScale;
 		#else
 		return 1.0;

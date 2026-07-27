@@ -520,10 +520,8 @@ class Skin extends MultiMaterial {
 
 	function updateShader() {
 		inline function alloc(count: Int) {
-			#if !hldx
 			// GL doesn't support passing smaller buffers than declared
 			count = Std.int(skinShader.BUFFER_SIZE / 3);  // Mat3x4 passed as Vec3
-			#end
 			return hxd.impl.Allocator.get().allocBuffer(count, hxd.BufferFormat.MAT3x4_DATA, UniformDynamic);
 		}
 		var hasVelocity = computeVelocity();

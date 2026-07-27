@@ -1,23 +1,55 @@
 package h3d.impl.driver.dx11;
 
-#if ((hldx && !gfx_dx12) || (hlsdl && gfx_dx11))
+#if (limen && gfx_dx11)
 
+import h3d.mat.Pass;
 import h3d.impl.driver.Feature;
 import h3d.impl.driver.GPUBuffer;
 import h3d.impl.driver.Texture;
-import dx.Driver;
-import dx.Resource.MapType;
-import h3d.mat.Pass;
 import h3d.impl.driver.dx11.CompiledShader;
 import h3d.impl.driver.dx11.ShaderContext;
 
+import limen.graphics.d3d11.DX11Core.Format;
+import limen.graphics.d3d11.DX11Core.MapType;
+import limen.graphics.d3d11.DX11Core.Resource;
+import limen.graphics.d3d11.DX11Core.ResourceBind;
+import limen.graphics.d3d11.DX11Core.ResourceBox;
+import limen.graphics.d3d11.DX11Core.ResourceMisc;
+import limen.graphics.d3d11.DX11Resources.RenderTargetDesc;
+import limen.graphics.d3d11.DX11Resources.RenderTargetView;
+import limen.graphics.d3d11.DX11Resources.ShaderResourceView;
+import limen.graphics.d3d11.DX11Resources.ShaderResourceViewDesc;
+import limen.graphics.d3d11.DX11Resources.Texture2dDesc;
+import limen.graphics.d3d11.DX11Shaders.Layout;
+import limen.graphics.d3d11.DX11Shaders.LayoutElement;
+import limen.graphics.d3d11.DX11Shaders.Shader;
+import limen.graphics.d3d11.DX11States.AddressMode;
+import limen.graphics.d3d11.DX11States.Blend;
+import limen.graphics.d3d11.DX11States.BlendOp;
+import limen.graphics.d3d11.DX11States.BlendState;
+import limen.graphics.d3d11.DX11States.ComparisonFunc;
+import limen.graphics.d3d11.DX11States.CullMode;
+import limen.graphics.d3d11.DX11States.DepthStencilDesc;
+import limen.graphics.d3d11.DX11States.DepthStencilState;
+import limen.graphics.d3d11.DX11States.DepthStencilView;
+import limen.graphics.d3d11.DX11States.FillMode;
+import limen.graphics.d3d11.DX11States.Filter;
+import limen.graphics.d3d11.DX11States.RasterizerDesc;
+import limen.graphics.d3d11.DX11States.RasterState;
+import limen.graphics.d3d11.DX11States.RenderTargetBlendDesc;
+import limen.graphics.d3d11.DX11States.SamplerDesc;
+import limen.graphics.d3d11.DX11States.SamplerState;
+import limen.graphics.d3d11.DX11States.StencilOp;
+import limen.graphics.d3d11.internal.D3D11Bindings as Driver;
+import limen.graphics.d3d11.internal.D3D11Bindings.Dx11DriverInitFlags;
+
 private typedef DX11Texture = {
-	res : dx.Resource,
-	view : dx.Driver.ShaderResourceView,
-	?depthView : dx.Driver.DepthStencilView,
-	?readOnlyDepthView : dx.Driver.DepthStencilView,
-	rt : Array<dx.Driver.RenderTargetView>,
-	?views : Array<dx.Driver.ShaderResourceView>
+	res : Resource,
+	view : ShaderResourceView,
+	?depthView : DepthStencilView,
+	?readOnlyDepthView : DepthStencilView,
+	rt : Array<RenderTargetView>,
+	?views : Array<ShaderResourceView>
 }
 
 class DX11Driver extends h3d.impl.driver.Driver {
@@ -32,25 +64,25 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	var hasDeviceError = false;
 
-	var defaultTarget : dx.Driver.RenderTargetView;
+	var defaultTarget : RenderTargetView;
 	var defaultDepth : Texture;
 	var defaultDepthInst : h3d.mat.Texture;
 	var extraDepthInst : h3d.mat.Texture;
 
 	var viewport : hl.BytesAccess<hl.F32> = new hl.Bytes(4 * VIEWPORTS_ELTS);
 	var rects : hl.BytesAccess<Int> = new hl.Bytes(4 * RECTS_ELTS);
-	var box = new dx.Resource.ResourceBox();
+	var box = new ResourceBox();
 	var strides : Array<Int> = [];
 	var offsets : Array<Int> = [];
 	var currentShader : CompiledShader;
 	var currentIndex : h3d.Buffer;
 	var currentDepth : Texture;
 	var currentLayout : Layout;
-	var currentTargets = new hl.NativeArray<dx.Driver.RenderTargetView>(16);
-	var currentTargetResources = new hl.NativeArray<dx.Driver.ShaderResourceView>(16);
+	var currentTargets = new hl.NativeArray<RenderTargetView>(16);
+	var currentTargetResources = new hl.NativeArray<ShaderResourceView>(16);
 	var vertexShader : PipelineState;
 	var pixelShader : PipelineState;
-	var currentVBuffers = new hl.NativeArray<dx.Resource>(16);
+	var currentVBuffers = new hl.NativeArray<Resource>(16);
 	var blendDesc = new hl.NativeArray<RenderTargetBlendDesc>(NTARGETS);
 	var frame : Int;
 	var currentMaterialBits = -1;
@@ -79,24 +111,24 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	var hasScissor = false;
 	var shaderVersion : String;
 
-	var window : #if hlsdl sdl.Window #else dx.Window #end;
+	var window : limen.platform.Window;
 	var curTexture : h3d.mat.Texture;
 
 	var mapCount : Int;
 	var updateResCount : Int;
 	var onContextLost : Void -> Void;
 
-	public var backBufferFormat : dx.Format = R8G8B8A8_UNORM;
-	public var depthStencilFormat : dx.Format = D24_UNORM_S8_UINT;
+	public var backBufferFormat : Format = R8G8B8A8_UNORM;
+	public var depthStencilFormat : Format = D24_UNORM_S8_UINT;
 
 	public function new() {
-		window = @:privateAccess #if hlsdl sdl.Window.windows[0] #else dx.Window.windows[0] #end;
+		window = @:privateAccess limen.platform.Window.windows[0];
 		Driver.setErrorHandler(onDXError);
 		reset();
 	}
 
-	public dynamic function getDriverFlags() : dx.Driver.DriverInitFlags {
-		var options : dx.Driver.DriverInitFlags = None;
+	public dynamic function getDriverFlags() : Dx11DriverInitFlags {
+		var options : Dx11DriverInitFlags = None;
 		#if debug
 		options |= DebugLayer;
 		#end
@@ -280,7 +312,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		if( defaultTarget == null ) return;
 		var old = hxd.System.allowTimeout;
 		if( old ) hxd.System.allowTimeout = false;
-		Driver.present(window.vsync ? 1 : 0, None);
+		Driver.present(hxd.Window.getInstance().vsync ? 1 : 0, None);
 		if( old ) hxd.System.allowTimeout = true;
 
 		if( hasDeviceError ) {
@@ -307,8 +339,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	override function allocBuffer(b:Buffer):GPUBuffer {
 		var size = b.getMemSize();
-		var res = b.flags.has(UniformBuffer) ? dx.Driver.createBuffer(size, Dynamic, ConstantBuffer, CpuWrite, None, 0, null) :
-				dx.Driver.createBuffer(size, Default, b.flags.has(IndexBuffer) ? IndexBuffer : VertexBuffer, None, None, 0, null);
+		var res = b.flags.has(UniformBuffer) ? Driver.createBuffer(size, Dynamic, ConstantBuffer, CpuWrite, None, 0, null) :
+				Driver.createBuffer(size, Default, b.flags.has(IndexBuffer) ? IndexBuffer : VertexBuffer, None, None, 0, null);
 		if( res == null ) return null;
 		return res;
 	}
@@ -362,7 +394,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		}
 	}
 
-	function getTextureFormat( t : h3d.mat.Texture ) : dx.Format {
+	function getTextureFormat( t : h3d.mat.Texture ) : Format {
 		return switch( t.format ) {
 		case RGBA: R8G8B8A8_UNORM;
 		case RGBA16F: R16G16B16A16_FLOAT;
@@ -469,7 +501,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function disposeBuffer(b:Buffer) {
-		(cast b.vbuf : dx.Resource).release();
+		(cast b.vbuf : Resource).release();
 	}
 
 	override function generateMipMaps(texture:h3d.mat.Texture) {
@@ -478,7 +510,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		Driver.generateMips(t.view);
 	}
 
-	function updateBuffer( res : dx.Resource, bytes : hl.Bytes, startByte : Int, bytesCount : Int ) {
+	function updateBuffer( res : Resource, bytes : hl.Bytes, startByte : Int, bytesCount : Int ) {
 		box.left = startByte;
 		box.top = 0;
 		box.front = 0;
@@ -492,7 +524,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	override function uploadIndexData(i:Buffer, startIndice:Int, indiceCount:Int, buf:hxd.IndexBuffer, bufPos:Int) {
 		if( hasDeviceError ) return;
 		var bits = i.format.strideBytes >> 1;
-		updateBuffer((cast i.vbuf : dx.Resource), hl.Bytes.getArray(buf.getNative()).offset(bufPos << bits), startIndice << bits, indiceCount << bits);
+		updateBuffer((cast i.vbuf : Resource), hl.Bytes.getArray(buf.getNative()).offset(bufPos << bits), startIndice << bits, indiceCount << bits);
 	}
 
 	override function uploadBufferData(b:Buffer, startVertex:Int, vertexCount:Int, buf:hxd.FloatBuffer, bufPos:Int) {
@@ -500,33 +532,33 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		var data = hl.Bytes.getArray(buf.getNative()).offset(bufPos<<2);
 		if( b.flags.has(UniformBuffer) ) {
 			if( startVertex != 0 ) throw "assert";
-			final vbuf:dx.Resource = b.vbuf;
+			final vbuf:Resource = b.vbuf;
 			var ptr = vbuf.map(0, WriteDiscard, true, null);
 			if( ptr == null ) throw "Can't map buffer";
 			ptr.blit(0, data, 0, vertexCount * b.format.strideBytes);
 			vbuf.unmap(0);
 			return;
 		}
-		updateBuffer((cast b.vbuf : dx.Resource), data, startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+		updateBuffer((cast b.vbuf : Resource), data, startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
 	}
 
 	override function uploadBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
 		if( hasDeviceError ) return;
 		if( b.flags.has(UniformBuffer) ) {
 			if( startVertex != 0 ) throw "assert";
-			final vbuf:dx.Resource = b.vbuf;
+			final vbuf:Resource = b.vbuf;
 			var ptr = vbuf.map(0, WriteDiscard, true, null);
 			if( ptr == null ) throw "Can't map buffer";
 			ptr.blit(0, buf, 0, vertexCount * b.format.strideBytes);
 			vbuf.unmap(0);
 			return;
 		}
-		updateBuffer((cast b.vbuf : dx.Resource), @:privateAccess buf.b.offset(bufPos), startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+		updateBuffer((cast b.vbuf : Resource), @:privateAccess buf.b.offset(bufPos), startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
 	}
 
 	override function readBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
 		var stride = b.format.strideBytes;
-		var tmp = dx.Driver.createBuffer(vertexCount * stride, Staging, None, CpuRead | CpuWrite, None, 0, null);
+		var tmp = Driver.createBuffer(vertexCount * stride, Staging, None, CpuRead | CpuWrite, None, 0, null);
 		box.left = startVertex * stride;
 		box.top = 0;
 		box.front = 0;
@@ -578,7 +610,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 		if( hasDeviceError ) throw "Can't capture if device disposed";
 
-		var tmp = dx.Driver.createTexture2d(desc);
+		var tmp = Driver.createTexture2d(desc);
 		if( tmp == null )
 			throw "Capture failed: can't create tmp texture";
 
@@ -822,7 +854,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		}
 		var bytes = getBinaryPayload(shader.kind == Vertex, shader.code);
 		if( bytes == null ) {
-			bytes = try dx.Driver.compileShader(shader.code, "", "main", (shader.kind==Vertex?"vs_":"ps_") + shaderVersion, OptimizationLevel3) catch( err : String ) {
+			bytes = try Driver.compileShader(shader.code, "", "main", (shader.kind==Vertex?"vs_":"ps_") + shaderVersion, OptimizationLevel3) catch( err : String ) {
 				err = ~/^\(([0-9]+),([0-9]+)-([0-9]+)\)/gm.map(err, function(r) {
 					var line = Std.parseInt(r.matched(1));
 					var char = Std.parseInt(r.matched(2));
@@ -866,8 +898,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			p = p.next;
 		}
 		ctx.bufferCount = shader.bufferCount;
-		ctx.globals = dx.Driver.createBuffer(shader.globalsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
-		ctx.params = dx.Driver.createBuffer(shader.paramsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
+		ctx.globals = Driver.createBuffer(shader.globalsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
+		ctx.params = Driver.createBuffer(shader.paramsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
 		ctx.samplersMap = [];
 
 		var samplers = new hxsl.HlslOut.Samplers();
@@ -990,7 +1022,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			var rt = target.rt[index];
 			if( rt == null ) {
 				var arr = tex.flags.has(Cube) || tex.flags.has(IsArray);
-				var v = new dx.Driver.RenderTargetDesc(getTextureFormat(tex), arr ? Texture2DArray : Texture2D);
+				var v = new RenderTargetDesc(getTextureFormat(tex), arr ? Texture2DArray : Texture2D);
 				v.mipMap = mipLevel;
 				v.firstSlice = layer;
 				v.sliceCount = 1;
@@ -1114,8 +1146,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	function setShader( s : CompiledShader ) {
 		currentShader = s;
-		dx.Driver.vsSetShader(s.vertex.shader);
-		dx.Driver.psSetShader(s.fragment.shader);
+		Driver.vsSetShader(s.vertex.shader);
+		Driver.psSetShader(s.fragment.shader);
 		currentLayout = null;
 	}
 
@@ -1164,7 +1196,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			currentShader.layouts.set(buffer.format.uid, layout);
 		}
 		if( layout != currentLayout ) {
-			dx.Driver.iaSetInputLayout(layout);
+			Driver.iaSetInputLayout(layout);
 			currentLayout = layout;
 		}
 		var map = buffer.format.resolveMapping(currentShader.format);
@@ -1193,7 +1225,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			currentShader.layouts.set(-formats.uid-1, layout);
 		}
 		if( layout != currentLayout ) {
-			dx.Driver.iaSetInputLayout(layout);
+			Driver.iaSetInputLayout(layout);
 			currentLayout = layout;
 		}
 		var map = formats.resolveMapping(currentShader.format);
@@ -1219,7 +1251,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		uploadBuffers(buffers, pixelShader, currentShader.fragment, buffers.fragment, which);
 	}
 
-	function uploadShaderBuffer( sbuffer : dx.Resource, buffer : haxe.ds.Vector<hxd.impl.Float32>, size : Int, prevContent : hl.Bytes ) {
+	function uploadShaderBuffer( sbuffer : Resource, buffer : haxe.ds.Vector<hxd.impl.Float32>, size : Int, prevContent : hl.Bytes ) {
 		if( size == 0 ) return;
 		var data = hl.Bytes.getArray(buffer.toData());
 		var bytes = size << 4;
@@ -1387,13 +1419,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
-			dx.Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
+			Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
 		}
-		dx.Driver.drawIndexed(ntriangles * 3, startIndex, 0);
+		Driver.drawIndexed(ntriangles * 3, startIndex, 0);
 	}
 
 	override function allocInstanceBuffer(b:InstanceBuffer, buf : haxe.io.Bytes) {
-		b.data = dx.Driver.createBuffer(b.commandCount * 5 * 4, Default, UnorderedAccess, None, DrawIndirectArgs, 4, buf);
+		b.data = Driver.createBuffer(b.commandCount * 5 * 4, Default, UnorderedAccess, None, DrawIndirectArgs, 4, buf);
 	}
 
 	override function uploadInstanceBufferBytes(b : InstanceBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
@@ -1403,7 +1435,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function disposeInstanceBuffer(b:InstanceBuffer) {
-		(b.data : dx.Resource).release();
+		(b.data : Resource).release();
 		b.data = null;
 	}
 
@@ -1412,17 +1444,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
-			dx.Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
+			Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
 		}
 		if( commands.data == null ) {
-			#if( (hldx == "1.8.0") || (hldx == "1.9.0") )
-			throw "Requires HLDX 1.10+";
-			#else
-			dx.Driver.drawIndexedInstanced(commands.indexCount, commands.commandCount, commands.startIndex, 0, 0);
-			#end
+			Driver.drawIndexedInstanced(commands.indexCount, commands.commandCount, commands.startIndex, 0, 0);
 		} else {
 			for( i in 0...commands.commandCount )
-				dx.Driver.drawIndexedInstancedIndirect(commands.data,i * 20);
+				Driver.drawIndexedInstancedIndirect(commands.data,i * 20);
 		}
 	}
 

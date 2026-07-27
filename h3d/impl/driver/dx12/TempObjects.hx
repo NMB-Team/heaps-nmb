@@ -1,11 +1,31 @@
 package h3d.impl.driver.dx12;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12;
-import dx.Dx12.Dx12SamplerDesc;
-import h3d.impl.driver.dx12.resource.ResourceData;
+#if (limen && gfx_dx12)
 
-private typedef Driver = Dx12;
+import limen.graphics.d3d12.DX12Core.Address;
+import limen.graphics.d3d12.DX12Core.ClearColor;
+import limen.graphics.d3d12.DX12Core.ClearValue;
+import limen.graphics.d3d12.DX12Core.Rect;
+import limen.graphics.d3d12.DX12Core.Viewport;
+import limen.graphics.d3d12.command.Commands.VertexBufferView;
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeap;
+import limen.graphics.d3d12.descriptor.ResourceViews.BufferSRV;
+import limen.graphics.d3d12.descriptor.ResourceViews.ConstantBufferViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.DepthStencilViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
+import limen.graphics.d3d12.descriptor.ResourceViews.Tex2DSRV;
+import limen.graphics.d3d12.descriptor.ResourceViews.UAVBufferViewDesc;
+import limen.graphics.d3d12.descriptor.ResourceViews.UAVTextureViewDesc;
+import limen.graphics.d3d12.internal.D3D12Bindings as Driver;
+import limen.graphics.d3d12.internal.D3D12Bindings.Constant;
+import limen.graphics.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
+import limen.graphics.d3d12.resource.Resources.HeapProperties;
+import limen.graphics.d3d12.resource.Resources.ResourceBarrier;
+import limen.graphics.d3d12.resource.Resources.SubResourceData;
+import limen.graphics.d3d12.resource.Resources.TextureCopyLocation;
+
+import h3d.impl.driver.dx12.resource.ResourceData;
 
 @:noCompletion
 @:struct
@@ -50,7 +70,7 @@ class TempObjects {
 		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
 		maxBarriers = 100;
 		barriers = hl.CArray.alloc(ResourceBarrier, maxBarriers);
-		var allSubresource = #if ((hldx >= version("1.16.0") || hlsdl >= version("1.16.0"))) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
+		var allSubresource = #if (limen >= version("1.16.0")) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
 		for(i in 0...maxBarriers)
 			barriers[i].subResource = allSubresource;
 		resourcesToTransition = new hl.NativeArray(maxBarriers);

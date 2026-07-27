@@ -1,9 +1,7 @@
 package hxd;
 
-#if hlsdl
-import sdl.Cursor;
-#elseif hldx
-import dx.Cursor;
+#if limen
+import limen.platform.cursor.Cursor;
 #end
 
 enum Platform {
@@ -45,7 +43,7 @@ class System {
 	static var firstFramePresented = false;
 	static var displayReady = false;
 	static var displayReadyCallbacks : Array<Void -> Void> = [];
-	#if hlsdl
+	#if limen
 	static var processingWindowEvent = false;
 	#end
 
@@ -74,8 +72,8 @@ class System {
 		loopFunc = f;
 	}
 
-	#if hlsdl
-	static function processWindowEvent( event : sdl.Event ) {
+	#if limen
+	static function processWindowEvent( event : limen.platform.event.Event ) {
 		if( processingWindowEvent )
 			return;
 		processingWindowEvent = true;
@@ -96,10 +94,8 @@ class System {
 		// process events
 		#if usesys
 		haxe.System.emitEvents(@:privateAccess hxd.Window.dispatchEvent);
-		#elseif hldx
-		dx.Loop.processEvents(@:privateAccess hxd.Window.dispatchEvent);
-		#elseif hlsdl
-		sdl.Sdl.processEvents(@:privateAccess hxd.Window.dispatchEvent);
+		#elseif limen
+		limen.platform.Platform.processEvents(@:privateAccess hxd.Window.dispatchEvent);
 		@:privateAccess hxd.Window.processRelativeMouseEvents();
 		#end
 
@@ -193,15 +189,15 @@ class System {
 
 		#else
 		timeoutTick();
-		#if hlsdl
-		sdl.Sdl.init();
+		#if limen
+		limen.platform.Platform.init();
 		@:privateAccess Window.initChars();
 		#end
 
 		@:privateAccess Window.inst = createWindow();
-		#if hlsdl
+		#if limen
 		if( Sys.systemName() == "Windows" )
-			sdl.Sdl.watchWindowEvents(processWindowEvent);
+			limen.platform.Platform.watchWindowEvents(processWindowEvent);
 		#end
 
 		init();
@@ -291,7 +287,7 @@ class System {
 		if( dismissErrors )
 			return;
 
-		#if (hlsdl && !multidriver)
+		#if (limen && !multidriver)
 		// New UI window does not force SDL leave relative mouse mode, do it manually
 		var window = hxd.Window.getInstance();
 		var prevMouseMode = window?.mouseMode;
@@ -303,7 +299,7 @@ class System {
 		var but = new hl.UI.Button(f, "Continue");
 		but.onClick = function() {
 			hl.UI.stopLoop();
-			#if (hlsdl && !multidriver)
+			#if (limen && !multidriver)
 			if (prevMouseMode != null)
 				hxd.Window.getInstance().mouseMode = prevMouseMode;
 			#end
@@ -313,7 +309,7 @@ class System {
 		but.onClick = function() {
 			dismissErrors = true;
 			hl.UI.stopLoop();
-			#if (hlsdl && !multidriver)
+			#if (limen && !multidriver)
 			if (prevMouseMode != null)
 				hxd.Window.getInstance().mouseMode = prevMouseMode;
 			#end
@@ -331,7 +327,7 @@ class System {
 	}
 
 	public static function setNativeCursor( c : hxd.Cursor ) : Void {
-		#if (hlsdl || hldx)
+		#if limen
 		if( c.equals(currentNativeCursor) )
 			return;
 		currentNativeCursor = c;
@@ -351,7 +347,6 @@ class System {
 			cur = Cursor.createSystem(SizeALL);
 		case TextInput:
 			cur = Cursor.createSystem(IBeam);
-		#if (hlsdl || hldx >= version("1.16.0"))
 		case ResizeNS:
 			cur = Cursor.createSystem(SizeNS);
 		case ResizeWE:
@@ -360,34 +355,26 @@ class System {
 			cur = Cursor.createSystem(SizeNWSE);
 		case ResizeNESW:
 			cur = Cursor.createSystem(SizeNESW);
-		#else
-		// fallback for old hldx versions that don't have all the CursorKind values for SizeXX
-		case ResizeNS, ResizeWE, ResizeNWSE, ResizeNESW:
-			cur = Cursor.createSystem(SizeALL);
-		#end
 		case Callback(_), Hide:
 			throw "assert";
 		case Custom(c):
 			if( c.alloc == null ) {
 				c.alloc = new Array();
-				#if hlsdl
+				#if limen
 				c.allocSurfaces = new Array();
 				c.allocPixels = new Array();
 				#end
 				for ( frame in c.frames ) {
 					var pixels = frame.getPixels();
 					pixels.convert(BGRA);
-					#if hlsdl
+					#if limen
 					if (c.offsetX < 0 || c.offsetX >= pixels.width || c.offsetY < 0 || c.offsetY >= pixels.height) {
-						throw "SDL2 does not allow creation of cursors with offset outside of cursor image bounds.";
+						throw "SDL3 does not allow creation of cursors with offset outside of cursor image bounds.";
 					}
-					var surf = sdl.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
-					c.alloc.push(sdl.Cursor.create(surf, c.offsetX, c.offsetY));
+					var surf = limen.platform.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
+					c.alloc.push(limen.platform.cursor.Cursor.create(surf, c.offsetX, c.offsetY));
 					c.allocSurfaces.push(surf);
 					c.allocPixels.push(pixels);
-					#elseif hldx
-					c.alloc.push(dx.Cursor.createCursor(pixels.width, pixels.height, pixels.bytes, c.offsetX, c.offsetY));
-					pixels.dispose();
 					#end
 				}
 			}
@@ -405,7 +392,7 @@ class System {
 		#end
 	}
 
-	#if (hlsdl || hldx)
+	#if limen
 	static function updateCursor() : Void {
 		if (currentCustomCursor != null)
 		{
@@ -425,13 +412,13 @@ class System {
 	public static function setClipboardText(text:String) : Bool {
 		return false;
 	}
-	#elseif hlsdl
+	#elseif limen
 	public static function getClipboardText() : String {
-		return sdl.Sdl.getClipboardText();
+		return limen.platform.Platform.getClipboardText();
 	}
 
 	public static function setClipboardText(text:String) : Bool {
-		return sdl.Sdl.setClipboardText(text);
+		return limen.platform.Platform.setClipboardText(text);
 	}
 	#else
 	public static function getClipboardText() : String {
@@ -446,24 +433,18 @@ class System {
 	public static function getDeviceName() : String {
 		#if usesys
 		return haxe.System.name;
-		#elseif hlsdl
-		return "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif (hlsdl && gfx_dx12)
-		return hxd.GraphicsDriverConfig.getCurrentOrDefault() == hxd.GraphicsDriverApi.Dx12 ? "PC/" + dx.Dx12.getDeviceName() : "PC/" + sdl.Sdl.getDevices()[0];
-		#elseif (hldx && gfx_dx12)
-		return "PC/" + dx.Dx12.getDeviceName();
-		#elseif (hldx || (hlsdl && gfx_dx11))
-		return "PC/" + dx.Driver.getDeviceName();
+		#elseif limen
+		return "PC/" + limen.platform.Platform.getDevices()[0];
 		#else
 		return "PC/Commandline";
 		#end
 	}
 
 	public static function getDefaultFrameRate() : Float {
-		#if (hlsdl && (gfx_dx11 || gfx_dx12))
+		#if (limen && (gfx_dx11 || gfx_dx12))
 		var win = hxd.Window.getInstance();
 		if( win != null ) {
-			var refreshRate = sdl.Sdl.getFramerate(@:privateAccess win.window.win);
+			var refreshRate = limen.platform.Platform.getFramerate(@:privateAccess win.window.win);
 			if( refreshRate > 0 )
 				return refreshRate;
 		}
@@ -539,12 +520,8 @@ class System {
 	**/
 	public static function getKeyboardLayout() : KeyboardLayout {
 		var layoutStr = null;
-		#if hlsdl
-		layoutStr = sdl.Sdl.detectKeyboardLayout();
-		#elseif (hldx >= version("1.16.0"))
-		layoutStr = dx.Window.detectKeyboardLayout();
-		#elseif (hldx && !gfx_dx12)
-		layoutStr = dx.Driver.detectKeyboardLayout();
+		#if limen
+		layoutStr = limen.platform.Platform.detectKeyboardLayout();
 		#end
 		return switch(layoutStr) {
 			case "qwerty": QWERTY;
@@ -563,17 +540,13 @@ class System {
 	static function get_width() : Int return haxe.System.width;
 	static function get_height() : Int return haxe.System.height;
 	static function get_platform() : Platform return Console;
-	#elseif hldx
-	static function get_width() : Int return dx.Window.getScreenWidth();
-	static function get_height() : Int return dx.Window.getScreenHeight();
-	static function get_platform() : Platform return PC; // TODO : Xbox ?
-	#elseif hlsdl
+	#elseif limen
 	#if (hl_ver >= version("1.12.0"))
-	static function get_width() : Int return sdl.Sdl.getScreenWidth(@:privateAccess Window.inst.window);
-	static function get_height() : Int return sdl.Sdl.getScreenHeight(@:privateAccess Window.inst.window);
+	static function get_width() : Int return limen.platform.Platform.getScreenWidth(@:privateAccess Window.inst.window);
+	static function get_height() : Int return limen.platform.Platform.getScreenHeight(@:privateAccess Window.inst.window);
 	#else
-	static function get_width() : Int return sdl.Sdl.getScreenWidth();
-	static function get_height() : Int return sdl.Sdl.getScreenHeight();
+	static function get_width() : Int return limen.platform.Platform.getScreenWidth();
+	static function get_height() : Int return limen.platform.Platform.getScreenHeight();
 	#end
 	static function get_platform() : Platform {
 		if (platform == null)
@@ -630,7 +603,7 @@ class System {
 		#end
 	}
 
-	#if (hlsdl || hldx)
+	#if limen
 	@:keep static var _ = {
 		haxe.MainLoop.add(timeoutTick, -1).isBlocking = false;
 		haxe.MainLoop.add(updateCursor, -1).isBlocking = false;

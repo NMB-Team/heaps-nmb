@@ -1,7 +1,12 @@
 package h3d.impl.driver.dx12.shader;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12;
+#if (limen && gfx_dx12)
+import limen.graphics.d3d12.pipeline.InputLayout.InputElementDesc;
+import limen.graphics.d3d12.pipeline.Pipeline.ComputePipelineState;
+import limen.graphics.d3d12.pipeline.Pipeline.GraphicsPipelineState;
+import limen.graphics.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
+import limen.graphics.d3d12.pipeline.RootSignature.RootSignature;
+
 import h3d.impl.PipelineCache;
 
 class CompiledShader {

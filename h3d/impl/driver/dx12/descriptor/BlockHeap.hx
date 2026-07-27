@@ -1,6 +1,6 @@
 package h3d.impl.driver.dx12.descriptor;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
+#if (limen && gfx_dx12)
 class BlockHeap extends DescriptorHeapBase {
 	var freeList : Array<Int>;
 	public var available(get,never) : Int;

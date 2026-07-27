@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx11;
 
-#if ((hldx && !gfx_dx12) || (hlsdl && gfx_dx11))
-import dx.Driver.Layout;
+#if (limen && gfx_dx11)
+import limen.graphics.d3d11.DX11Shaders.Layout;
 
 @:noCompletion
 class CompiledShader {

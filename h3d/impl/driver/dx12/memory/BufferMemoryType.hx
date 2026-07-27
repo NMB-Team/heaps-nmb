@@ -1,7 +1,18 @@
 package h3d.impl.driver.dx12.memory;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12;
+#if (limen && gfx_dx12)
+import limen.graphics.d3d12.internal.D3D12Bindings as Dx12;
+import limen.graphics.d3d12.resource.Resources.Dx12ResourceDimension;
+import limen.graphics.d3d12.resource.Resources.GpuResource;
+import limen.graphics.d3d12.resource.Resources.HeapFlag;
+import limen.graphics.d3d12.resource.Resources.HeapFlag.CREATE_NOT_ZEROED;
+import limen.graphics.d3d12.resource.Resources.HeapProperties;
+import limen.graphics.d3d12.resource.Resources.HeapType;
+import limen.graphics.d3d12.resource.Resources.ResourceDesc;
+import limen.graphics.d3d12.resource.Resources.ResourceFlag;
+import limen.graphics.d3d12.resource.Resources.ResourceState;
+import limen.graphics.d3d12.resource.Resources.TextureLayout;
+
 import h3d.impl.allocator.MemoryPage;
 import h3d.impl.allocator.MemoryType;
 

@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.descriptor;
 
-#if ((hldx && gfx_dx12) || (hlsdl && gfx_dx12))
-import dx.Dx12;
+#if (limen && gfx_dx12)
+import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
 
 class ScratchHeapArray {
 	var heaps : Array<ScratchHeap>;
