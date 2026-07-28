@@ -2986,6 +2986,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		mat._41 = cast(m._41, Single); mat._42 = cast(m._42, Single); mat._43 = cast(m._43, Single); mat._44 = cast(m._44, Single);
 	}
 
+	static var dlssOptimalSettings = new DLSSOptimalSettings();
 	static var dlssSettings = new DLSSSettings();
 	static var dlssOptions = new DLSSOptions();
 	static var dlssConstants = new DLSSConstants();
@@ -3025,9 +3026,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		dlssOptions.outputWidth = targetWidth;
 		dlssOptions.outputHeight = targetHeight;
-		var optimalSettings = Dlss.getOptimalSettings(dlssOptions);
-		dlssSettings.optimalWidth = optimalSettings.optimalRenderWidth;
-		dlssSettings.optimalHeight = optimalSettings.optimalRenderHeight;
+		Dlss.getOptimalSettings(dlssOptions, dlssOptimalSettings);
+		dlssSettings.optimalWidth = dlssOptimalSettings.optimalRenderWidth;
+		dlssSettings.optimalHeight = dlssOptimalSettings.optimalRenderHeight;
 		return dlssSettings;
 		#else
 		return null;
