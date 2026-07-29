@@ -178,7 +178,6 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	#if dlss_allowed
 	var dlssReady : Bool;
-	var dlssFrameToken : DLSSFrameToken;
 	#end
 
 	var uploadBufferAlloc : FreeListAllocator;
@@ -280,7 +279,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		#end
 
 		var flags = new Dx12DriverInitFlags();
-		if( DEBUG ) flags.set(Dx12DriverInitFlag.DEBUG);
+		if( DEBUG ) {
+			flags.set(Dx12DriverInitFlag.DEBUG);
+		}
 		driver = Driver.create(window, flags, DEVICE_NAME);
 		if( DEBUG ) suppressDebugMessages();
 		frames = [];
@@ -486,7 +487,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		flushHeaps();
 
 		#if dlss_allowed
-		if ( dlssReady ) dlssFrameToken = Dlss.getNewFrameToken(frameCount);
+		if ( dlssReady && frame.dlssFrameToken == null )
+			frame.dlssFrameToken = Dlss.getNewFrameToken(currentFrame);
 		#end
 	}
 
@@ -3126,7 +3128,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			idx++;
 		}
 
-		Dlss.setTagForFrame(dlssFrameToken, dlssResources, resCount, frame.commandList);
+		Dlss.setTagForFrame(frame.dlssFrameToken, dlssResources, resCount, frame.commandList);
 
 		loadDlssMat(matCameraViewToClip, constants.cameraViewToClip);
 		loadDlssMat(matClipToCameraView, constants.clipToCameraView);
@@ -3167,8 +3169,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		dlssConstants.motionVectorsJittered = constants.motionVectorsJittered;
 		dlssConstants.minRelativeLinearDepthObjectSeparation = 40.0;
 
-		Dlss.setConstants(dlssFrameToken, dlssConstants);
-		Dlss.evaluateFeature(dlssFrameToken, frame.commandList, DLSSFeature.DLSS);
+		Dlss.setConstants(frame.dlssFrameToken, dlssConstants);
+		Dlss.evaluateFeature(frame.dlssFrameToken, frame.commandList, DLSSFeature.DLSS);
 
 		var arr = tmp.descriptors2;
 		arr[0] = @:privateAccess frame.srvHeap.heap;
