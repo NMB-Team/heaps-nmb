@@ -1,5 +1,8 @@
 package h2d.domkit;
 
+import hxd.Key.KeyCode;
+import hxd.Key.KeyCode.*;
+
 typedef SourceFile = {
 	name: String,
 	txt: String,
@@ -17,8 +20,8 @@ class Style extends domkit.CssStyle {
 	var errorsText : h2d.Text;
 
 	public var allowInspect(default, set) = false;
-	public var inspectKeyCode : Int = 0;
-	public var inspectDetailsKeyCode : Int = hxd.Key.CTRL;
+	public var inspectKeyCode : KeyCode = 0;
+	public var inspectDetailsKeyCode : KeyCode = CTRL;
 	public var s3d : h3d.scene.Scene;
 	public var cssParser : domkit.CssParser;
 	public var onInspectHyperlink : (String) -> Void = null;
@@ -381,7 +384,7 @@ class Style extends domkit.CssStyle {
 		switch( e.kind ) {
 		case EPush if( inspectKeyCode == 0 || hxd.Key.isDown(inspectKeyCode) ):
 			lastFrame = -1;
-			if( e.button == hxd.Key.MOUSE_MIDDLE ) {
+			if( e.button == MOUSE_MIDDLE ) {
 				if(hxd.Key.isDown(inspectDetailsKeyCode)) {
 					inspectModeActive = true;
 					inspectModeDetails = true;

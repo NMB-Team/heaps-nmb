@@ -1,5 +1,7 @@
 package hxd.fmt.pak;
 
+import hxd.System as HSystem;
+
 class Loader extends h2d.Object {
 
 	var onDone : Void -> Void;
@@ -19,7 +21,7 @@ class Loader extends h2d.Object {
 		fs = Std.downcast(hxd.res.Loader.currentInstance.fs, FileSystem);
 		if( fs == null )
 			throw "Can only use loader with PAK file system";
-		hxd.System.setLoop(render);
+		HSystem.setLoop(render);
 	}
 
 	function render() {

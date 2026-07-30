@@ -127,7 +127,7 @@ class OpenGLDriver extends Driver {
 
 	public function new(antiAlias=0) {
 		#if limen
-		var nativeWindow = @:privateAccess hxd.Window.getInstance().window;
+		var nativeWindow = hxd.Window.getInstance().platformWindow;
 		context = Context.create(nativeWindow, {
 			minimumMajor: computeEnabled ? 4 : 2,
 			minimumMinor: computeEnabled ? 3 : 1,
@@ -1000,7 +1000,7 @@ class OpenGLDriver extends Driver {
 
 	override function resize(width, height) {
 		#if limen
-		hxd.Window.getInstance().setCurrent();
+		context.makeCurrent();
 		#end
 		#if js
 		// prevent infinite grow if pixelRatio != 1
@@ -1967,7 +1967,7 @@ class OpenGLDriver extends Driver {
 
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
 		#if limen
-		hxd.Window.getInstance().setCurrent();
+		context.makeCurrent();
 		#end
 		#if js
 		// wait until all assets have properly load

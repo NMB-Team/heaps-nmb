@@ -1,7 +1,11 @@
 package hxd;
 
 #if limen
-import limen.platform.cursor.Cursor;
+import limen.platform.event.EventType.*;
+import limen.platform.event.Event as LEvent;
+import limen.platform.Platform as LPlatform;
+import limen.platform.Surface as LSurface;
+import limen.platform.cursor.Cursor as LCursor;
 #end
 
 enum Platform {
@@ -73,12 +77,12 @@ class System {
 	}
 
 	#if limen
-	static function processWindowEvent( event : limen.platform.event.Event ) {
+	static function processWindowEvent( event : LEvent ) {
 		if( processingWindowEvent )
 			return;
 		processingWindowEvent = true;
 		try {
-			@:privateAccess hxd.Window.dispatchEvent(event);
+			@:privateAccess HWindow.dispatchEvent(event);
 			timeoutTick();
 			if( loopFunc != null ) loopFunc();
 			renderFrame();
@@ -93,10 +97,10 @@ class System {
 	static function mainLoop() {
 		// process events
 		#if usesys
-		haxe.System.emitEvents(@:privateAccess hxd.Window.dispatchEvent);
+		haxe.System.emitEvents(@:privateAccess HWindow.dispatchEvent);
 		#elseif limen
-		limen.platform.Platform.processEvents(@:privateAccess hxd.Window.dispatchEvent);
-		@:privateAccess hxd.Window.processRelativeMouseEvents();
+		LPlatform.processEvents(@:privateAccess HWindow.dispatchEvent);
+		@:privateAccess HWindow.processRelativeMouseEvents();
 		#end
 
 		// loop
@@ -158,7 +162,7 @@ class System {
 		if( firstFramePresented )
 			return;
 		firstFramePresented = true;
-		var w = hxd.Window.getInstance();
+		var w = HWindow.getInstance();
 		if( w == null || w.visible )
 			markDisplayReady();
 		else
@@ -190,14 +194,14 @@ class System {
 		#else
 		timeoutTick();
 		#if limen
-		limen.platform.Platform.init();
+		LPlatform.init();
 		@:privateAccess Window.initChars();
 		#end
 
 		@:privateAccess Window.inst = createWindow();
 		#if limen
 		if( Sys.systemName() == "Windows" )
-			limen.platform.Platform.watchWindowEvents(processWindowEvent);
+			LPlatform.watchWindowEvents(processWindowEvent);
 		#end
 
 		init();
@@ -210,7 +214,7 @@ class System {
 		#if usesys
 		return true;
 		#else
-		return hxd.Window.hasWindow();
+		return HWindow.hasWindow();
 		#end
 	}
 
@@ -289,7 +293,7 @@ class System {
 
 		#if (limen && !multidriver)
 		// New UI window does not force SDL leave relative mouse mode, do it manually
-		var window = hxd.Window.getInstance();
+		var window = HWindow.getInstance();
 		var prevMouseMode = window?.mouseMode;
 		if (window != null)
 			window.mouseMode = Absolute;
@@ -301,7 +305,7 @@ class System {
 			hl.UI.stopLoop();
 			#if (limen && !multidriver)
 			if (prevMouseMode != null)
-				hxd.Window.getInstance().mouseMode = prevMouseMode;
+				HWindow.getInstance().mouseMode = prevMouseMode;
 			#end
 		};
 
@@ -311,7 +315,7 @@ class System {
 			hl.UI.stopLoop();
 			#if (limen && !multidriver)
 			if (prevMouseMode != null)
-				hxd.Window.getInstance().mouseMode = prevMouseMode;
+				HWindow.getInstance().mouseMode = prevMouseMode;
 			#end
 		};
 
@@ -334,27 +338,27 @@ class System {
 		currentCustomCursor = null;
 		if( c == Hide ) {
 			cursorVisible = false;
-			Cursor.show(false);
+			LCursor.show(false);
 			return;
 		}
-		var cur : Cursor;
+		var cur : LCursor;
 		switch( c ) {
 		case Default:
-			cur = Cursor.createSystem(Arrow);
+			cur = LCursor.createSystem(Arrow);
 		case Button:
-			cur = Cursor.createSystem(Hand);
+			cur = LCursor.createSystem(Hand);
 		case Move:
-			cur = Cursor.createSystem(SizeALL);
+			cur = LCursor.createSystem(SizeALL);
 		case TextInput:
-			cur = Cursor.createSystem(IBeam);
+			cur = LCursor.createSystem(IBeam);
 		case ResizeNS:
-			cur = Cursor.createSystem(SizeNS);
+			cur = LCursor.createSystem(SizeNS);
 		case ResizeWE:
-			cur = Cursor.createSystem(SizeWE);
+			cur = LCursor.createSystem(SizeWE);
 		case ResizeNWSE:
-			cur = Cursor.createSystem(SizeNWSE);
+			cur = LCursor.createSystem(SizeNWSE);
 		case ResizeNESW:
-			cur = Cursor.createSystem(SizeNESW);
+			cur = LCursor.createSystem(SizeNESW);
 		case Callback(_), Hide:
 			throw "assert";
 		case Custom(c):
@@ -371,8 +375,8 @@ class System {
 					if (c.offsetX < 0 || c.offsetX >= pixels.width || c.offsetY < 0 || c.offsetY >= pixels.height) {
 						throw "SDL3 does not allow creation of cursors with offset outside of cursor image bounds.";
 					}
-					var surf = limen.platform.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
-					c.alloc.push(limen.platform.cursor.Cursor.create(surf, c.offsetX, c.offsetY));
+					var surf = LSurface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
+					c.alloc.push(LCursor.create(surf, c.offsetX, c.offsetY));
 					c.allocSurfaces.push(surf);
 					c.allocPixels.push(pixels);
 					#end
@@ -387,7 +391,7 @@ class System {
 		cur.set();
 		if( !cursorVisible ) {
 			cursorVisible = true;
-			Cursor.show(true);
+			LCursor.show(true);
 		}
 		#end
 	}
@@ -414,11 +418,11 @@ class System {
 	}
 	#elseif limen
 	public static function getClipboardText() : String {
-		return limen.platform.Platform.getClipboardText();
+		return LPlatform.getClipboardText();
 	}
 
 	public static function setClipboardText(text:String) : Bool {
-		return limen.platform.Platform.setClipboardText(text);
+		return LPlatform.setClipboardText(text);
 	}
 	#else
 	public static function getClipboardText() : String {
@@ -434,7 +438,7 @@ class System {
 		#if usesys
 		return haxe.System.name;
 		#elseif limen
-		return "PC/" + limen.platform.Platform.getDevices()[0];
+		return "PC/" + LPlatform.getDevices()[0];
 		#else
 		return "PC/Commandline";
 		#end
@@ -442,9 +446,9 @@ class System {
 
 	public static function getDefaultFrameRate() : Float {
 		#if (limen && (gfx_dx11 || gfx_dx12))
-		var win = hxd.Window.getInstance();
+		var win = HWindow.getInstance();
 		if( win != null ) {
-			var refreshRate = limen.platform.Platform.getFramerate(@:privateAccess win.window.win);
+			var refreshRate = LPlatform.getFramerate(@:privateAccess win.window.win);
 			if( refreshRate > 0 )
 				return refreshRate;
 		}
@@ -521,7 +525,7 @@ class System {
 	public static function getKeyboardLayout() : KeyboardLayout {
 		var layoutStr = null;
 		#if limen
-		layoutStr = limen.platform.Platform.detectKeyboardLayout();
+		layoutStr = LPlatform.detectKeyboardLayout();
 		#end
 		return switch(layoutStr) {
 			case "qwerty": QWERTY;
@@ -542,11 +546,11 @@ class System {
 	static function get_platform() : Platform return Console;
 	#elseif limen
 	#if (hl_ver >= version("1.12.0"))
-	static function get_width() : Int return limen.platform.Platform.getScreenWidth(@:privateAccess Window.inst.window);
-	static function get_height() : Int return limen.platform.Platform.getScreenHeight(@:privateAccess Window.inst.window);
+	static function get_width() : Int return LPlatform.getScreenWidth(@:privateAccess Window.inst.window);
+	static function get_height() : Int return LPlatform.getScreenHeight(@:privateAccess Window.inst.window);
 	#else
-	static function get_width() : Int return limen.platform.Platform.getScreenWidth();
-	static function get_height() : Int return limen.platform.Platform.getScreenHeight();
+	static function get_width() : Int return LPlatform.getScreenWidth();
+	static function get_height() : Int return LPlatform.getScreenHeight();
 	#end
 	static function get_platform() : Platform {
 		if (platform == null)

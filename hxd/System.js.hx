@@ -107,7 +107,7 @@ class System {
 		if( displayReady )
 			return;
 		displayReady = true;
-		var w = hxd.Window.getInstance();
+		var w = HWindow.getInstance();
 		if( w != null )
 			w.visible = true;
 		hxd.snd.Manager.resumeAfterFirstFrame();
@@ -122,7 +122,7 @@ class System {
 			return;
 		currentNativeCursor = c;
 		currentCustomCursor = null;
-		var canvas = @:privateAccess hxd.Window.getInstance().canvas;
+		var canvas = @:privateAccess HWindow.getInstance().canvas;
 		if( canvas != null ) {
 			canvas.style.cursor = switch( c ) {
 			case Default: "default";
@@ -179,7 +179,7 @@ class System {
 		if ( currentCustomCursor != null ) {
 			var change = currentCustomCursor.update(hxd.Timer.elapsedTime);
 			if ( change != -1 ) {
-				var canvas = @:privateAccess hxd.Window.getInstance().canvas;
+				var canvas = @:privateAccess HWindow.getInstance().canvas;
 				if ( canvas != null ) {
 					canvas.style.cursor = currentCustomCursor.alloc[change];
 				}

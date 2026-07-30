@@ -64,7 +64,7 @@ class Cursor extends SampleApp {
 		// `hxd.System.setCursor` function.
 		// Useful when game utilizes stylized cursors for everything.
 
-		// HLSDL note: Cursor offsetX and offsetY should remain inside frame bounds.
+		// LIMEN note: Cursor offsetX and offsetY should remain inside frame bounds.
 		// This is a limitation of SDL (most likely for portability reasons).
 
 		var doOverride = false;

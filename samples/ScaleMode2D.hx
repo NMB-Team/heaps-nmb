@@ -1,4 +1,5 @@
 import hxd.Key;
+import hxd.Key.KeyCode.*;
 import h2d.Scene;
 
 class ScaleMode2D extends SampleApp {
@@ -66,7 +67,7 @@ class ScaleMode2D extends SampleApp {
 
 	override function update(dt:Float)
 	{
-		if (Key.isReleased(Key.R)) s2d.scaleMode = Resize;
+		if (Key.isReleased(R)) s2d.scaleMode = Resize;
 	}
 
 	static function main() {

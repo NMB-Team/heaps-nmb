@@ -1,4 +1,5 @@
-import hxd.Key in K;
+import hxd.Key;
+import hxd.Key.KeyCode.*;
 
 class Filters extends hxd.App {
 
@@ -33,13 +34,13 @@ class Filters extends hxd.App {
 
 	override function update(dt:Float) {
 		for( i in 0...10 )
-			if( K.isPressed(K.NUMBER_0 + i) || K.isPressed(K.NUMPAD_0+i) )
+			if( Key.isPressed(NUMBER_0 + i) || Key.isPressed(NUMPAD_0+i) )
 				setFilters(i);
-		if( K.isPressed(K.NUMPAD_ADD) ) {
+		if( Key.isPressed(NUMPAD_ADD) ) {
 			obj.scale(1.25);
 			bmp.scale(1 / 1.25);
 		}
-		if( K.isPressed(K.NUMPAD_SUB) ) {
+		if( Key.isPressed(NUMPAD_SUB) ) {
 			obj.scale(1 / 1.25);
 			bmp.scale(1.25);
 			if( obj.scaleX < 1 ) {

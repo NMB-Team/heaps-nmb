@@ -8,6 +8,7 @@ import h2d.Camera;
 import h2d.Graphics;
 import h2d.TileGroup;
 import hxd.Key;
+import hxd.Key.KeyCode.*;
 import hxd.Res;
 
 //PARAM=-D resourcesPath=../../tiled_res
@@ -176,19 +177,19 @@ class Camera2D extends SampleApp {
 
 	override function update(dt:Float) {
 		super.update(dt);
-		if (Key.isDown(Key.SHIFT)) dt *= 3;
-		if (Key.isDown(Key.LEFT)) followPoint.rotation -= dt;
-		if (Key.isDown(Key.RIGHT)) followPoint.rotation += dt;
+		if (Key.isDown(SHIFT)) dt *= 3;
+		if (Key.isDown(LEFT)) followPoint.rotation -= dt;
+		if (Key.isDown(RIGHT)) followPoint.rotation += dt;
 		var forward = followPoint.rotation - Math.PI * .5;
-		if (Key.isDown(Key.UP)) {
+		if (Key.isDown(UP)) {
 			followPoint.x += Math.cos(forward) * 60 * dt;
 			followPoint.y += Math.sin(forward) * 60 * dt;
 		}
-		if (Key.isDown(Key.DOWN)) {
+		if (Key.isDown(DOWN)) {
 			followPoint.x -= Math.cos(forward) * 60 * dt;
 			followPoint.y -= Math.sin(forward) * 60 * dt;
 		}
-		if (Key.isReleased(Key.SPACE)) {
+		if (Key.isReleased(SPACE)) {
 			followPoint.setPosition(s2d.width * .5, s2d.height * .5);
 			followPoint.rotation = 0;
 		}

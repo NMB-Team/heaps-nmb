@@ -4,6 +4,7 @@ package hxd;
 #if limen
 import limen.platform.event.Event;
 import limen.platform.input.gamepad.Gamepad as GameController;
+import limen.platform.Platform as LPlatform;
 import limen.platform.event.EventType.*;
 #elseif (usesys && !hlmesa)
 import haxe.GameController;
@@ -346,9 +347,9 @@ class Pad {
 		#if limen
 		if( !initDone ) {
 			initDone = true;
-			var sticks = limen.platform.Platform.getJoysticks();
+			var sticks = LPlatform.getJoysticks();
 			for( stick in sticks )
-				initPad( stick, limen.platform.Platform.getTime() ); // startup enumeration records when heaps discovers the device
+				initPad( stick, LPlatform.getTime() ); // startup enumeration records when heaps discovers the device
 			haxe.MainLoop.add(syncPads, -1);
 		}
 		#elseif usesys

@@ -1,5 +1,7 @@
 package hxd.fs;
 
+import hxd.System as HSystem;
+
 #if ((sys || nodejs) && !uwp)
 
 typedef ConvertConfig = {
@@ -437,11 +439,11 @@ class FileConverter {
 	}
 
 	dynamic function executeConvert( conv : Convert ) {
-		var prev = hxd.System.allowTimeout;
-		hxd.System.allowTimeout = false;
+		var prev = HSystem.allowTimeout;
+		HSystem.allowTimeout = false;
 		conv.convert();
-		if( prev ) hxd.System.timeoutTick();
-		hxd.System.allowTimeout = prev;
+		if( prev ) HSystem.timeoutTick();
+		HSystem.allowTimeout = prev;
 	}
 
 	function syncCache( saveToFile : Bool ) {

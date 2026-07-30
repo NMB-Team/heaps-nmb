@@ -1,4 +1,5 @@
 import hxd.snd.NativeChannel;
+import hxd.Key.KeyCode.*;
 
 class NoiseChannel extends hxd.snd.NativeChannel {
 
@@ -109,12 +110,12 @@ class Sound extends SampleApp {
 		if( music != null ) {
 			slider.value = music.position / music.duration;
 			musicPosition.text = hxd.Math.fmt(music.position) + "/" + hxd.Math.fmt(music.duration);
-			if( hxd.Key.isPressed(hxd.Key.M) ) {
+			if( hxd.Key.isPressed(M) ) {
 				music.mute = !music.mute;
 			}
 		}
 
-		if( hxd.Key.isPressed(hxd.Key.SPACE) ) {
+		if( hxd.Key.isPressed(SPACE) ) {
 			var c = new NoiseChannel();
 			haxe.Timer.delay(c.stop, 1000);
 		}

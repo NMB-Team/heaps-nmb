@@ -27,14 +27,14 @@ class File {
 	public static function browse( onSelect : BrowseSelect -> Void, ?options : BrowseOptions ) {
 		if( options == null ) options = {};
 		#if hl
-			var old = hxd.System.allowTimeout;
-			hxd.System.allowTimeout = false;
+			var old = HSystem.allowTimeout;
+			HSystem.allowTimeout = false;
 			var path = hl.UI.loadFile({
 				fileName : options.defaultPath,
 				filters : options.fileTypes == null ? null : [for( e in options.fileTypes ) { name : e.name, exts : e.extensions }],
 				title : options.title,
 			});
-			hxd.System.allowTimeout = old;
+			HSystem.allowTimeout = old;
 			if( path == null ) return;
 			if( options.relativePath ) {
 				var cwd = Sys.getCwd();
@@ -108,14 +108,14 @@ class File {
 	public static function saveAs( dataContent : haxe.io.Bytes, ?options : BrowseOptions ) {
 		if( options == null ) options = { };
 		#if hl
-			var old = hxd.System.allowTimeout;
-			hxd.System.allowTimeout = false;
+			var old = HSystem.allowTimeout;
+			HSystem.allowTimeout = false;
 			var path = hl.UI.saveFile({
 				fileName : options.defaultPath,
 				title : options.title,
 				filters : options.fileTypes == null ? null : [for( e in options.fileTypes ) { name : e.name, exts : e.extensions }],
 			});
-			hxd.System.allowTimeout = old;
+			HSystem.allowTimeout = old;
 			if( path == null )
 				return;
 			if( options.relativePath ) {

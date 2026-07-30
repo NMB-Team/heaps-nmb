@@ -1,5 +1,8 @@
 package hxd.impl;
 
+import hxd.System as HSystem;
+import hxd.Window as HWindow;
+
 #if hl
 /**
 	Create an app context to allow multiple apps to run in parallel.
@@ -9,7 +12,7 @@ class AppContext {
 
 	static var contexts : Array<AppContext> = [];
 
-	public var win : hxd.Window;
+	public var win : HWindow;
 	public var engine : h3d.Engine;
 	public var app : hxd.App;
 
@@ -18,7 +21,7 @@ class AppContext {
 		throw "Needs -D multidriver";
 		#end
 		this.app = app;
-		win = hxd.Window.getInstance();
+		win = HWindow.getInstance();
 		win.onClose = function() {
 			@:privateAccess app.dispose();
 			return true;
@@ -28,7 +31,7 @@ class AppContext {
 		engine.onReady = function() {
 			curReady();
 			reset();
-			hxd.System.setLoop(run);
+			HSystem.setLoop(run);
 		};
 		contexts.push(this);
 		reset();
@@ -39,9 +42,9 @@ class AppContext {
 			return;
 		engine.setCurrent();
 		@:privateAccess {
-			hxd.System.loopFunc = app.mainLoop;
-			hxd.System.mainLoop();
-			hxd.System.loopFunc = run;
+			HSystem.loopFunc = app.mainLoop;
+			HSystem.mainLoop();
+			HSystem.loopFunc = run;
 		}
 		reset();
 	}
@@ -53,7 +56,7 @@ class AppContext {
 
 	public static function reset() @:privateAccess {
 		h3d.Engine.CURRENT = null;
-		hxd.Window.inst = null;
+		HWindow.inst = null;
 	}
 
 	public static function set( app : hxd.App ) {

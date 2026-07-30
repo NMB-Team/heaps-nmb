@@ -17,7 +17,7 @@ interface Interactive {
 
 class SceneEvents {
 
-	var window : hxd.Window;
+	var window : HWindow;
 	var scenes : Array<InteractiveScene>;
 
 	var overList : Array<Interactive>;
@@ -61,7 +61,7 @@ class SceneEvents {
 		pushList = [];
 		overList = [];
 		overCandidates = [];
-		if( window == null ) window = hxd.Window.getInstance();
+		if( window == null ) window = HWindow.getInstance();
 		this.window = window;
 		window.addEventTarget(onEvent);
 	}

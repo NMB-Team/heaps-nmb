@@ -15,7 +15,7 @@ _High Performance Game Framework_
 Heaps is currently working on:
 - HTML5 (requires WebGL)
 - Mobile (iOS, tvOS and Android)
-- Desktop with OpenGL (Win/Linux/OSX) or DirectX (Windows only)
+- Desktop with OpenGL/Vulkan (Win/Linux/OSX) or Direct3D 11/12 (Windows only)
 - Consoles (Nintendo Switch, Sony PS4, XBox One - requires being a registered developer)
 
 Community

@@ -1,5 +1,7 @@
 package hxd;
 
+import hxd.Key.KeyCode;
+
 enum EventKind {
 	EPush;
 	ERelease;
@@ -35,7 +37,7 @@ class Event {
 	public var cancel : Bool;
 	public var button : Int = 0;
 	public var touchId : Int;
-	public var keyCode : Int;
+	public var keyCode : KeyCode;
 	public var charCode : Int;
 	public var wheelDelta : Float;
 	/**

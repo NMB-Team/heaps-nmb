@@ -1,12 +1,16 @@
 package hxd;
 
-import hxd.Key in K;
+import hxd.Key.KeyCode;
+import hxd.Key.KeyCode.*;
 import hxd.impl.MouseMode;
-#if limen
-import limen.platform.event.EventType.*;
-#end
 
 #if limen
+import limen.platform.event.EventType.*;
+import limen.platform.event.Event as LEvent;
+import limen.platform.Platform as LPlatform;
+import limen.platform.Surface as LSurface;
+import limen.platform.Window as LWindow;
+
 typedef DisplayMode = limen.platform.Window.WindowMode;
 #else
 enum DisplayMode {
@@ -82,8 +86,16 @@ class Window {
 	#end
 
 	#if limen
-	var window : limen.platform.Window;
+	var window : LWindow;
+
+	public var platformWindow(get, never) : LWindow;
+
+	@:noCompletion
+	inline function get_platformWindow() : LWindow {
+		return window;
+	}
 	#end
+
 	var windowWidth = 800;
 	var windowHeight = 600;
 	var curMouseX = 0;
@@ -94,7 +106,7 @@ class Window {
 	var flags : { fixed: Bool, hidden: Bool };
 	var _vsync = true;
 
-	static var CODEMAP = [for( i in 0...2048 ) i];
+	static var CODEMAP : Array<KeyCode> = [for( i in 0...2048 ) i];
 	static var MIN_HEIGHT = 720;
 	static var MIN_FRAMERATE = 60; // 30 and 60 are always allowed
 	#if limen
@@ -112,17 +124,17 @@ class Window {
 		var hidden = flags != null && flags.hidden != null ? flags.hidden : false;
 		#if limen
 		var sdlFlags = 0;
-		if (!fixed) sdlFlags |= limen.platform.Window.SDL_WINDOW_RESIZABLE;
-		if (hidden) sdlFlags |= limen.platform.Window.SDL_WINDOW_HIDDEN;
-		else sdlFlags |= limen.platform.Window.SDL_WINDOW_SHOWN;
+		if (!fixed) sdlFlags |= LWindow.SDL_WINDOW_RESIZABLE;
+		if (hidden) sdlFlags |= LWindow.SDL_WINDOW_HIDDEN;
+		else sdlFlags |= LWindow.SDL_WINDOW_SHOWN;
 		#if gfx_vulkan
 		if( hxd.GraphicsDriverConfig.usesVulkan() )
-			sdlFlags |= limen.platform.Window.SDL_WINDOW_VULKAN;
+			sdlFlags |= LWindow.SDL_WINDOW_VULKAN;
 		else
 		#end
 		if( !hxd.GraphicsDriverConfig.usesDirectX() )
-			sdlFlags |= limen.platform.Window.SDL_WINDOW_OPENGL;
-		window = new limen.platform.Window(title, width, height, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, sdlFlags);
+			sdlFlags |= LWindow.SDL_WINDOW_OPENGL;
+		window = new LWindow(title, width, height, LWindow.SDL_WINDOWPOS_CENTERED, LWindow.SDL_WINDOWPOS_CENTERED, sdlFlags);
 		this.windowWidth = window.width;
 		this.windowHeight = window.height;
 		if( hidden )
@@ -210,7 +222,7 @@ class Window {
 	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
 		#if (limen >= version("1.14.0"))
 		if (dropTargets.length == 0) {
-			limen.platform.Platform.setDragAndDropEnabled(true);
+			LPlatform.setDragAndDropEnabled(true);
 		}
 		#end
 		dropTargets.push(f);
@@ -224,7 +236,7 @@ class Window {
 			}
 		if ( dropTargets.length == 0 ) {
 			#if (limen >= version("1.14.0"))
-			limen.platform.Platform.setDragAndDropEnabled(false);
+			LPlatform.setDragAndDropEnabled(false);
 			#end
 		}
 	}
@@ -302,13 +314,13 @@ class Window {
 
 		#if limen
 		var relative = v != Absolute;
-		limen.platform.Platform.setRelativeMouseMode(relative);
+		LPlatform.setRelativeMouseMode(relative);
 		if( useRelativeMousePolling ) {
-			limen.platform.Platform.setMouseMotionEvents(!relative);
+			LPlatform.setMouseMotionEvents(!relative);
 			if( relative ) {
 				var dx = 0;
 				var dy = 0;
-				limen.platform.Platform.getRelativeMouseState(dx, dy);
+				LPlatform.getRelativeMouseState(dx, dy);
 			}
 		}
 		#else
@@ -365,13 +377,13 @@ class Window {
 
 	var wasBlurred : Bool;
 
-	function onEvent( e : limen.platform.event.Event ) : Bool {
+	function onEvent( e : LEvent ) : Bool {
 		var eh = null;
 		switch( e.type ) {
 		default:
 			switch( e.state ) {
 			case Show, Expose:
-				hxd.System.notifyWindowShown();
+				HSystem.notifyWindowShown();
 			default:
 				windowWidth = window.width;
 				windowHeight = window.height;
@@ -393,7 +405,7 @@ class Window {
 					onMove();
 			// default:
 			}
-		case MouseDown if (!hxd.System.getValue(IsTouch)):
+		case MouseDown if (!HSystem.getValue(IsTouch)):
 			if (mouseMode == Absolute) {
 				curMouseX = e.mouseX;
 				curMouseY = e.mouseY;
@@ -406,7 +418,7 @@ class Window {
 			case 2: 1;
 			case x: x;
 			}
-		case MouseUp if (!hxd.System.getValue(IsTouch)):
+		case MouseUp if (!HSystem.getValue(IsTouch)):
 			if (mouseMode == Absolute) {
 				curMouseX = e.mouseX;
 				curMouseY = e.mouseY;
@@ -418,7 +430,7 @@ class Window {
 			case 2: 1;
 			case x: x;
 			};
-		case MouseMove if (!hxd.System.getValue(IsTouch)):
+		case MouseMove if (!HSystem.getValue(IsTouch)):
 			switch (mouseMode) {
 				case Absolute:
 					curMouseX = e.mouseX;
@@ -459,7 +471,7 @@ class Window {
 			eh.isRepeat = e.keyRepeat;
 			if( e.keyCode & (1 << 30) != 0 ) e.keyCode = (e.keyCode & ((1 << 30) - 1)) + 1000;
 			eh.keyCode = CODEMAP[e.keyCode];
-			if( eh.keyCode & (K.LOC_LEFT | K.LOC_RIGHT) != 0 ) {
+			if( eh.keyCode & (KeyCode.LOC_LEFT | KeyCode.LOC_RIGHT) != 0 ) {
 				e.keyCode = eh.keyCode & 0xFF;
 				onEvent(e);
 			}
@@ -467,7 +479,7 @@ class Window {
 			eh = new Event(EKeyUp, curMouseX, curMouseY);
 			if( e.keyCode & (1 << 30) != 0 ) e.keyCode = (e.keyCode & ((1 << 30) - 1)) + 1000;
 			eh.keyCode = CODEMAP[e.keyCode];
-			if( eh.keyCode & (K.LOC_LEFT | K.LOC_RIGHT) != 0 ) {
+			if( eh.keyCode & (KeyCode.LOC_LEFT | KeyCode.LOC_RIGHT) != 0 ) {
 				e.keyCode = eh.keyCode & 0xFF;
 				onEvent(e);
 			}
@@ -482,17 +494,17 @@ class Window {
 				((c & 0x1F) << 12) | (((e.keyCode >> 8) & 0x7F) << 6) | ((e.keyCode >> 16) & 0x7F);
 			else
 				((c & 0x0F) << 18) | (((e.keyCode >> 8) & 0x7F) << 12) | (((e.keyCode >> 16) & 0x7F) << 6) | ((e.keyCode >> 24) & 0x7F);
-		case TouchDown if (hxd.System.getValue(IsTouch)):
+		case TouchDown if (HSystem.getValue(IsTouch)):
 			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
 			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(EPush, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
-		case TouchMove if (hxd.System.getValue(IsTouch)):
+		case TouchMove if (HSystem.getValue(IsTouch)):
 			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
 			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(EMove, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
-		case TouchUp if (hxd.System.getValue(IsTouch)):
+		case TouchUp if (HSystem.getValue(IsTouch)):
 			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
 			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
 			eh = new Event(ERelease, e.mouseX, e.mouseY);
@@ -515,7 +527,7 @@ class Window {
 			for ( dt in dropTargets ) dt(event);
 			dropFiles = null;
 		case KeyMapChanged:
-			hxd.System.onKeyboardLayoutChange();
+			HSystem.onKeyboardLayoutChange();
 		#else // limen post both Close+Quit
 		case Quit:
 			return onCloseEvent();
@@ -567,94 +579,94 @@ class Window {
 
 	static function initChars() : Void {
 
-		inline function addKey(sdl, keyCode) {
+		inline function addKey(sdl, keyCode : KeyCode) {
 			CODEMAP[sdl] = keyCode;
 		}
 
 		// ASCII
 		for( i in 0...26 )
-			addKey(97 + i, K.A + i);
+			addKey(97 + i, A + i);
 		for( i in 0...12 )
-			addKey(1058 + i, K.F1 + i);
+			addKey(1058 + i, F1 + i);
 		for( i in 0...12 )
-			addKey(1104 + i, K.F13 + i);
+			addKey(1104 + i, F13 + i);
 
 		// NUMPAD
-		addKey(1084, K.NUMPAD_DIV);
-		addKey(1085, K.NUMPAD_MULT);
-		addKey(1086, K.NUMPAD_SUB);
-		addKey(1087, K.NUMPAD_ADD);
-		addKey(1088, K.NUMPAD_ENTER);
+		addKey(1084, NUMPAD_DIV);
+		addKey(1085, NUMPAD_MULT);
+		addKey(1086, NUMPAD_SUB);
+		addKey(1087, NUMPAD_ADD);
+		addKey(1088, NUMPAD_ENTER);
 		for( i in 0...9 )
-			addKey(1089 + i, K.NUMPAD_1 + i);
-		addKey(1098, K.NUMPAD_0);
-		addKey(1099, K.NUMPAD_DOT);
+			addKey(1089 + i, NUMPAD_1 + i);
+		addKey(1098, NUMPAD_0);
+		addKey(1099, NUMPAD_DOT);
 
 		// EXTRA
 		var keys = [
-			//K.BACKSPACE
-			//K.TAB
-			//K.ENTER
-			1225 => K.LSHIFT,
-			1229 => K.RSHIFT,
-			1224 => K.LCTRL,
-			1228 => K.RCTRL,
-			1226 => K.LALT,
-			1230 => K.RALT,
-			1227 => K.LEFT_WINDOW_KEY,
-			1231 => K.RIGHT_WINDOW_KEY,
-			// K.ESCAPE
-			// K.SPACE
-			1075 => K.PGUP,
-			1078 => K.PGDOWN,
-			1077 => K.END,
-			1074 => K.HOME,
-			1080 => K.LEFT,
-			1082 => K.UP,
-			1079 => K.RIGHT,
-			1081 => K.DOWN,
-			1073 => K.INSERT,
-			127 => K.DELETE,
-			//K.NUMPAD_0-9
-			//K.A-Z
-			//K.F1-F12
-			1085 => K.NUMPAD_MULT,
-			1087 => K.NUMPAD_ADD,
-			1088 => K.NUMPAD_ENTER,
-			1086 => K.NUMPAD_SUB,
-			1099 => K.NUMPAD_DOT,
-			1084 => K.NUMPAD_DIV,
+			//BACKSPACE
+			//TAB
+			//ENTER
+			1225 => LSHIFT,
+			1229 => RSHIFT,
+			1224 => LCTRL,
+			1228 => RCTRL,
+			1226 => LALT,
+			1230 => RALT,
+			1227 => LEFT_WINDOW_KEY,
+			1231 => RIGHT_WINDOW_KEY,
+			// ESCAPE
+			// SPACE
+			1075 => PGUP,
+			1078 => PGDOWN,
+			1077 => END,
+			1074 => HOME,
+			1080 => LEFT,
+			1082 => UP,
+			1079 => RIGHT,
+			1081 => DOWN,
+			1073 => INSERT,
+			127 => DELETE,
+			//NUMPAD_0-9
+			//A-Z
+			//F1-F12
+			1085 => NUMPAD_MULT,
+			1087 => NUMPAD_ADD,
+			1088 => NUMPAD_ENTER,
+			1086 => NUMPAD_SUB,
+			1099 => NUMPAD_DOT,
+			1084 => NUMPAD_DIV,
 
-			39 => K.QWERTY_QUOTE,
-			44 => K.QWERTY_COMMA,
-			45 => K.QWERTY_MINUS,
-			46 => K.QWERTY_PERIOD,
-			47 => K.QWERTY_SLASH,
-			59 => K.QWERTY_SEMICOLON,
-			61 => K.QWERTY_EQUALS,
-			91 => K.QWERTY_BRACKET_LEFT,
-			92 => K.QWERTY_BACKSLASH,
-			93 => K.QWERTY_BRACKET_RIGHT,
-			96 => K.QWERTY_TILDE,
-			167 => K.QWERTY_BACKSLASH,
+			39 => QWERTY_QUOTE,
+			44 => QWERTY_COMMA,
+			45 => QWERTY_MINUS,
+			46 => QWERTY_PERIOD,
+			47 => QWERTY_SLASH,
+			59 => QWERTY_SEMICOLON,
+			61 => QWERTY_EQUALS,
+			91 => QWERTY_BRACKET_LEFT,
+			92 => QWERTY_BACKSLASH,
+			93 => QWERTY_BRACKET_RIGHT,
+			96 => QWERTY_TILDE,
+			167 => QWERTY_BACKSLASH,
 
 			// AZERTY
-			41 => K.QWERTY_BRACKET_LEFT, // degree
-			94 => K.QWERTY_BRACKET_RIGHT, // caret
-			249 => K.QWERTY_TILDE, // percent
-			58 => K.QWERTY_SLASH, // slash
-			33 => K.AZERTY_EXCLAM,
-			36 => K.QWERTY_SEMICOLON, // dollar
+			41 => QWERTY_BRACKET_LEFT, // degree
+			94 => QWERTY_BRACKET_RIGHT, // caret
+			249 => QWERTY_TILDE, // percent
+			58 => QWERTY_SLASH, // slash
+			33 => AZERTY_EXCLAM,
+			36 => QWERTY_SEMICOLON, // dollar
 
-			1101 => K.CONTEXT_MENU,
-			1057 => K.CAPS_LOCK,
-			1071 => K.SCROLL_LOCK,
-			1072 => K.PAUSE_BREAK,
-			1083 => K.NUM_LOCK,
+			1101 => CONTEXT_MENU,
+			1057 => CAPS_LOCK,
+			1071 => SCROLL_LOCK,
+			1072 => PAUSE_BREAK,
+			1083 => NUM_LOCK,
 			// LowerThan on AZERTY, none on QWERTY because limen uses sym code, instead of scancode - INTL_BACKSLASH always reports 0x5C, e.g. regular slash.
-			60 => K.INTL_BACKSLASH,
+			60 => INTL_BACKSLASH,
 
-			//1070 => K.PRINT_SCREEN
+			//1070 => PRINT_SCREEN
 		];
 		for( sdl in keys.keys() )
 			addKey(sdl, keys.get(sdl));
@@ -749,7 +761,7 @@ class Window {
 		var pixels = icon.getPixels();
 		pixels.convert(BGRA);
 		#if limen
-		var surf = limen.platform.Surface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
+		var surf = LSurface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
 		window.setIcon(surf);
 		surf.free();
 		#end
@@ -760,7 +772,7 @@ class Window {
 	#if (hl_ver >= version("1.12.0"))
 	public static function getMonitors() : Array<Monitor> {
 		#if limen
-		return [for(m in limen.platform.Platform.getDisplays()) { name: m.name, width: m.width, height: m.height}];
+		return [for(m in LPlatform.getDisplays()) { name: m.name, width: m.width, height: m.height}];
 		#else
 		return [];
 		#end
@@ -769,8 +781,8 @@ class Window {
 	// If registry is set, return the default DisplaySetting when it's currently modified by the application.
 	public function getCurrentDisplaySetting(?monitorId : Int, registry : Bool = false) : DisplaySetting {
 		#if limen
-		var mon = limen.platform.Platform.getDisplays()[monitorId == null ? 0 : monitorId];
-		return limen.platform.Platform.getCurrentDisplayMode(mon.id, true);
+		var mon = LPlatform.getDisplays()[monitorId == null ? 0 : monitorId];
+		return LPlatform.getCurrentDisplayMode(mon.id, true);
 		#else
 		return null;
 		#end
@@ -782,8 +794,8 @@ class Window {
 		if(monitorId == null)
 			monitorId = monitor;
 		#if limen
-		var m = limen.platform.Platform.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
-		var l = limen.platform.Platform.getDisplayModes(m.id);
+		var m = LPlatform.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
+		var l = LPlatform.getDisplayModes(m.id);
 		#else
 		var l = [];
 		#end
@@ -801,7 +813,7 @@ class Window {
 	function selectedMonitor() : Dynamic {
 		var m = if(monitor == null) currentMonitorIndex else monitor;
 		#if limen
-		return limen.platform.Platform.getDisplays()[m];
+		return LPlatform.getDisplays()[m];
 		#else
 		return null;
 		#end
@@ -841,7 +853,7 @@ class Window {
 	function get_currentMonitorIndex() : Int {
 		#if limen
 		var current = window.currentMonitor;
-		for(i => m in limen.platform.Platform.getDisplays()) {
+		for(i => m in LPlatform.getDisplays()) {
 			if(m.id == current)
 				return i;
 		}
@@ -866,10 +878,6 @@ class Window {
 	}
 
 	public function setCurrent() {
-		#if limen
-		if( !hxd.GraphicsDriverConfig.usesDirectX() && !hxd.GraphicsDriverConfig.usesVulkan() )
-			window.setCurrent();
-		#end
 		inst = this;
 	}
 
@@ -902,7 +910,7 @@ class Window {
 			return;
 		var dx = 0;
 		var dy = 0;
-		limen.platform.Platform.getRelativeMouseState(dx, dy);
+		LPlatform.getRelativeMouseState(dx, dy);
 		if( dx == 0 && dy == 0 )
 			return;
 		if( inst != null )

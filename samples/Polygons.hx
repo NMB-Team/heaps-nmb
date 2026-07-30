@@ -8,6 +8,7 @@ import h3d.scene.CameraController;
 import h3d.scene.Mesh;
 import h3d.Vector;
 import hxd.Key;
+import hxd.Key.KeyCode.*;
 
 /**
  * Third person camera controller (top view) with arrow keys mapping
@@ -17,21 +18,21 @@ class ThirdPersonCameraController extends CameraController {
 		super.onEvent(e);
 
 		// Third person camera arrow keys mapping
-		if (e.keyCode == Key.UP) {
+		if (e.keyCode == UP) {
 			var radian = Math.atan2((curPos.y - target.y), (curPos.x - target.x));
 			pan(Math.sin(radian), Math.cos(radian));
 		}
-		if (e.keyCode == Key.LEFT) {
+		if (e.keyCode == LEFT) {
 			var radian = Math.atan2((curPos.y - target.y), (curPos.x - target.x));
 			radian = radian - Math.PI / 2.0;
 			pan(Math.sin(radian), Math.cos(radian));
 		}
-		if (e.keyCode == Key.DOWN) {
+		if (e.keyCode == DOWN) {
 			var radian = Math.atan2((curPos.y - target.y), (curPos.x - target.x));
 			radian = radian + Math.PI;
 			pan(Math.sin(radian), Math.cos(radian));
 		}
-		if (e.keyCode == Key.RIGHT) {
+		if (e.keyCode == RIGHT) {
 			var radian = Math.atan2((curPos.y - target.y), (curPos.x - target.x));
 			radian = radian + Math.PI / 2.0;
 			pan(Math.sin(radian), Math.cos(radian));

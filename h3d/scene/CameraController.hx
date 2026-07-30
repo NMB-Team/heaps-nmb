@@ -1,5 +1,7 @@
 package h3d.scene;
 
+import hxd.Key.KeyCode.*;
+
 abstract class CameraController extends h3d.scene.Object {
 	public var distance(get, never) : Float;
 	inline function get_distance() return curPos.x / curOffset.w;
@@ -280,7 +282,7 @@ class OrbitCameraController extends CameraController {
 			zoom(e.wheelDelta);
 		case EPush:
 			pushing = e.button;
-			if (pushing == 0 && hxd.Key.isDown(hxd.Key.ALT)) pushing = 2;
+			if (pushing == 0 && hxd.Key.isDown(ALT)) pushing = 2;
 			pushTime = haxe.Timer.stamp();
 			pushStartX = pushX = e.relX;
 			pushStartY = pushY = e.relY;
@@ -331,13 +333,13 @@ class OrbitCameraController extends CameraController {
 
 	function moveKeys() {
 		var mov = new h3d.Vector();
-		if( hxd.Key.isDown(hxd.Key.UP) || hxd.Key.isDown(hxd.Key.Z) || hxd.Key.isDown(hxd.Key.W) )
+		if( hxd.Key.isDown(UP) || hxd.Key.isDown(Z) || hxd.Key.isDown(W) )
 			mov.x += 1;
-		if( hxd.Key.isDown(hxd.Key.DOWN) || hxd.Key.isDown(hxd.Key.S) )
+		if( hxd.Key.isDown(DOWN) || hxd.Key.isDown(S) )
 			mov.x -= 1;
-		if( hxd.Key.isDown(hxd.Key.LEFT) || hxd.Key.isDown(hxd.Key.Q) || hxd.Key.isDown(hxd.Key.A) )
+		if( hxd.Key.isDown(LEFT) || hxd.Key.isDown(Q) || hxd.Key.isDown(A) )
 			mov.y -= 1;
-		if( hxd.Key.isDown(hxd.Key.RIGHT) || hxd.Key.isDown(hxd.Key.D) )
+		if( hxd.Key.isDown(RIGHT) || hxd.Key.isDown(D) )
 			mov.y += 1;
 
 		if( mov.x == 0 && mov.y == 0 )
@@ -410,7 +412,7 @@ class FPSCameraController extends CameraController {
 			}
 		case EPush:
 			pushing = e.button;
-			if (pushing == 0 && hxd.Key.isDown(hxd.Key.ALT)) pushing = 2;
+			if (pushing == 0 && hxd.Key.isDown(ALT)) pushing = 2;
 			pushTime = haxe.Timer.stamp();
 			pushStartX = pushX = e.relX;
 			pushStartY = pushY = e.relY;
@@ -445,17 +447,17 @@ class FPSCameraController extends CameraController {
 	function moveKeys() {
 		var cam = getScene().camera;
 		var mov = new h3d.Vector();
-		if( hxd.Key.isDown(hxd.Key.UP) || hxd.Key.isDown(hxd.Key.Z) || hxd.Key.isDown(hxd.Key.W) )
+		if( hxd.Key.isDown(UP) || hxd.Key.isDown(Z) || hxd.Key.isDown(W) )
 			mov += cam.getForward() * -1;
-		if( hxd.Key.isDown(hxd.Key.DOWN) || hxd.Key.isDown(hxd.Key.S) )
+		if( hxd.Key.isDown(DOWN) || hxd.Key.isDown(S) )
 			mov += cam.getForward() * 1;
-		if( hxd.Key.isDown(hxd.Key.LEFT) || hxd.Key.isDown(hxd.Key.Q) )
+		if( hxd.Key.isDown(LEFT) || hxd.Key.isDown(Q) )
 			mov += cam.getRight() * 1;
-		if( hxd.Key.isDown(hxd.Key.RIGHT) || hxd.Key.isDown(hxd.Key.D) )
+		if( hxd.Key.isDown(RIGHT) || hxd.Key.isDown(D) )
 			mov += cam.getRight() * -1;
-		if ( hxd.Key.isDown(hxd.Key.A) )
+		if ( hxd.Key.isDown(A) )
 			mov += cam.getUp() * -1;
-		if ( hxd.Key.isDown(hxd.Key.E) )
+		if ( hxd.Key.isDown(E) )
 			mov += cam.getUp() * 1;
 
 		if( mov.x == 0 && mov.y == 0 && mov.z == 0 )

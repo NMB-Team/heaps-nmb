@@ -1,5 +1,10 @@
 package hxd;
 
+#if (limen && !macro)
+import limen.platform.Surface as LSurface;
+import limen.platform.cursor.Cursor as LCursor;
+#end
+
 enum Cursor {
 	Default;
 	Button;
@@ -27,14 +32,14 @@ class CustomCursor {
 	#if macro
 	var alloc : Array<Dynamic>;
 	#elseif limen
-	var alloc : Array<limen.platform.cursor.Cursor>;
+	var alloc : Array<LCursor>;
 	#elseif js
 	var alloc : Array<String>;
 	#else
 	var alloc : Dynamic;
 	#end
 	#if (limen && !macro)
-	var allocSurfaces : Array<limen.platform.Surface>;
+	var allocSurfaces : Array<LSurface>;
 	var allocPixels : Array<hxd.Pixels>;
 	#end
 

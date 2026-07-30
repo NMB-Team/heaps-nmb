@@ -1,5 +1,6 @@
 import h2d.RenderContext;
 import h2d.Object;
+import hxd.Key.KeyCode.*;
 
 class Mask extends hxd.App {
 
@@ -43,11 +44,11 @@ class Mask extends hxd.App {
 		apiMask.sx = Math.cos(time) * 100 + 100;
 		apiMask.sy = Math.sin(time) * 100 + 100;
 
-		if (hxd.Key.isDown(hxd.Key.LEFT)) mask.scrollX -= 100 * dt;
-		if (hxd.Key.isDown(hxd.Key.RIGHT)) mask.scrollX += 100 * dt;
-		if (hxd.Key.isDown(hxd.Key.UP)) mask.scrollY -= 100 * dt;
-		if (hxd.Key.isDown(hxd.Key.DOWN)) mask.scrollY += 100 * dt;
-		if (hxd.Key.isReleased(hxd.Key.SPACE)) mask.scrollTo(0, 0);
+		if (hxd.Key.isDown(LEFT)) mask.scrollX -= 100 * dt;
+		if (hxd.Key.isDown(RIGHT)) mask.scrollX += 100 * dt;
+		if (hxd.Key.isDown(UP)) mask.scrollY -= 100 * dt;
+		if (hxd.Key.isDown(DOWN)) mask.scrollY += 100 * dt;
+		if (hxd.Key.isReleased(SPACE)) mask.scrollTo(0, 0);
 	}
 
 	static function main() {

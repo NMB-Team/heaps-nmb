@@ -1,5 +1,6 @@
 package hxd.fmt.pak;
 import hxd.fmt.pak.Data;
+import hxd.System as HSystem;
 
 class Build {
 
@@ -40,7 +41,7 @@ class Build {
 		var dir = resPath + (path == "" ? "" : "/" + path);
 		var f = new File();
 		#if !dataOnly
-		hxd.System.timeoutTick();
+		HSystem.timeoutTick();
 		#end
 		f.name = path.split("/").pop();
 		if( sys.FileSystem.isDirectory(dir) ) {
@@ -267,7 +268,7 @@ class Build {
 				var baseDir = b.outPrefix == null ? pakFile.substr(0,-4) : b.outPrefix;
 				function extractRec(f:hxd.fmt.pak.Data.File, dir) {
 					#if !dataOnly
-					hxd.System.timeoutTick();
+					HSystem.timeoutTick();
 					#end
 					if( f.isDirectory ) {
 						var dir = f.name == "" ? dir : dir+"/"+f.name;

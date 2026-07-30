@@ -1,6 +1,7 @@
 import hxd.Math;
 import h3d.pass.ScalableAO;
-import hxd.Key in K;
+import hxd.Key;
+import hxd.Key.KeyCode.*;
 
 class CustomRenderer extends h3d.scene.fwd.Renderer {
 
@@ -132,17 +133,17 @@ class Sao extends SampleApp {
 
 	override function update( dt : Float ) {
 
-		if(K.isPressed(K.BACKSPACE))
+		if(Key.isPressed(BACKSPACE))
 			reset();
 
 		var r = Std.downcast(s3d.renderer, CustomRenderer);
-		if(K.isPressed(K.NUMBER_1))
+		if(Key.isPressed(NUMBER_1))
 			r.mode = 0;
-		if(K.isPressed(K.NUMBER_2))
+		if(Key.isPressed(NUMBER_2))
 			r.mode = 1;
-		if(K.isPressed(K.NUMBER_3))
+		if(Key.isPressed(NUMBER_3))
 			r.mode = 2;
-		if( K.isPressed("V".code) )
+		if( Key.isPressed("V".code) )
 			hxd.Window.getInstance().vsync = !hxd.Window.getInstance().vsync;
 	}
 

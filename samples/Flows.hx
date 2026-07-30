@@ -1,5 +1,6 @@
 import h2d.Tile;
 import hxd.Key;
+import hxd.Key.KeyCode.*;
 import h2d.Flow;
 import h2d.Object;
 import h2d.Text.Align;
@@ -486,11 +487,11 @@ class Flows extends hxd.App {
 		event.update(dt);
 
 		var screenSwitched = false;
-		if (Key.isPressed(Key.LEFT)) {
+		if (Key.isPressed(LEFT)) {
 			idxFctDisplayed -= 1;
 			screenSwitched = true;
 		}
-		if (Key.isPressed(Key.RIGHT)) {
+		if (Key.isPressed(RIGHT)) {
 			idxFctDisplayed += 1;
 			screenSwitched = true;
 		}

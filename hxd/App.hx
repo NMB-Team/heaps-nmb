@@ -42,7 +42,7 @@ class App implements h3d.IDrawable {
 			engine.onReady = setup;
 			haxe.Timer.delay(setup, 0);
 		} else {
-			hxd.System.start(function() {
+			HSystem.start(function() {
 				this.engine = engine = @:privateAccess new h3d.Engine();
 				engine.onReady = setup;
 				engine.init();
@@ -100,7 +100,7 @@ class App implements h3d.IDrawable {
 			s2d.checkResize();
 			onResize();
 		};
-		hxd.System.setLoop(mainLoop);
+		HSystem.setLoop(mainLoop);
 	}
 
 	function onContextLost() {
@@ -153,8 +153,8 @@ class App implements h3d.IDrawable {
 			init();
 			hxd.Timer.skip();
 			mainLoop();
-			hxd.System.setLoop(mainLoop);
-			hxd.System.presentFrame(engine);
+			HSystem.setLoop(mainLoop);
+			HSystem.presentFrame(engine);
 			hxd.Key.initialize();
 		});
 	}

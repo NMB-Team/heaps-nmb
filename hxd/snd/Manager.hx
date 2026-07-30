@@ -1,6 +1,7 @@
 package hxd.snd;
 
 import hxd.snd.Driver;
+import hxd.System as HSystem;
 import haxe.MainLoop;
 
 @:access(hxd.snd.Manager)
@@ -147,7 +148,7 @@ class Manager {
 	public static function get() : Manager {
 		if( instance == null ) {
 			instance = new Manager();
-			instance.suspended = !hxd.System.isDisplayReady();
+			instance.suspended = !HSystem.isDisplayReady();
 			instance.updateEvent = haxe.MainLoop.add(instance.update);
 			instance.updateEvent.isBlocking = false;
 		}

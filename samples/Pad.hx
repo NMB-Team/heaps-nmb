@@ -1,3 +1,5 @@
+import hxd.Key.KeyCode.*;
+
 class Pad extends hxd.App {
 
 	var flow : h2d.Flow;
@@ -169,7 +171,7 @@ class PadUI extends h2d.Object {
 			pad.rumble( pad.values[conf.LT], pad.values[conf.RT]*0.5 );
 		wasPressed = pad.isDown(conf.A);
 
-		if(hxd.Key.isDown(hxd.Key.ESCAPE)) {
+		if(hxd.Key.isDown(ESCAPE)) {
 			hxd.System.exit();
 		}
 	}

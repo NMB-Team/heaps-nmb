@@ -5,6 +5,7 @@ package hxd.snd;
 import openal.AL;
 import hxd.snd.Manager;
 import hxd.snd.Driver;
+import hxd.System as HSystem;
 
 @:access(hxd.snd.Manager)
 private class ALChannel {
@@ -54,10 +55,10 @@ private class ALChannel {
 
 		for ( b in buffers )
 			onSample(b);
-		if( hxd.System.isDisplayReady() )
+		if( HSystem.isDisplayReady() )
 			forcePlay();
 		else
-			hxd.System.onDisplayReady(function() {
+			HSystem.onDisplayReady(function() {
 				if( src != null )
 					forcePlay();
 			});
@@ -155,10 +156,10 @@ class NativeChannel {
 		queued.addEventListener("ended", swap);
 		queued.connect(gain);
 
-		if( hxd.System.isDisplayReady() )
+		if( HSystem.isDisplayReady() )
 			start();
 		else
-			hxd.System.onDisplayReady(start);
+			HSystem.onDisplayReady(start);
 
 		#elseif hlopenal
 		channel = new ALChannel(bufferSamples, this);

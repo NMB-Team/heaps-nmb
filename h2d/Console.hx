@@ -1,6 +1,7 @@
 package h2d;
 
 import hxd.Key;
+import hxd.Key.KeyCode.*;
 
 /**
 	The console argument type.
@@ -350,7 +351,7 @@ class Console #if !macro extends h2d.Object #end {
 		if( !bg.visible )
 			return;
 		switch( e.keyCode ) {
-		case Key.ENTER, Key.NUMPAD_ENTER:
+		case ENTER, NUMPAD_ENTER:
 			var cmd = tf.text;
 			tf.text = "";
 
@@ -366,16 +367,16 @@ class Console #if !macro extends h2d.Object #end {
 			if( !logTxt.visible ) bg.visible = false;
 			e.cancel = true;
 			return;
-		case Key.TAB:
+		case TAB:
 			if (autoComplete) {
 				if (hintTxt.text != "") {
 					tf.text = hintTxt.text + " ";
 					tf.cursorIndex = tf.text.length;
 				}
 			}
-		case Key.ESCAPE:
+		case ESCAPE:
 			hide();
-		case Key.UP:
+		case UP:
 			if(logs.length == 0 || logIndex == 0) return;
 			if(logIndex == -1) {
 				curCmd = tf.text;
@@ -388,7 +389,7 @@ class Console #if !macro extends h2d.Object #end {
 			}
 			tf.text = logs[logIndex];
 			tf.cursorIndex = tf.text.length;
-		case Key.DOWN:
+		case DOWN:
 			if(tf.text == curCmd) return;
 			var curLog = logs[logIndex];
 			while(curLog == logs[logIndex] && logIndex < logs.length - 1)
@@ -401,6 +402,7 @@ class Console #if !macro extends h2d.Object #end {
 			}
 			tf.text = logs[logIndex];
 			tf.cursorIndex = tf.text.length;
+		default:
 		}
 	}
 

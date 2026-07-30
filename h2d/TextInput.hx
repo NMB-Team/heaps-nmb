@@ -1,5 +1,6 @@
 package h2d;
-import hxd.Key in K;
+import hxd.Key;
+import hxd.Key.KeyCode.*;
 
 private typedef TextHistoryElement = { t : String, c : Int, sel : { start : Int, length : Int } };
 
@@ -191,70 +192,70 @@ class TextInput extends Text {
 		var oldText = text;
 
 		switch( e.keyCode ) {
-		case K.UP if( multiline ):
+		case UP if( multiline ):
 			moveCursorVertically(-1);
-		case K.DOWN if( multiline ):
+		case DOWN if( multiline ):
 			moveCursorVertically(1);
-		case K.PGUP if( multiline ):
+		case PGUP if( multiline ):
 			moveCursorVertically(-getVisibleLines());
-		case K.PGDOWN if( multiline ):
+		case PGDOWN if( multiline ):
 			moveCursorVertically(getVisibleLines());
-		case K.LEFT if (K.isDown(K.CTRL)):
+		case LEFT if (Key.isDown(CTRL)):
 			cursorIndex = getWordStart();
 			onCursorChange();
-		case K.LEFT:
+		case LEFT:
 			if( cursorIndex > 0 ) {
 				cursorIndex--;
 				onCursorChange();
 			}
-		case K.RIGHT if (K.isDown(K.CTRL)):
+		case RIGHT if (Key.isDown(CTRL)):
 			cursorIndex = getWordEnd();
 			onCursorChange();
-		case K.RIGHT:
+		case RIGHT:
 			if( cursorIndex < getTextLength() ) {
 				cursorIndex++;
 				onCursorChange();
 			}
-		case K.HOME:
-			if( multiline && !K.isDown(K.CTRL)) {
+		case HOME:
+			if( multiline && !Key.isDown(CTRL)) {
 				var currentLine = getCurrentLine();
 				cursorIndex = currentLine.startIndex;
 			} else cursorIndex = 0;
 			onCursorChange();
-		case K.END:
-			if( multiline && !K.isDown(K.CTRL)) {
+		case END:
+			if( multiline && !Key.isDown(CTRL)) {
 				var currentLine = getCurrentLine();
 				cursorIndex = currentLine.startIndex + currentLine.value.length - 1;
 			} else cursorIndex = getTextLength();
 			onCursorChange();
-		case K.BACKSPACE, K.DELETE if( selectionRange != null ):
+		case BACKSPACE, DELETE if( selectionRange != null ):
 			if( !canEdit ) return;
 			beforeChange();
 			cutSelection();
 			onChange();
-		case K.DELETE:
+		case DELETE:
 			if( cursorIndex < getTextLength() && canEdit ) {
 				beforeChange();
 				if( selectionRange == null )
-					selectionRange = { start : cursorIndex, length : K.isDown(K.CTRL) ? getWordEnd() - cursorIndex : 1 };
+					selectionRange = { start : cursorIndex, length : Key.isDown(CTRL) ? getWordEnd() - cursorIndex : 1 };
 				cutSelection(false);
 				onChange();
 			}
-		case K.BACKSPACE:
+		case BACKSPACE:
 			if( cursorIndex > 0 && canEdit ) {
 				beforeChange();
 				if( selectionRange == null ) {
-					var newIndex = K.isDown(K.CTRL) ? getWordStart() : cursorIndex - 1;
+					var newIndex = Key.isDown(CTRL) ? getWordStart() : cursorIndex - 1;
 					selectionRange = { start : newIndex , length : cursorIndex - newIndex };
 				}
 				cutSelection(true);
 				onChange();
 			}
-		case K.ESCAPE:
+		case ESCAPE:
 			cursorIndex = -1;
 			interactive.blur();
 			return;
-		case K.ENTER, K.NUMPAD_ENTER:
+		case ENTER, NUMPAD_ENTER:
 			if(!multiline) {
 				cursorIndex = -1;
 				interactive.blur();
@@ -263,32 +264,32 @@ class TextInput extends Text {
 			} else if( canEdit ) {
 				inputText("\n");
 			}
-		case K.Z if( K.isDown(K.CTRL) ):
+		case Z if( Key.isDown(CTRL) ):
 			if( undo.length > 0 && canEdit ) {
 				redo.push(curHistoryState());
 				setState(undo.pop());
 				onChange();
 			}
 			return;
-		case K.Y if( K.isDown(K.CTRL) ):
+		case Y if( Key.isDown(CTRL) ):
 			if( redo.length > 0 && canEdit ) {
 				undo.push(curHistoryState());
 				setState(redo.pop());
 				onChange();
 			}
 			return;
-		case K.A if (K.isDown(K.CTRL)):
+		case A if (Key.isDown(CTRL)):
 			if (text != "") {
 				cursorIndex = getTextLength();
 				selectionRange = {start: 0, length: cursorIndex};
 				onCursorChange();
 			}
 			return;
-		case K.C if (K.isDown(K.CTRL)):
+		case C if (Key.isDown(CTRL)):
 			if( text != "" && selectionRange != null ) {
 				hxd.System.setClipboardText(text.substr(selectionRange.start, selectionRange.length));
 			}
-		case K.X if (K.isDown(K.CTRL)):
+		case X if (Key.isDown(CTRL)):
 			if( text != "" && selectionRange != null ) {
 				if(hxd.System.setClipboardText(text.substr(selectionRange.start, selectionRange.length))) {
 					if( !canEdit ) return;
@@ -297,12 +298,12 @@ class TextInput extends Text {
 					onChange();
 				}
 			}
-		case K.V if (K.isDown(K.CTRL)):
+		case V if (Key.isDown(CTRL)):
 			if( !canEdit ) return;
 			var t = hxd.System.getClipboardText();
 			if( t != null && t.length > 0 )
 				inputText(t.split("\r\n").join("\n").split("\r").join("\n"));
-		case K.TAB if( insertTabs != null && canEdit ):
+		case TAB if( insertTabs != null && canEdit ):
 			inputText(insertTabs);
 		default:
 			if( e.kind == EKeyDown )
@@ -315,7 +316,7 @@ class TextInput extends Text {
 
 		cursorBlink = 0.;
 
-		if( K.isDown(K.SHIFT) && text == oldText ) {
+		if( Key.isDown(SHIFT) && text == oldText ) {
 
 			if( cursorIndex == oldIndex ) return;
 
@@ -463,7 +464,7 @@ class TextInput extends Text {
 		}
 		if( cursorLineIndex == -1 )
 			return;
-		var inSelect = hxd.Key.isDown(hxd.Key.SHIFT);
+		var inSelect = hxd.Key.isDown(SHIFT);
 		var destinationIndex = hxd.Math.iclamp(cursorLineIndex + yDiff, inSelect ? -1 : 0, inSelect ? lines.length : lines.length - 1);
 		if (destinationIndex == cursorLineIndex)
 			return;
