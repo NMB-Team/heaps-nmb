@@ -1,7 +1,7 @@
 package hxd;
 
 #if limen
-import limen.platform.event.EventType.*;
+import limen.platform.event.EventType;
 import limen.platform.event.Event as LEvent;
 import limen.platform.Platform as LPlatform;
 import limen.platform.Surface as LSurface;

@@ -5,7 +5,7 @@ import hxd.Key.KeyCode.*;
 import hxd.impl.MouseMode;
 
 #if limen
-import limen.platform.event.EventType.*;
+import limen.platform.event.EventType;
 import limen.platform.event.Event as LEvent;
 import limen.platform.Platform as LPlatform;
 import limen.platform.Surface as LSurface;
@@ -220,7 +220,7 @@ class Window {
 	}
 
 	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
-		#if (limen >= version("1.14.0"))
+		#if limen
 		if (dropTargets.length == 0) {
 			LPlatform.setDragAndDropEnabled(true);
 		}
@@ -235,7 +235,7 @@ class Window {
 				break;
 			}
 		if ( dropTargets.length == 0 ) {
-			#if (limen >= version("1.14.0"))
+			#if limen
 			LPlatform.setDragAndDropEnabled(false);
 			#end
 		}
@@ -253,7 +253,7 @@ class Window {
 	}
 
 	public function captureMouseEvents(enable: Bool) : Void {
-		#if (limen >= version("1.16.0"))
+		#if limen
 		window.captureMouseEvents(enable);
 		#end
 	}
@@ -757,14 +757,12 @@ class Window {
 	}
 
 	public function setIcon(icon: hxd.BitmapData) : Void {
-		#if (limen >= version("1.16.0"))
+		#if limen
 		var pixels = icon.getPixels();
 		pixels.convert(BGRA);
-		#if limen
 		var surf = LSurface.fromBGRA(pixels.bytes, pixels.width, pixels.height);
 		window.setIcon(surf);
 		surf.free();
-		#end
 		pixels.dispose();
 		#end
 	}
@@ -919,7 +917,7 @@ class Window {
 	#end
 
 	function get_displayScale() {
-		#if (limen >= version("1.16.0"))
+		#if limen
 		return window.displayScale;
 		#else
 		return 1.0;

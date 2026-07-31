@@ -5,7 +5,7 @@ package hxd;
 import limen.platform.event.Event;
 import limen.platform.input.gamepad.Gamepad as GameController;
 import limen.platform.Platform as LPlatform;
-import limen.platform.event.EventType.*;
+import limen.platform.event.EventType;
 #elseif (usesys && !hlmesa)
 import haxe.GameController;
 #else

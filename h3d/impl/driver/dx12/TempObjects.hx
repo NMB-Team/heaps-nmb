@@ -70,7 +70,7 @@ class TempObjects {
 		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
 		maxBarriers = 100;
 		barriers = hl.CArray.alloc(ResourceBarrier, maxBarriers);
-		var allSubresource = #if (limen >= version("1.16.0")) Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
+		var allSubresource = #if limen Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
 		for(i in 0...maxBarriers)
 			barriers[i].subResource = allSubresource;
 		resourcesToTransition = new hl.NativeArray(maxBarriers);

@@ -178,7 +178,7 @@ class OpenGLDriver extends Driver {
 		isIntelGpu = ~/intel.*(graphics|gpu)/.match(driver);
 		#end
 
-		#if (limen >= version("1.15.0"))
+		#if limen
 		hasMultiIndirectCount = gl.hasExtension("GL_ARB_indirect_parameters");
 		#end
 
@@ -204,7 +204,7 @@ class OpenGLDriver extends Driver {
 			shaderVersion = Math.round( Std.parseFloat(reg.matched(0)) * 100 );
 		}
 
-		#if (limen >= version("1.15.0"))
+		#if limen
 		if ( computeEnabled )
 			shaderVersion = 430;
 		#end
@@ -236,7 +236,7 @@ class OpenGLDriver extends Driver {
 	#if limen
 	static var computeEnabled : Bool = false;
 	public static function enableComputeShaders() {
-		#if (limen >= version("1.15.0"))
+		#if limen
 		computeEnabled = true;
 		#else
 		throw "enableComputeShaders() requires limen 1.15+";
@@ -376,7 +376,7 @@ class OpenGLDriver extends Driver {
 					case [T3D, false]: GL.TEXTURE_3D;
 					case [TCube, false]: GL.TEXTURE_CUBE_MAP;
 					case [T2D, true]: GL.TEXTURE_2D_ARRAY;
-					#if (limen > version("1.15.0"))
+					#if limen
 					case [T1D, false]: GL.TEXTURE_1D;
 					case [T1D, true]: GL.TEXTURE_1D_ARRAY;
 					case [TCube, true]: GL.TEXTURE_CUBE_MAP_ARRAY;
@@ -385,7 +385,7 @@ class OpenGLDriver extends Driver {
 					}
 					"Textures" + (dim == T2D ? "" : dim.getName().substr(1))+(arr ? "Array" : "");
 				case TRWTexture(dim, arr, chans):
-					#if (js || limen < version("1.15.0"))
+					#if js
 					throw "Texture not supported "+tt;
 					#else
 					mode = switch( [dim, arr] ) {
@@ -711,11 +711,7 @@ class OpenGLDriver extends Driver {
 					}
 					if( fmt == 0 )
 						throw "Texture format does not match: "+t+"["+t.format+"] should be "+hxsl.Ast.Tools.toString(pt.t);
-					#if (limen < version("1.15.0"))
-					throw "RWTextures support requires limen 1.15+";
-					#else
 					gl.bindImageTexture(imageBindingIdx++, cast t.t.t, 0, tdim == T3D ? true : false, 0, GL.READ_WRITE, fmt);
-					#end
 					boundTextures[i] = null;
 					continue;
 				default:
@@ -1061,7 +1057,7 @@ class OpenGLDriver extends Driver {
 		case GL.TEXTURE_3D: "TEXTURE_3D";
 		case GL.TEXTURE_CUBE_MAP: "TEXTURE_CUBE_MAP";
 		case GL.TEXTURE_2D_ARRAY: "TEXTURE_2D_ARRAY";
-		#if (limen > version("1.15.0"))
+		#if limen
 		case GL.TEXTURE_CUBE_MAP_ARRAY: "TEXTURE_CUBE_MAP_ARRAY";
 		#end
 		default: "UNKNOWN_TEXTURE_TYPE";
@@ -1073,7 +1069,7 @@ class OpenGLDriver extends Driver {
 			return GL.TEXTURE_3D;
 		var isArray = t.flags.has(IsArray);
 		if( t.flags.has(Cube) )
-			return #if (limen > version("1.15.0")) isArray ? GL.TEXTURE_CUBE_MAP_ARRAY : #end GL.TEXTURE_CUBE_MAP;
+			return #if limen isArray ? GL.TEXTURE_CUBE_MAP_ARRAY : #end GL.TEXTURE_CUBE_MAP;
 		return isArray ? GL.TEXTURE_2D_ARRAY : GL.TEXTURE_2D;
 	}
 
@@ -1179,7 +1175,7 @@ class OpenGLDriver extends Driver {
 			return false;
 		}
 
-		#if (js || (limen >= version("1.12.0")))
+		#if (js || limen)
 		gl.texParameteri(bind, GL.TEXTURE_BASE_LEVEL, t.startingMip);
 		gl.texParameteri(bind, GL.TEXTURE_MAX_LEVEL, t.mipLevels-1);
 		#end
@@ -1260,7 +1256,7 @@ class OpenGLDriver extends Driver {
 		t.flags.unset(WasCleared);
 		gl.bindTexture(tt.bind, tt.t);
 
-		#if (js || (limen >= version("1.12.0")))
+		#if (js || limen)
 		gl.texParameteri(tt.bind, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
 		gl.texParameteri(tt.bind, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
 		gl.texParameteri(tt.bind, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
@@ -1446,14 +1442,14 @@ class OpenGLDriver extends Driver {
 		var stream = streamData(pixels.bytes.getData(),pixels.offset,dataLen);
 		if( t.format.match(S3TC(_)) ) {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
-				#if (limen >= version("1.12.0"))
+				#if limen
 				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, t.t.internalFmt, dataLen, stream);
 				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
 				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, dataLen, stream);
 		} else {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
-				#if (limen >= version("1.12.0"))
+				#if limen
 				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, stream);
 				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
@@ -1684,7 +1680,7 @@ class OpenGLDriver extends Driver {
 				var commandOffset : hl.Bytes = hl.Api.unsafeCast(haxe.Int64.make(0, commands.offset * InstanceBuffer.ELEMENT_SIZE));
 			#end
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, commands.data);
-			#if (limen >= version("1.15.0"))
+			#if limen
 			if ( commands.countBuffer != null && hasMultiIndirectCount ) {
 				#if (haxe_ver < 5)
 					var arr = new hl.NativeArray<Int>(1);
