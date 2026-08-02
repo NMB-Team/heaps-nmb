@@ -194,7 +194,8 @@ class System {
 		#else
 		timeoutTick();
 		#if limen
-		LPlatform.init();
+		LPlatform.init(GraphicsDriverConfig.getLimenPreferred(), GraphicsDriverConfig.getLimenSupported());
+		GraphicsDriverConfig.setFromLimen(LPlatform.graphicsDriver);
 		@:privateAccess Window.initChars();
 		#end
 

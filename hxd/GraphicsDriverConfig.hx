@@ -1,5 +1,9 @@
 package hxd;
 
+#if limen
+import limen.graphics.GraphicsDriver as LimenGraphicsDriver;
+#end
+
 final class GraphicsDriverConfig {
 	static var current:GraphicsDriverApi = Auto;
 
@@ -45,4 +49,45 @@ final class GraphicsDriverConfig {
 		return OpenGL;
 		#end
 	}
+
+	#if limen
+	@:noCompletion
+	public static function getLimenPreferred():LimenGraphicsDriver {
+		return switch (getCurrentOrDefault()) {
+			case OpenGL | Auto: OpenGL;
+			case Vulkan: Vulkan;
+			case Dx11: D3D11;
+			case Dx12: D3D12;
+		};
+	}
+
+	@:noCompletion
+	public static function getLimenSupported():Array<LimenGraphicsDriver> {
+		final supported = [];
+		#if (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))
+		supported.push(OpenGL);
+		#end
+		#if gfx_vulkan
+		supported.push(Vulkan);
+		#end
+		#if gfx_dx11
+		supported.push(D3D11);
+		#end
+		#if gfx_dx12
+		supported.push(D3D12);
+		#end
+		return supported;
+	}
+
+	@:noCompletion
+	public static function setFromLimen(driver:LimenGraphicsDriver):Void {
+		current = switch (driver) {
+			case OpenGL: OpenGL;
+			case Vulkan: Vulkan;
+			case D3D11: Dx11;
+			case D3D12: Dx12;
+			case None: Auto;
+		};
+	}
+	#end
 }

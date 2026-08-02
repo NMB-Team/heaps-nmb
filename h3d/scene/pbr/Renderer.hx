@@ -4,9 +4,6 @@ import h3d.impl.driver.dlss.DLSSMode;
 import h3d.impl.driver.dlss.DLSSParams;
 import h3d.impl.driver.dlss.DLSSQuality;
 import h3d.impl.driver.dlss.DLSSTag;
-#if dlss_allowed
-import h3d.impl.driver.dlss.Dlss;
-#end
 
 enum abstract DisplayMode(String) {
 	/*

@@ -96,7 +96,17 @@ import h3d.impl.driver.dx12.shader.ShaderRegisters;
 import h3d.impl.driver.dx12.TempObjects;
 
 #if dlss_allowed
-import h3d.impl.driver.dlss.Dlss;
+import limen.graphics.d3d12.dlss.DLSS as Dlss;
+import limen.graphics.d3d12.dlss.DLSS.DLSSBufferType;
+import limen.graphics.d3d12.dlss.DLSS.DLSSConstants;
+import limen.graphics.d3d12.dlss.DLSS.DLSSFeature;
+import limen.graphics.d3d12.dlss.DLSS.DLSSMatrix;
+import limen.graphics.d3d12.dlss.DLSS.DLSSMode as DLSSModeNative;
+import limen.graphics.d3d12.dlss.DLSS.DLSSOptimalSettings;
+import limen.graphics.d3d12.dlss.DLSS.DLSSOptions;
+import limen.graphics.d3d12.dlss.DLSS.DLSSPreset;
+import limen.graphics.d3d12.dlss.DLSS.DLSSResource;
+import limen.graphics.d3d12.dlss.DLSS.DLSSVector;
 #end
 
 class DX12Driver extends h3d.impl.driver.Driver {
@@ -272,7 +282,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		disposeAllocators();
 
 		#if dlss_allowed
-		if ( DLSS ) {
+		dlssReady = false;
+		if ( DLSS && Dlss.isAvailable() ) {
 			var result = Dlss.init(false);
 			dlssReady = result == 0;
 		}
@@ -3069,7 +3080,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		dlssOptions.outputWidth = targetWidth;
 		dlssOptions.outputHeight = targetHeight;
-		Dlss.getOptimalSettings(dlssOptions, dlssOptimalSettings);
+		dlssOptimalSettings = Dlss.getOptimalSettings(dlssOptions);
 		dlssSettings.optimalWidth = dlssOptimalSettings.optimalRenderWidth;
 		dlssSettings.optimalHeight = dlssOptimalSettings.optimalRenderHeight;
 		return dlssSettings;
