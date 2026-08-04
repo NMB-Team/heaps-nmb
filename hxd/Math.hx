@@ -169,6 +169,14 @@ class Math {
 	}
 
 	/**
+		Exponentially interpolates from the current value towards the target value.
+		Higher speed values make the interpolation converge faster, while dt keeps it frame-rate independent.
+	**/
+	public static inline function expLerp(a:Float, b:Float, k:Float, dt:Float):Float {
+		return lerp(a, b, 1.0 - exp(-k * dt));
+	}
+
+	/**
 		Returns a value between 0 and 1, that determines where val lies between a and b.
 	 */
 	public inline static function inverseLerp(a:Float, b:Float, val:Float) {
