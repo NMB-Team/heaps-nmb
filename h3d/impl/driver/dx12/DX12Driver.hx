@@ -284,8 +284,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		#if dlss_allowed
 		dlssReady = false;
 		if ( DLSS && Dlss.isAvailable() ) {
-			var result = Dlss.init(false);
-			dlssReady = result == 0;
+			dlssReady = Dlss.init(false) == 0;
 		}
 		#end
 
@@ -305,8 +304,21 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		#if dlss_allowed
 		if ( dlssReady ) {
+			var nativeDevice = Driver.getDevice();
+			var proxyDevice = Dlss.upgradeDevice(nativeDevice);
+			Driver.setDevice(proxyDevice);
 			var device = Driver.getDevice();
-			Dlss.setDevice(device);
+			dlssReady = Dlss.setDevice(device) == 0;
+		}
+		#end
+
+		Driver.createCommandQueue();
+
+		#if dlss_allowed
+		if ( dlssReady ) {
+			var nativeFactory = Driver.getFactory();
+			var proxyFactory = Dlss.upgradeFactory(nativeFactory);
+			Driver.setFactory(proxyFactory);
 		}
 		#end
 
@@ -498,8 +510,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		flushHeaps();
 
 		#if dlss_allowed
-		if ( dlssReady && frame.dlssFrameToken == null )
+		if ( dlssReady && frame.dlssFrameToken == null ) {
 			frame.dlssFrameToken = Dlss.getNewFrameToken(currentFrame);
+		}
 		#end
 	}
 
@@ -639,6 +652,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		uploadBufferAlloc?.dispose();
 		uploadBufferAlloc = null;
+	}
+
+	override function dispose() {
+		#if dlss_allowed
+		if (dlssReady)
+			Dlss.shutdown();
+		#end
 	}
 
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
@@ -3181,6 +3201,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		dlssConstants.minRelativeLinearDepthObjectSeparation = 40.0;
 
 		Dlss.setConstants(frame.dlssFrameToken, dlssConstants);
+
 		Dlss.evaluateFeature(frame.dlssFrameToken, frame.commandList, DLSSFeature.DLSS);
 
 		var arr = tmp.descriptors2;
