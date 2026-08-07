@@ -642,6 +642,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	override function dispose() {
 		disposeAllocators();
+		#if dlss_allowed
+		if (dlssReady)
+			Dlss.shutdown();
+		#end
 	}
 
 	function disposeAllocators() {
@@ -652,13 +656,6 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		uploadBufferAlloc?.dispose();
 		uploadBufferAlloc = null;
-	}
-
-	override function dispose() {
-		#if dlss_allowed
-		if (dlssReady)
-			Dlss.shutdown();
-		#end
 	}
 
 	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
