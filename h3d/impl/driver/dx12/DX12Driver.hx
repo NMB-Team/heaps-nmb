@@ -167,6 +167,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	var samplerHandles : Map<Int, Int> = [];
 
 	var copyQueue : CommandQueue;
+	var directQueue : CommandQueue;
 	var copyFence : Fence;
 	var copyFenceValue : Int64;
 
@@ -312,7 +313,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		#end
 
-		Driver.createCommandQueue();
+		directQueue = new CommandQueue(DIRECT);
 
 		#if dlss_allowed
 		if ( dlssReady ) {
@@ -398,7 +399,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		adesc[0].type = DRAW_INDEXED;
 		indirectCommand = Driver.createCommandSignature(desc,null);
 
-		tsFreq = Driver.getTimestampFrequency();
+		tsFreq = directQueue.getTimestampFrequency();
 
 		compiler = new ShaderCompiler();
 	}
@@ -564,7 +565,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	function waitGpu() {
-		Driver.signal(fence, ++fenceValue);
+		directQueue.signal(fence, ++fenceValue);
 		fence.setEvent(fenceValue, fenceEvent);
 		fenceEvent.wait(-1);
 	}
@@ -601,7 +602,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			disposeTextureViews(depthTexture);
 		}
 
-		Driver.resize(width, height, BUFFER_COUNT, R8G8B8A8_UNORM);
+		Driver.resize(directQueue, width, height, BUFFER_COUNT, R8G8B8A8_UNORM);
 
 		renderTargetViews.clear();
 		depthStenciViews.clear();
@@ -2950,13 +2951,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		frame.copyCommandList.close();
 		copyQueue.executeCommandList(frame.copyCommandList);
 		copyQueue.signal(copyFence, ++copyFenceValue);
-		Driver.wait(copyFence, copyFenceValue);
-		frame.commandList.execute();
+		directQueue.wait(copyFence, copyFenceValue);
+		directQueue.executeCommandList(frame.commandList);
 		currentPipelineState = null;
 		currentShader = null;
 		Driver.flushMessages();
 		frame.fenceValue = ++fenceValue;
-		Driver.signal(fence, frame.fenceValue);
+		directQueue.signal(fence, frame.fenceValue);
 	}
 
 	override function present() {
@@ -2964,7 +2965,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		transition(frame.backBuffer, PRESENT);
 		flushTransitions();
 		flushFrame();
-		Driver.present(hxd.Window.getInstance().vsync);
+		directQueue.present(hxd.Window.getInstance().vsync);
 
 		waitForFrame(Driver.getCurrentBackBufferIndex());
 		beginFrame();
