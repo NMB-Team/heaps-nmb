@@ -3,6 +3,27 @@ package hxd;
 import haxe.ds.ReadOnlyArray;
 import haxe.io.Bytes;
 
+
+/**
+	The stage of a drag-and-drop operation.
+**/
+enum DropFileEventKind {
+	/**
+		A drag-and-drop operation has started.
+	**/
+	Start;
+
+	/**
+		One or more files have been dropped.
+	**/
+	Drop;
+
+	/**
+		The drag-and-drop operation has ended.
+	**/
+	End;
+}
+
 /**
 	The information about the dropped file.
 **/
@@ -38,6 +59,10 @@ abstract class DroppedFile {
 **/
 class DropFileEvent {
 	/**
+		The current stage of the drag-and-drop operation.
+	**/
+	public var kind(default, null) : DropFileEventKind;
+	/**
 		The list of the files that were dropped.
 
 		Only guaranteed to be populated when `kind == Drop`.
@@ -55,8 +80,9 @@ class DropFileEvent {
 		The Y position inside the window at which the file was dropped.
 	**/
 	public var dropY(default, null): Int;
-	
-	public function new( files : Array<DroppedFile>, dx : Int, dy : Int ) {
+
+	public function new( kind : DropFileEventKind, files : Array<DroppedFile>, dx : Int, dy : Int ) {
+		this.kind = kind;
 		this.files = files;
 		this.dropX = dx;
 		this.dropY = dy;
@@ -65,4 +91,3 @@ class DropFileEvent {
 	inline function get_file() return files[0];
 
 }
-

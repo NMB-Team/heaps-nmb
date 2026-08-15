@@ -521,6 +521,7 @@ class Window {
 		#if limen
 		case DropEnd:
 			var event = new DropFileEvent(
+				hxd.DropFileEvent.DropFileEventKind.Drop,
 				dropFiles,
 				mouseX, mouseY
 			);

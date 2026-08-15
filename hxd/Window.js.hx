@@ -280,7 +280,7 @@ class Window {
 	function handleDragAndDropEvent( e : js.html.DragEvent ) {
 		e.preventDefault();
 		if ( e.type == "dragover" || e.dataTransfer == null || e.dataTransfer.files.length == 0 ) return;
-		var ev = new DropFileEvent([
+		var ev = new DropFileEvent(hxd.DropFileEvent.DropFileEventKind.Drop, [
 				for ( file in e.dataTransfer.files ) new NativeDroppedFile(file)
 			],
 			Math.round((e.clientX - canvasPos.left) * getPixelRatio()),
