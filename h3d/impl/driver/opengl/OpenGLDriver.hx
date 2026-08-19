@@ -1412,10 +1412,15 @@ class OpenGLDriver extends Driver {
 		#end
 	}
 
-	private function streamData(data, pos:Int, length:Int) {
+	inline function streamData(data, pos:Int, length:Int) {
 		#if hl
-		final ptr : hl.Bytes = data;
-		return pos == 0 ? ptr : ptr.offset(pos);
+		var needed = streamPos + length;
+		var total = (needed + 7) & ~7; // align on 8 bytes
+		var alen = total - streamPos;
+		if( total > streamLen ) expandStream(total);
+		streamBytes.blit(streamPos, data, pos, length);
+		data = streamBytes.offset(streamPos);
+		streamPos += alen;
 		#end
 		return data;
 	}
