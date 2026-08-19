@@ -95,6 +95,12 @@ class System {
 	#end
 
 	static function mainLoop() {
+		#if dlss
+		var engine = h3d.Engine.getCurrent();
+		if( engine != null && engine.ready )
+			engine.driver.pclSimulationStart();
+		#end
+
 		// process events
 		#if usesys
 		haxe.System.emitEvents(@:privateAccess HWindow.dispatchEvent);

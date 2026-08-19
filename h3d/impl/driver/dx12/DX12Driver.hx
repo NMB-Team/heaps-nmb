@@ -189,6 +189,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	#if dlss_allowed
 	var dlssReady : Bool;
+	var pclReady : Bool;
 	#end
 
 	var uploadBufferAlloc : FreeListAllocator;
@@ -310,6 +311,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			Driver.setDevice(proxyDevice);
 			var device = Driver.getDevice();
 			dlssReady = Dlss.setDevice(device) == 0;
+			if ( dlssReady )
+				pclReady = Dlss.isFeatureSupported(Driver.getAdapter(), DLSSFeature.PCL) == 0 && Dlss.pclInitStats() == 0;
 		}
 		#end
 
@@ -511,8 +514,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		flushHeaps();
 
 		#if dlss_allowed
-		if ( dlssReady && frame.dlssFrameToken == null ) {
-			frame.dlssFrameToken = Dlss.getNewFrameToken(currentFrame);
+		if ( dlssReady ) {
+			frame.dlssFrameToken = Dlss.getNewFrameToken(frameCount);
 		}
 		#end
 	}
@@ -635,6 +638,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function begin(frame:Int) {
+		#if dlss
+		pclMarker(PCLMarker.RENDER_SUBMIT_START);
+		#end
 	}
 
 	override function isDisposed() {
@@ -644,8 +650,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	override function dispose() {
 		disposeAllocators();
 		#if dlss_allowed
-		if (dlssReady)
+		if ( dlssReady ) {
 			Dlss.shutdown();
+			dlssReady = false;
+		}
 		#end
 	}
 
@@ -2965,7 +2973,14 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		transition(frame.backBuffer, PRESENT);
 		flushTransitions();
 		flushFrame();
+
+		#if dlss_allowed
+		pclMarker(PCLMarker.RENDER_SUBMIT_END);
+		pclMarker(PCLMarker.PRESENT_START);
+		#end
+
 		directQueue.present(hxd.Window.getInstance().vsync);
+		#if dlss_allowed pclMarker(PCLMarker.PRESENT_END); #end
 
 		waitForFrame(Driver.getCurrentBackBufferIndex());
 		beginFrame();
@@ -3209,6 +3224,50 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		#end
 	}
+
+	#if dlss_allowed
+	inline function pclMarker( marker : PCLMarker ) {
+		if ( dlssReady && pclReady && frame.dlssFrameToken != null )
+			Dlss.pclSetMarker(frame.dlssFrameToken, marker);
+	}
+	#end
+
+	override function pclSimulationStart() {
+		#if dlss_allowed
+		if ( dlssReady && pclReady && frame.dlssFrameToken != null ) {
+			pclMarker(PCLMarker.SIMULATION_START);
+			Dlss.pclPollPing(frame.dlssFrameToken);
+		}
+		#end
+	}
+
+	override function pclSimulationEnd() {
+		#if dlss_allowed
+		pclMarker(PCLMarker.SIMULATION_END);
+		#end
+	}
+
+	override function pclTriggerFlash() {
+		#if dlss_allowed
+		pclMarker(PCLMarker.TRIGGER_FLASH);
+		#end
+	}
+
+	#if (hl_ver >= version("1.16.0"))
+	public static function setGpuCrashHandler( cb : (String, haxe.io.Bytes, Bool) -> Void ) {
+		var wrapper = function( name : hl.Bytes, bytes : hl.Bytes, size : Int, lastFile : Bool ) {
+			try {
+				var name = @:privateAccess String.fromUTF8(name);
+				var content = haxe.io.Bytes.ofData(new haxe.io.BytesData(bytes, size));
+				cb(name, content, lastFile);
+			} catch(e) {
+				trace("Failed to process gpu crash");
+			}
+		}
+		Driver.setGpuCrashHandler(wrapper);
+	}
+	#end
+
 }
 
 #end
