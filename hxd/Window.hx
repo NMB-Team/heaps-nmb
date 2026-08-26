@@ -3,10 +3,10 @@ package hxd;
 import hxd.impl.MouseMode;
 
 enum DisplayMode {
-	Windowed; // 0
-	Fullscreen; // 1
-	Borderless; // 2
-	BorderlessFixed; // 3
+	Windowed; 				// 0
+	ExclusiveFullscreen;	// 1
+	WindowedFullscreen; 	// 2
+	DesktopFullscreen; 		// 3
 }
 
 class Window {

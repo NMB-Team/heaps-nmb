@@ -115,7 +115,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	var driver : Dx12DriverInstance;
 	var hasDeviceError = false;
-	var window : limen.platform.Window;
+	var window : limen.platform.window.Window;
 	var onContextLost : Void -> Void;
 	var frames : Array<DX12Frame>;
 	var frame : DX12Frame;
@@ -226,7 +226,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	public function new() {
-		window = @:privateAccess limen.platform.Window.windows[0];
+		window = @:privateAccess limen.platform.window.Window.windows[0];
 		reset();
 	}
 

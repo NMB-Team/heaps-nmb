@@ -38,7 +38,7 @@ To compile:
 HashLink graphics backends
 --------------------------
 
-HashLink Lumen builds use `-lib limen`. Enable the graphics backends that should be compiled into the build with these defines:
+HashLink-NMB builds use `-lib limen`. Enable the graphics backends that should be compiled into the build with these defines:
 
 ```hxml
 -D gfx_dx11
@@ -47,7 +47,7 @@ HashLink Lumen builds use `-lib limen`. Enable the graphics backends that should
 -D gfx_opengl
 ```
 
-Only compiled backends can be selected at runtime. A full Windows Lumen build can include all of them:
+Only compiled backends can be selected at runtime. A full Windows Limen build can include all of them:
 
 ```hxml
 -lib limen

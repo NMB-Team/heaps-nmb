@@ -5,9 +5,9 @@ import hxd.impl.MouseMode;
 
 enum DisplayMode {
 	Windowed;
-	Borderless;
-	BorderlessFixed;
-	Fullscreen;
+	ExclusiveFullscreen;
+	WindowedFullscreen;
+	DesktopFullscreen;
 	FullscreenResize;
 }
 
@@ -585,7 +585,7 @@ class Window {
 	function get_displayMode() : DisplayMode {
 		var doc = js.Browser.document;
 		if ( doc.fullscreenElement != null) {
-			return BorderlessFixed;
+			return DesktopFullscreen;
 		}
 
 		return Windowed;

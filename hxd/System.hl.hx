@@ -455,7 +455,7 @@ class System {
 		#if (limen && (gfx_dx11 || gfx_dx12))
 		var win = HWindow.getInstance();
 		if( win != null ) {
-			var refreshRate = LPlatform.getFramerate(@:privateAccess win.window.win);
+			var refreshRate = LPlatform.getRefreshRate(@:privateAccess win.window.win);
 			if( refreshRate > 0 )
 				return refreshRate;
 		}

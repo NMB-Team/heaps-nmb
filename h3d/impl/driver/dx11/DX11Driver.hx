@@ -111,7 +111,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	var hasScissor = false;
 	var shaderVersion : String;
 
-	var window : limen.platform.Window;
+	var window : limen.platform.window.Window;
 	var curTexture : h3d.mat.Texture;
 
 	var mapCount : Int;
@@ -122,7 +122,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	public var depthStencilFormat : Format = D24_UNORM_S8_UINT;
 
 	public function new() {
-		window = @:privateAccess limen.platform.Window.windows[0];
+		window = @:privateAccess limen.platform.window.Window.windows[0];
 		Driver.setErrorHandler(onDXError);
 		reset();
 	}

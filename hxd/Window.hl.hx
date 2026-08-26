@@ -1,5 +1,6 @@
 package hxd;
 
+import haxe.Int64;
 import hxd.Key.KeyCode;
 import hxd.Key.KeyCode.*;
 import hxd.impl.MouseMode;
@@ -7,17 +8,18 @@ import hxd.impl.MouseMode;
 #if limen
 import limen.platform.event.EventType;
 import limen.platform.event.Event as LEvent;
+import limen.platform.window.Window as LWindow;
+import limen.platform.window.WindowFlags;
 import limen.platform.Platform as LPlatform;
 import limen.platform.Surface as LSurface;
-import limen.platform.Window as LWindow;
 
-typedef DisplayMode = limen.platform.Window.WindowMode;
+typedef DisplayMode = limen.platform.window.WindowMode;
 #else
 enum DisplayMode {
-	Windowed; // 0
-	Fullscreen; // 1
-	BorderlessFixed; // 2
-	Borderless; // 3
+	Windowed; 				// 0
+	ExclusiveFullscreen;	// 1
+	WindowedFullscreen; 	// 2
+	DesktopFullscreen; 		// 3
 }
 #end
 
@@ -42,7 +44,7 @@ private class NativeDroppedFile extends hxd.DropFileEvent.DroppedFile {
 //@:coreApi
 class Window {
 
-	static var WINDOWS : Array<Window> = [];
+	static var windowList : Array<Window> = [];
 
 	var resizeEvents : List<Void -> Void>;
 	var eventTargets : List<Event -> Void>;
@@ -123,24 +125,24 @@ class Window {
 		var fixed = flags != null && flags.fixed != null ? flags.fixed : false;
 		var hidden = flags != null && flags.hidden != null ? flags.hidden : false;
 		#if limen
-		var sdlFlags = 0;
-		if (!fixed) sdlFlags |= LWindow.SDL_WINDOW_RESIZABLE;
-		if (hidden) sdlFlags |= LWindow.SDL_WINDOW_HIDDEN;
-		else sdlFlags |= LWindow.SDL_WINDOW_SHOWN;
+		var sdlFlags:Int64 = 0;
+		if (!fixed) sdlFlags |= WindowFlags.SDL_WINDOW_RESIZABLE;
+		if (hidden) sdlFlags |= WindowFlags.SDL_WINDOW_HIDDEN;
+		else sdlFlags |= WindowFlags.SDL_WINDOW_OCCLUDED;
 		#if gfx_vulkan
 		if( hxd.GraphicsDriverConfig.usesVulkan() )
-			sdlFlags |= LWindow.SDL_WINDOW_VULKAN;
+			sdlFlags |= WindowFlags.SDL_WINDOW_VULKAN;
 		else
 		#end
 		if( !hxd.GraphicsDriverConfig.usesDirectX() )
-			sdlFlags |= LWindow.SDL_WINDOW_OPENGL;
-		window = new LWindow(title, width, height, LWindow.SDL_WINDOWPOS_CENTERED, LWindow.SDL_WINDOWPOS_CENTERED, sdlFlags);
+			sdlFlags |= WindowFlags.SDL_WINDOW_OPENGL;
+		window = new LWindow(title, width, height, WindowFlags.SDL_WINDOWPOS_CENTERED, WindowFlags.SDL_WINDOWPOS_CENTERED, sdlFlags);
 		this.windowWidth = window.width;
 		this.windowHeight = window.height;
 		if( hidden )
 			window.visible = false;
 		#end
-		WINDOWS.push(this);
+		windowList.push(this);
 		#if multidriver
 		id = window.id;
 		#end
@@ -159,7 +161,7 @@ class Window {
 	}
 
 	public function close() {
-		if( !WINDOWS.remove(this) )
+		if( !windowList.remove(this) )
 			return;
 		#if (multidriver && limen)
 		window.destroy();
@@ -202,7 +204,7 @@ class Window {
 
 	public function resize( width : Int, height : Int ) : Void {
 		#if limen
-		if( window.displayMode == Fullscreen ) {
+		if( window.displayMode == ExclusiveFullscreen ) {
 			#if (limen && hl_ver >= version("1.12.0") )
 			var mode = getBestDisplayMode(width, height, framerate);
 			if(mode != null) {
@@ -255,13 +257,6 @@ class Window {
 	public function captureMouseEvents(enable: Bool) : Void {
 		#if limen
 		window.captureMouseEvents(enable);
-		#end
-	}
-
-	@:deprecated("Use the displayMode property instead")
-	public function setFullScreen( v : Bool ) : Void {
-		#if limen
-		window.displayMode = v ? BorderlessFixed : Windowed;
 		#end
 	}
 
@@ -732,7 +727,7 @@ class Window {
 				window.resize(mon.right-mon.left, mon.bottom-mon.top);
 			}
 		}
-		if( m == Fullscreen ) {
+		if( m == ExclusiveFullscreen ) {
 			var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
 			if(dm != null)
 				window.displaySetting = dm.mode;
@@ -886,16 +881,16 @@ class Window {
 	}
 
 	public static function hasWindow() {
-		return WINDOWS.length > 0;
+		return windowList.length > 0;
 	}
 
 	static function dispatchEvent( e ) {
 		#if multidriver
-		if( false ) @:privateAccess WINDOWS[0].onEvent(e); // typing
-		for( w in WINDOWS )
+		if( false ) @:privateAccess windowList[0].onEvent(e); // typing
+		for( w in windowList )
 			if( e.windowId == w.id )
 				return w.onEvent(e);
-		if( inst != null && (e.windowId == 0 || WINDOWS.length == 1) )
+		if( inst != null && (e.windowId == 0 || windowList.length == 1) )
 			return inst.onEvent(e);
 		return true;
 		#else

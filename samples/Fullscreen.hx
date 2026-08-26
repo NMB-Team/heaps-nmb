@@ -6,15 +6,15 @@ class Fullscreen extends SampleApp {
 			engine.fullScreen = !engine.fullScreen;
 		});
 		addButton("Borderless Fixed FullScreen", function() {
-			engine.fullScreenMode = BorderlessFixed;
+			engine.fullScreenMode = WindowedFullscreen;
 			engine.fullScreen = true;
 		});
 		addButton("Borderless FullScreen", function() {
-			engine.fullScreenMode = Borderless;
+			engine.fullScreenMode = DesktopFullscreen;
 			engine.fullScreen = true;
 		});
 		addButton("Exclusive FullScreen", function() {
-			engine.fullScreenMode = Fullscreen;
+			engine.fullScreenMode = ExclusiveFullscreen;
 			engine.fullScreen = true;
 		});
 		addButton("Error Message Test", function() throw "Error!");
