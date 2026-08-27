@@ -350,6 +350,7 @@ enum TGlobal {
 	AtomicAnd;
 	AtomicOr;
 	BitCount;
+	ToUInt;
 }
 
 enum SyntaxArgAccess {
