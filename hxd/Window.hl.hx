@@ -113,6 +113,9 @@ class Window {
 	static var MIN_FRAMERATE = 60; // 30 and 60 are always allowed
 	#if limen
 	static inline var TOUCH_SCALE = #if (hl_ver >= version("1.12.0")) 10000 #else 100 #end;
+
+	@:noCompletion
+	static var suppressWindowEventWatch = false;
 	#end
 
 	public function new(title:String, width:Int, height:Int, ?flags: { ?fixed:Bool, ?hidden:Bool }) {
@@ -718,29 +721,38 @@ class Window {
 		if(flags != null && flags.hidden)
 			return displayMode;
 
-		// No way to choose the screen in SDL, need to fit the window in the right screen before.
-		if(m != Windowed && monitor != null) {
-			window.displayMode = Windowed;
-			var mon = selectedMonitor();
-			if(mon != null) {
-				window.setPosition(mon.left, mon.top);
-				window.resize(mon.right-mon.left, mon.bottom-mon.top);
+		suppressWindowEventWatch = true;
+
+		try {
+			// No way to choose the screen in SDL, need to fit the window in the right screen before.
+			if(m != Windowed && monitor != null) {
+				window.displayMode = Windowed;
+				var mon = selectedMonitor();
+				if(mon != null) {
+					window.setPosition(mon.left, mon.top);
+					window.resize(mon.right-mon.left, mon.bottom-mon.top);
+				}
 			}
-		}
-		if( m == ExclusiveFullscreen ) {
-			var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
-			if(dm != null)
-				window.displaySetting = dm.mode;
-			window.displayMode = m;
-		}
-		else {
-			window.displayMode = m;
-			if( oldMode != m && m == Windowed && savedSize != null) {
-				window.setPosition(savedSize.x, savedSize.y);
-				window.resize(savedSize.width, savedSize.height);
-				savedSize = null;
+			if( m == ExclusiveFullscreen ) {
+				var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
+				if(dm != null)
+					window.displaySetting = dm.mode;
+				window.displayMode = m;
 			}
+			else {
+				window.displayMode = m;
+				if( oldMode != m && m == Windowed && savedSize != null) {
+					window.setPosition(savedSize.x, savedSize.y);
+					window.resize(savedSize.width, savedSize.height);
+					savedSize = null;
+				}
+			}
+		} catch( e : Dynamic ) {
+			suppressWindowEventWatch = false;
+			throw e;
 		}
+
+		suppressWindowEventWatch = false;
 		#else
 		window.displayMode = m;
 		#end

@@ -80,6 +80,10 @@ class System {
 	static function processWindowEvent( event : LEvent ) {
 		if( processingWindowEvent )
 			return;
+
+		if( @:privateAccess HWindow.suppressWindowEventWatch )
+			return;
+
 		processingWindowEvent = true;
 		try {
 			@:privateAccess HWindow.dispatchEvent(event);
