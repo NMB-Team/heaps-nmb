@@ -33,9 +33,9 @@ class BackendSmoke {
 		var window : Class<hxd.Window> = hxd.Window;
 		var pad : Class<hxd.Pad> = hxd.Pad;
 		var event = new hxd.Event(EKeyDown);
-		event.timestamp = 0.;
+		event.timestamp = 0;
 		event.isRepeat = false;
-		var padEvent : hxd.Pad.PadEvent = { kind: EPadConnect, pad: null, timestamp: 0. };
+		var padEvent : hxd.Pad.PadEvent = { kind: EPadConnect, pad: null, timestamp: 0 };
 
 		#if gfx_dx11
 		var dx11Driver : Class<h3d.impl.driver.dx11.DX11Driver> = h3d.impl.driver.dx11.DX11Driver;

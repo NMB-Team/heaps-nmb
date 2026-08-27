@@ -1,5 +1,7 @@
 package hxd;
 
+import haxe.Int64;
+
 #if hl
 #if limen
 import limen.platform.event.Event;
@@ -67,9 +69,20 @@ class PadEvent {
 	public var axis : Int = 0;
 	public var pad : Pad;
 	/**
-		Monotonic timestamp of the native controller event, in seconds.
+		Monotonic timestamp of the native controller event, in nanoseconds.
 	**/
-	public var timestamp : Float = 0.;
+	public var timestamp : Int64 = 0;
+	/**
+		Convenience conversion for display and simple gameplay use.
+
+		For precise timing differences, subtract Int64 nanosecond timestamps first,
+		then convert the resulting delta to milliseconds.
+	**/
+	public var timestampMs(get, never) : Float;
+
+	private inline function get_timestampMs() : Float {
+		return timestamp.toFloat() / 1_000_000.0;
+	}
 }
 
 class Pad {
@@ -349,7 +362,7 @@ class Pad {
 			initDone = true;
 			var sticks = LPlatform.getJoysticks();
 			for( stick in sticks )
-				initPad( stick, LPlatform.getTime() ); // startup enumeration records when heaps discovers the device
+				initPad( stick, LPlatform.getTimestamp() ); // startup enumeration records when heaps discovers the device
 			haxe.MainLoop.add(syncPads, -1);
 		}
 		#elseif usesys
@@ -426,7 +439,7 @@ class Pad {
 		return values[ axisId ];
 	}
 
-	private static function initPad( index, timestamp : Float = 0. ){
+	private static function initPad( index, timestamp : Int64 = 0 ){
 		var sp = new GameController( index );
 		var p = new hxd.Pad();
 		p.index = sp.id;
