@@ -6,6 +6,9 @@ import h3d.impl.driver.dlss.DLSSParams;
 import h3d.impl.driver.dlss.DLSSQuality;
 import h3d.impl.driver.dlss.DLSSSettings;
 import h3d.impl.driver.dlss.DLSSTag;
+import h3d.impl.driver.dlss.DLSSGMode;
+import h3d.impl.driver.dlss.DLSSGSettings;
+import h3d.impl.driver.dlss.ReflexMode;
 
 class Driver {
 
@@ -272,6 +275,27 @@ class Driver {
 	public function applyDLSS( resources : Map<DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
 	}
 
+	public function tagDLSSResources( resources : Map<DLSSTag, h3d.mat.Texture> ) {
+	}
+
+	public function clearDLSSTags() {
+	}
+
+	public function setDLSSConstants( constants : DLSSParams ) {
+	}
+
+	public function setDLSSGMode( mode : DLSSGMode, numFramesToGenerate : Int = 1, releaseResources = false ) : Bool {
+		return false;
+	}
+
+	public function getDLSSGMode() : DLSSGMode {
+		return Off;
+	}
+
+	public function getDLSSGSettings() : DLSSGSettings {
+		return null;
+	}
+
 	public function pclSimulationStart() {
 	}
 
@@ -279,5 +303,31 @@ class Driver {
 	}
 
 	public function pclTriggerFlash() {
+	}
+
+	public function reflexSleep() {
+	}
+
+	public function setReflexOptions( mode : ReflexMode, frameLimitUs : Int = 0 ) {
+		return false;
+	}
+
+	public function reflexLowLatencyAvailable() {
+		return false;
+	}
+
+	public function reflexFlashIndicatorDriverControlled() {
+		return false;
+	}
+
+	public function debugReflex() : String {
+		return "";
+	}
+
+	public function debugDLSSG() : String {
+		return "";
+	}
+
+	public function shutdownDLSS() {
 	}
 }

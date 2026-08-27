@@ -101,8 +101,10 @@ class System {
 	static function mainLoop() {
 		#if dlss
 		var engine = h3d.Engine.getCurrent();
-		if( engine != null && engine.ready )
+		if( engine != null && engine.ready ) {
+			engine.driver.reflexSleep();
 			engine.driver.pclSimulationStart();
+		}
 		#end
 
 		// process events
@@ -268,6 +270,11 @@ class System {
 			if( check_reload() ) onReload();
 			#end
 		}
+		#if dlss
+		var engine = h3d.Engine.getCurrent();
+		if( engine != null )
+			engine.driver.shutdownDLSS();
+		#end
 		Sys.exit(0);
 	}
 

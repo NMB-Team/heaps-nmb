@@ -5,4 +5,7 @@ enum DLSSTag {
 	MotionVectors;
 	ColorIn;
 	ColorOut;
+	HUDLess;
+	UIColorAndAlpha;
+	UIAlpha;
 }
