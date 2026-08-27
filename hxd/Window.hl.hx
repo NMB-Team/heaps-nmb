@@ -380,11 +380,24 @@ class Window {
 		switch( e.type ) {
 		default:
 			switch( e.state ) {
-			case Show, Expose:
+			case Show:
 				HSystem.notifyWindowShown();
-			default:
-				windowWidth = window.width;
-				windowHeight = window.height;
+			case Expose:
+				HSystem.notifyWindowShown();
+
+				if( e.value == 1 ) {
+					final w = window.width;
+					final h = window.height;
+
+					if( w != windowWidth || h != windowHeight ) {
+						windowWidth = w;
+						windowHeight = h;
+						onResize(null);
+					}
+				}
+			case Resize:
+				windowWidth = e.mouseX;
+				windowHeight = e.mouseY;
 				onResize(null);
 			case Focus:
 				wasBlurred = false;
@@ -401,7 +414,7 @@ class Window {
 			case Move:
 				if( onMove != null )
 					onMove();
-			// default:
+			default:
 			}
 		case MouseDown if (!HSystem.getValue(IsTouch)):
 			if (mouseMode == Absolute) {
