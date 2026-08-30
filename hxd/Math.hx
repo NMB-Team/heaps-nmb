@@ -2,9 +2,9 @@ package hxd;
 
 class Math {
 
-	public static inline var PI = 3.14159265358979323;
-	public static inline var EPSILON = 1e-10;
-	public static inline var EPSILON2 = 1e-20;
+	public static inline final PI = 3.14159265358979323846264338;
+	public static inline final EPSILON = 1e-10;
+	public static inline final EPSILON2 = 1e-20;
 
 	public static var POSITIVE_INFINITY(get, never) : Float;
 	public static var NEGATIVE_INFINITY(get, never) : Float;
@@ -20,6 +20,20 @@ class Math {
 
 	static inline function get_NaN() {
 		return std.Math.NaN;
+	}
+
+	/**
+		Use this to convert an Int64 to a Float.
+		This is only needed on Haxe 4. On Haxe 5, use `toFloat()` instead.
+	**/
+	public static inline function int64ToFloat(x:haxe.Int64):Float {
+		#if (haxe_ver < 5)
+		final high = x.high;
+		final low = x.low;
+		return high * 4294967296. + (low < 0 ? 4294967296. + low : low);
+		#else
+		return x.toFloat();
+		#end
 	}
 
 	public static inline function isNaN(v:Float) {
@@ -184,7 +198,7 @@ class Math {
 	}
 
 	/**
-	 	Similar to linear interpolation (k is between [0,1]), but can be controled with easing parameter. When easing is 0 it's linear.
+		Similar to linear interpolation (k is between [0,1]), but can be controled with easing parameter. When easing is 0 it's linear.
 	**/
 	public inline static function ease(a:Float, b:Float, k:Float, easing:Float) {
 		return lerp(a, b, easeFactor(k, easing));
@@ -194,7 +208,7 @@ class Math {
 		ease = lerp(a,b,easeFactor(k,easing))
 	**/
 	public inline static function easeFactor( k : Float, easing : Float ) {
-		var p = Math.pow(k, 1 + easing);
+		final p = Math.pow(k, 1 + easing);
 		return p / (p + Math.pow(1 - k, easing + 1));
 	}
 
@@ -237,18 +251,18 @@ class Math {
 		Linear interpolation between two colors (ARGB).
 	**/
 	public static function colorLerp( c1 : Int, c2 : Int, k : Float ) {
-		var a1 = c1 >>> 24;
-		var r1 = (c1 >> 16) & 0xFF;
-		var g1 = (c1 >> 8) & 0xFF;
-		var b1 = c1 & 0xFF;
-		var a2 = c2 >>> 24;
-		var r2 = (c2 >> 16) & 0xFF;
-		var g2 = (c2 >> 8) & 0xFF;
-		var b2 = c2 & 0xFF;
-		var a = Std.int(a1 * (1-k) + a2 * k);
-		var r = Std.int(r1 * (1-k) + r2 * k);
-		var g = Std.int(g1 * (1-k) + g2 * k);
-		var b = Std.int(b1 * (1 - k) + b2 * k);
+		final a1 = c1 >>> 24;
+		final r1 = (c1 >> 16) & 0xFF;
+		final g1 = (c1 >> 8) & 0xFF;
+		final b1 = c1 & 0xFF;
+		final a2 = c2 >>> 24;
+		final r2 = (c2 >> 16) & 0xFF;
+		final g2 = (c2 >> 8) & 0xFF;
+		final b2 = c2 & 0xFF;
+		final a = Std.int(a1 * (1-k) + a2 * k);
+		final r = Std.int(r1 * (1-k) + r2 * k);
+		final g = Std.int(g1 * (1-k) + g2 * k);
+		final b = Std.int(b1 * (1 - k) + b2 * k);
 		return (a << 24) | (r << 16) | (g << 8) | b;
 	}
 
@@ -309,51 +323,50 @@ class Math {
 		return (std.Math.random() - 0.5) * (max * 2);
 	}
 
-
 	/**
-	 * takes an int , masks it and devide so that it safely maps 0...255 to 0...1.0
-	 * @paramv an int between 0 and 255 will be masked
-	 * @return a float between( 0 and 1)
-	 */
+		takes an int , masks it and devide so that it safely maps 0...255 to 0...1.0
+		@paramv an int between 0 and 255 will be masked
+		@return a float between( 0 and 1)
+	**/
 	public static inline function b2f( v:Int ) :Float {
 		return (v&0xFF) * 0.0039215686274509803921568627451;
 	}
 
 	/**
-	 * takes a float , clamps it and multipy so that it safely maps 0...1 to 0...255.0
-	 * @param	f a float
-	 * @return an int [0...255]
-	 */
+		takes a float , clamps it and multipy so that it safely maps 0...1 to 0...255.0
+		@param	f a float
+		@return an int [0...255]
+	**/
 	public static inline function f2b( v:Float ) : Int {
 		return Std.int(clamp(v) * 255.0);
 	}
 
 	/**
-	 * returns the modulo but always positive
-	 */
+		returns the modulo but always positive
+	**/
 	public static inline function umod( value : Int, modulo : Int ) {
 		var r = value % modulo;
 		return r >= 0 ? r : r + modulo;
 	}
 
 	/**
-	 * returns the modulo but always positive
-	 */
+		returns the modulo but always positive
+	**/
 	public static inline function ufmod( value : Float, modulo : Float ) {
 		var r = value % modulo;
 		return r >= 0 ? r : r + modulo;
 	}
 
 	/**
-	 * Convert degrees to radians
+		Convert degrees to radians
 	**/
 	public static inline function degToRad( deg : Float) {
 		return deg * PI / 180.0;
 	}
 
 	/**
-	 * Convert radians to degrees
-	 */
+		Convert radians to degrees
+	**/
 	public static inline function radToDeg( rad : Float) {
 		return rad * 180.0 / PI;
 	}

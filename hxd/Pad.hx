@@ -81,7 +81,7 @@ class PadEvent {
 	public var timestampMs(get, never) : Float;
 
 	private inline function get_timestampMs() : Float {
-		return timestamp.toFloat() / 1_000_000.0;
+		return Math.int64ToFloat(timestamp) * 0.000001;
 	}
 }
 
