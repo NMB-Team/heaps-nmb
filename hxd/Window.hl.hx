@@ -797,6 +797,24 @@ class Window {
 		#end
 	}
 
+	public function setMaximized(maximized: Bool) : Void {
+		#if (hldx >= version("1.17.0"))
+		window.setZoomed(maximized);
+		#elseif (hlsdl >= version("1.17.0"))
+		window.setMaximized(maximized);
+		#end
+	}
+
+	public function isMaximized() : Bool {
+		#if (hldx >= version("1.17.0"))
+		return window.isZoomed();
+		#elseif (hlsdl >= version("1.17.0"))
+		return window.isMaximized();
+		#else
+		return false;
+		#end
+	}
+
 	// If registry is set, return the default DisplaySetting when it's currently modified by the application.
 	public function getCurrentDisplaySetting(?monitorId : Int, registry : Bool = false) : DisplaySetting {
 		#if limen

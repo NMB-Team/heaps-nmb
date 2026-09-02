@@ -1168,11 +1168,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	static final SHADER_ARGS : Array<String>= [#if dx12_shader_debug "-Zi", "-Qembed_debug" #end];
 	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, rootStr = "" ) {
-		if( sh.code == null ) {
-			var out = new hxsl.HlslOut();
-			sh.code = out.run(sh.data);
-			sh.code = rootStr + sh.code;
-		}
+		resolveShaderDataCode(sh, rootStr);
 		var key = profile;
 		for ( arg in SHADER_ARGS )
 			key += arg;
@@ -1193,6 +1189,14 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		var out = new hxsl.HlslOut();
 		var psSource = out.run(shader.fragment.data);
 		return vsSource+"\n\n\n\n"+psSource;
+	}
+
+	function resolveShaderDataCode( sh : hxsl.RuntimeShader.RuntimeShaderData, rootStr : String ) {
+		if( sh.code == null ) {
+			var out = new hxsl.HlslOut();
+			sh.code = out.run(sh.data);
+			sh.code = rootStr + sh.code;
+		}
 	}
 
 	function stringifyRootSignature( sign : RootSignatureDesc, name : String, params : hl.CArray<RootParameterDescriptorTable>, paramsCount : Int ) : String {
