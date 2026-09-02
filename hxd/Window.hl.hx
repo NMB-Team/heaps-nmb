@@ -798,17 +798,13 @@ class Window {
 	}
 
 	public function setMaximized(maximized: Bool) : Void {
-		#if (hldx >= version("1.17.0"))
-		window.setZoomed(maximized);
-		#elseif (hlsdl >= version("1.17.0"))
+		#if limen
 		window.setMaximized(maximized);
 		#end
 	}
 
 	public function isMaximized() : Bool {
-		#if (hldx >= version("1.17.0"))
-		return window.isZoomed();
-		#elseif (hlsdl >= version("1.17.0"))
+		#if limen
 		return window.isMaximized();
 		#else
 		return false;
