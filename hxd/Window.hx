@@ -14,6 +14,8 @@ class Window {
 	var resizeEvents : List<Void -> Void>;
 	var eventTargets : List<Event -> Void>;
 
+	public var x(get, never) : Int;
+	public var y(get, never) : Int;
 	public var width(get, never) : Int;
 	public var height(get, never) : Int;
 	public var mouseX(get, never) : Int;
@@ -58,6 +60,9 @@ class Window {
 	}
 
 	public function setIcon(icon: hxd.BitmapData) : Void {
+	}
+
+	public function setPosition(x: Int, y: Int) {
 	}
 
 	public function event( e : hxd.Event ) : Void {
@@ -127,6 +132,14 @@ class Window {
 	public static function getInstance() : Window {
 		if( inst == null ) inst = new Window();
 		return inst;
+	}
+
+	function get_x() : Int {
+		return 0;
+	}
+
+	function get_y() : Int {
+		return 0;
 	}
 
 	function get_mouseX() : Int {

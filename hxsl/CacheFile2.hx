@@ -96,15 +96,18 @@ class CacheFile2Loader {
 	}
 
 	function threadLoop() {
+		var driver = h3d.Engine.getCurrent()?.driver;
 		// Link ShaderList Default
 		for( l in slistsDefault ) {
 			var rts = cache.link(l.sl, Default);
+			driver?.warmupShader(rts);
 			rtMap.set(l.sign, { rt : rts, sl : l.sl });
 		}
 
 		// Link ShaderList Compute
 		for( sl in slistsCompute ) {
 			var rts = cache.link(sl, Compute);
+			driver?.warmupShader(rts);
 		}
 
 		#if heaps_mt_hxsl_cache
@@ -119,6 +122,7 @@ class CacheFile2Loader {
 		// Link ShaderList Batch
 		for( sl in slistsBatch ) {
 			var rts = cache.link(sl, Batch);
+			driver?.warmupShader(rts);
 		}
 
 		#if heaps_mt_hxsl_cache
@@ -372,7 +376,7 @@ class CacheFile2 extends Cache {
 		}
 
 		var magic = readLine();
-		if( !StringTools.startsWith(magic, 'CF2-$VERSION') ) {
+		if( magic != 'CF2-$VERSION' ) {
 			f.close();
 			return false;
 		}

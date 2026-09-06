@@ -53,6 +53,8 @@ class Window {
 	var closeRequested = false;
 
 	public var id : Int;
+	public var x(get, never) : Int;
+	public var y(get, never) : Int;
 	public var width(get, never) : Int;
 	public var height(get, never) : Int;
 	public var mouseX(get, never) : Int;
@@ -224,6 +226,12 @@ class Window {
 		for( f in resizeEvents ) f();
 	}
 
+	public function setPosition(x: Int, y: Int) {
+		#if limen
+		window.setPosition(x, y);
+		#end
+	}
+
 	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
 		#if limen
 		if (dropTargets.length == 0) {
@@ -260,6 +268,22 @@ class Window {
 	public function captureMouseEvents(enable: Bool) : Void {
 		#if limen
 		window.captureMouseEvents(enable);
+		#end
+	}
+
+	function get_x() : Int {
+		#if limen
+		return window.x;
+		#else
+		return 0;
+		#end
+	}
+
+	function get_y() : Int {
+		#if limen
+		return window.y;
+		#else
+		return 0;
 		#end
 	}
 

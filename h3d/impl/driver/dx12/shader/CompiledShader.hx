@@ -21,6 +21,7 @@ class CompiledShader {
 	public var shader : hxsl.RuntimeShader;
 	public var isCompute : Bool;
 	public var computePipeline : ComputePipelineState;
+	public var usedPSOConfig : Bool;
 
 	public function new() {
 	}

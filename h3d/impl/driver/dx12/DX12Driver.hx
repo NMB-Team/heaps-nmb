@@ -122,6 +122,131 @@ import limen.graphics.d3d12.dlss.DLSS.ReflexModeNative;
 import limen.graphics.d3d12.dlss.DLSS.ReflexStateInfo;
 #end
 
+class PSOConfigCache {
+	static inline var MAX_SIGN_SIZE = 1024;
+	static inline var MAX_PIPELINES_PER_SHADER = 4096;
+	public static var VERSION = 1;
+
+	var file : String;
+	var outputFile : String;
+	var configs : Map<String, Array<haxe.io.Bytes>>;
+	var loadFailed = false;
+	var canSave = true;
+
+	var builder = new PipelineCache.PipelineBuilder();
+	var magic : String;
+	var isDirty = false;
+
+	public function new(file : String, ?outputFile : String ) {
+		this.file = file;
+		this.outputFile = outputFile ?? file;
+		magic = 'PCFG-$VERSION';
+	}
+
+	public function load() {
+		configs = [];
+		loadFailed = false;
+		try {
+			if( !sys.FileSystem.exists(file) )
+				return;
+			var cache = new haxe.io.BytesInput(sys.io.File.getBytes(file));
+			if( cache.length < magic.length || cache.readString(magic.length) != magic )
+				return;
+			while( cache.position < cache.length ) {
+				var shaderSignSize = cache.readInt32();
+				if( shaderSignSize <= 0 || shaderSignSize > MAX_SIGN_SIZE )
+					return;
+				var shaderSign = cache.readString(shaderSignSize);
+				var cachedCount = cache.readInt32();
+				if( cachedCount < 0 || cachedCount > MAX_PIPELINES_PER_SHADER )
+					return;
+				var pipelines = [];
+				for( i in 0...cachedCount ) {
+					var byteSize = cache.readInt32();
+					if( byteSize <= 0 || byteSize > 64 )
+						return;
+					var bytes = cache.read(byteSize);
+					pipelines.push(bytes);
+				}
+				configs.set(shaderSign, pipelines);
+			}
+		} catch( e : Dynamic ) {
+			trace("Failed to load pipeline cache, keeping partial contents: " + e);
+			loadFailed = true;
+		}
+	}
+
+	public function resolveConfig( c : CompiledShader ) {
+		var pipelines = configs.get(c.shader.signature);
+		if( pipelines != null ) {
+			for( sign in pipelines ) @:privateAccess {
+				builder.signature.blit(0, sign.getData(), 0, sign.length);
+				var inputCount = (sign.length - PipelineCache.PipelineBuilder.PSIGN_LAYOUT) >> PipelineCache.PipelineBuilder.SHIFT_PER_BUFFER;
+				if( inputCount != c.inputCount ) continue;
+				var cache = builder.lookup(c.pipelines, inputCount);
+				var p = DX12Driver.makePipeline(c, builder);
+				if( p == null )
+					continue;
+				cache.pipeline = p;
+				c.usedPSOConfig = true;
+			}
+		}
+	}
+
+	public function addConfig<T>(shader : hxsl.RuntimeShader, p : PipelineCache.CachedPipeline<T>) {
+		if( p.size > 64 )
+			throw "assert";
+		var pipelines = configs.get(shader.signature);
+		if( pipelines == null ) {
+			pipelines = [];
+			configs.set(shader.signature, pipelines);
+		}
+		if( pipelines.length >= MAX_PIPELINES_PER_SHADER )
+			return;
+		var bytes = @:privateAccess new haxe.io.Bytes(p.bytes, p.size);
+		for( existing in pipelines )
+			if( existing.length == bytes.length && existing.compare(bytes) == 0 )
+				return;
+		pipelines.push(bytes);
+		isDirty = true;
+	}
+
+	public function save() {
+		if( configs == null || !canSave || !isDirty )
+			return;
+		if( loadFailed ) // Do not overwrite cache if loading failed due to IO exception (not corrupted file)
+			return;
+
+		var out = new haxe.io.BytesOutput();
+		out.writeString(magic);
+		var signs = [for( s in configs.keys() ) s];
+		signs.sort(Reflect.compare);
+		for( sign in signs ) {
+			var pipelines = configs.get(sign);
+			var signBytes = haxe.io.Bytes.ofString(sign);
+			out.writeInt32(signBytes.length);
+			out.write(signBytes);
+			out.writeInt32(pipelines.length);
+			for( p in pipelines ) {
+				out.writeInt32(p.length);
+				out.write(p);
+			}
+		}
+
+		try {
+			var tmpPath = outputFile + ".tmp";
+			sys.io.File.saveBytes(tmpPath, out.getBytes());
+			if( sys.FileSystem.exists(outputFile) )
+				sys.FileSystem.deleteFile(outputFile);
+			sys.FileSystem.rename(tmpPath, outputFile);
+			isDirty = false;
+		} catch( e : Dynamic ) {
+			trace("Failed to save pipeline cache: " + e);
+			canSave = false;
+		}
+	}
+}
+
 class DX12Driver extends h3d.impl.driver.Driver {
 
 	var pipelineBuilder = new PipelineCache.PipelineBuilder();
@@ -152,9 +277,14 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	var currentHeight : Int;
 
 	var currentShader : CompiledShader;
-	var compiledShaders : Map<Int,CompiledShader> = new Map();
+	var compiledShaders : Map<Int,CompiledShader>;
 	var compiler : ShaderCompiler;
 	var currentIndex : Buffer;
+	#if heaps_mt_hxsl_cache
+	var compileMutex  = new sys.thread.Mutex();
+	var pipelineMutex  = new sys.thread.Mutex();
+	#end
+	var psoConfigCache : PSOConfigCache;
 
 	var tmp : TempObjects;
 	var currentRenderTargets : Array<h3d.mat.Texture> = [];
@@ -237,6 +367,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	public static var FRAMEGEN = true;
 	public static var REFLEX = true;
 	public static var CHECK_SL_DLL_SIGNATURE = true;
+	public static var ENABLE_PSO_CONFIG_CACHE = false;
+	public static var PSO_CONFIG_CACHE_PATH = "psoconfig.dx12";
+	public static var PSO_CONFIG_CACHE_OUTPUT_PATH = "psoconfig.dx12";
 
 	@:allow(h3d.impl)
 	@:allow(h3d.impl.driver.dx12.descriptor)
@@ -320,6 +453,14 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			slReady = Dlss.init(false, features, CHECK_SL_DLL_SIGNATURE) == 0;
 		}
 		#end
+
+		compiledShaders = [];
+		if( ENABLE_PSO_CONFIG_CACHE ) {
+			psoConfigCache = new PSOConfigCache(PSO_CONFIG_CACHE_PATH, PSO_CONFIG_CACHE_OUTPUT_PATH);
+			psoConfigCache.load();
+		} else {
+			psoConfigCache = null;
+		}
 
 		var flags = new Dx12DriverInitFlags();
 		if( DEBUG ) {
@@ -698,6 +839,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function dispose() {
+		psoConfigCache?.save();
 		disposeAllocators();
 		shutdownDLSS();
 	}
@@ -965,7 +1107,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		pipelineBuilder.setRenderTarget(tex, depthEnabled ? depthBuffer : null);
 	}
 
-	function toDxgiDepthFormat( format : hxd.PixelFormat ) {
+	static function toDxgiDepthFormat( format : hxd.PixelFormat ) {
 		switch( format ) {
 			case null:
 				return cast 0;
@@ -1042,7 +1184,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function setDepthBias( depthBias : Float, slopeScaledBias : Float ) {
-		pipelineBuilder.setDepthBias(depthBias, slopeScaledBias);
+		// Since depthBias is rounded to int in makePipeline, do not register different pipeline config for small float variation.
+		pipelineBuilder.setDepthBias(Std.int(depthBias), slopeScaledBias);
 	}
 
 	override function setRenderZone(x:Int, y:Int, width:Int, height:Int) {
@@ -1521,6 +1664,17 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	function compileShader( shader : hxsl.RuntimeShader ) : CompiledShader {
+		#if heaps_mt_hxsl_cache
+		compileMutex.acquire();
+		#end
+		var sh = compiledShaders.get(shader.id);
+		if( sh != null ) {
+			#if heaps_mt_hxsl_cache
+			compileMutex.release();
+			#end
+			return sh;
+		}
+
 		if ( shader.hasBindless() && !useSM6_6 )
 			throw "Shader using bindless detected, but Shader Model 6.6 is not used. Please call enableBindless().";
 
@@ -1547,6 +1701,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			desc.cs.bytecodeLength = cs.length;
 			c.computePipeline = Driver.createComputePipelineState(desc);
 			c.vertexRegisters = res.registers[0];
+			compiledShaders.set(shader.id, c);
+			#if heaps_mt_hxsl_cache
+			compileMutex.release();
+			#end
 			return c;
 		}
 
@@ -1611,7 +1769,21 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		for( i in 0...inputs.length )
 			inputLayout[i].alignedByteOffset = 1; // will trigger error if not set in makePipeline()
-	   return c;
+
+		compiledShaders.set(shader.id, c);
+		#if heaps_mt_hxsl_cache
+		compileMutex.release();
+		#end
+
+		#if heaps_mt_hxsl_cache
+		pipelineMutex.acquire();
+		#end
+		psoConfigCache?.resolveConfig(c);
+		#if heaps_mt_hxsl_cache
+		pipelineMutex.release();
+		#end
+
+		return c;
 	}
 
 	function disposeResource( r : ResourceData ) {
@@ -1856,8 +2028,12 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	// ------------ TEXTURES -------
 
-	function getTextureFormat( t : h3d.mat.Texture ) : DxgiFormat {
-		return switch( t.format ) {
+	inline function getTextureFormat( t : h3d.mat.Texture ) : DxgiFormat {
+		return toDxgiFormat(t.format);
+	}
+
+	static function toDxgiFormat( fmt : hxd.PixelFormat ) {
+		return switch( fmt ) {
 		case RGBA: R8G8B8A8_UNORM;
 		case RGBA16F: R16G16B16A16_FLOAT;
 		case RGBA32F: R32G32B32A32_FLOAT;
@@ -1885,7 +2061,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			case 7: BC7_UNORM;
 			default: throw "assert";
 			}
-		default: throw "Unsupported texture format " + t.format;
+		default: throw "Unsupported texture format " + fmt;
 		}
 	}
 
@@ -2617,11 +2793,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function selectShader( shader : hxsl.RuntimeShader ) {
-		var sh = compiledShaders.get(shader.id);
-		if( sh == null ) {
-			sh = compileShader(shader);
-			compiledShaders.set(shader.id, sh);
-		}
+		var sh = compileShader(shader);
 		if( currentShader == sh )
 			return false;
 		currentShader = sh;
@@ -2733,13 +2905,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	];
 	static var STENCIL_OP : Array<Dx12StencilOp> = [KEEP, ZERO, REPLACE, INCR_SAT, INCR, DECR_SAT, DECR, INVERT];
 
-	function makePipeline( shader : CompiledShader ) {
+	static function makePipeline( shader : CompiledShader, pipelineBuilder : PipelineCache.PipelineBuilder ) {
 		var p = shader.pipeline;
 		var pass = pipelineBuilder.getCurrentPass();
 		var depth = pipelineBuilder.getDepthProps();
 		if( pass.wireframe ) pass.culling = None;
 
-		var rtCount = currentRenderTargets.length;
+		var rtCount = pipelineBuilder.getRenderTargetsCount();
 		if( rtCount == 0 ) rtCount = 1;
 
 		p.numRenderTargets = rtCount;
@@ -2747,7 +2919,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		p.rasterizerState.cullMode = CULL[pass.culling.getIndex()];
 		p.rasterizerState.fillMode = pass.wireframe ? WIREFRAME : SOLID;
 		p.depthStencilDesc.depthEnable = pass.depthTest != Always;
-		p.depthStencilDesc.depthWriteMask = !pass.depthWrite || !depthEnabled ? ZERO : ALL;
+		p.depthStencilDesc.depthWriteMask = !pass.depthWrite || !pipelineBuilder.getDepthEnabled() ? ZERO : ALL;
 		p.depthStencilDesc.depthFunc = COMP[pass.depthTest.getIndex()];
 		p.rasterizerState.depthClipEnable = !pass.depthClamp;
 		p.rasterizerState.depthBias = Std.int(depth.bias);
@@ -2766,8 +2938,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			t.blendOpAlpha = BLEND_OP[pass.blendAlphaOp.getIndex()];
 			t.renderTargetWriteMask = pass.colorMask;
 
-			var t = currentRenderTargets[i];
-			p.rtvFormats[i] = t == null ? R8G8B8A8_UNORM : (t.t : TextureData).format;
+			var fmt = pipelineBuilder.getRenderTargetFormat(i);
+			p.rtvFormats[i] = fmt == null ? R8G8B8A8_UNORM : toDxgiFormat(fmt);
 		}
 		p.dsvFormat = toDxgiDepthFormat(depth.format);
 		for ( i in rtCount...8 )
@@ -2822,15 +2994,43 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		return Driver.createGraphicsPipelineState(p);
 	}
 
-	function flushPipeline() {
-		if( !pipelineBuilder.needFlush ) return;
+	override function warmupShader( shader : hxsl.RuntimeShader) {
+		compileShader(shader);
+	}
+
+	function flushPipeline() : Bool {
+		if( !pipelineBuilder.needFlush )
+			return true;
+
+		#if heaps_mt_hxsl_cache
+		pipelineMutex.acquire();
+		#end
 		var cache = pipelineBuilder.lookup(currentShader.pipelines, currentShader.inputCount);
-		if( cache.pipeline == null )
-			cache.pipeline = makePipeline(currentShader);
+		if( cache.pipeline == null ) {
+			var p = makePipeline(currentShader, pipelineBuilder);
+			#if dx12_verbose_pso_cache
+			var reason = currentShader.usedPSOConfig ? "cache hit but state missing" : "not in cache";
+			trace('Pipeline cache miss ($reason): $cache [${currentShader.shader.signature}]\n${currentShader.pipelines.diff(cache)}');
+			#end
+			if( p == null ) {
+				trace('Failed to create pipeline for ${currentShader.shader.signature}');
+				hasDeviceError = true;
+				#if heaps_mt_hxsl_cache
+				pipelineMutex.release();
+				#end
+				return false;
+			}
+			cache.pipeline = p;
+			psoConfigCache?.addConfig(currentShader.shader, cache);
+		}
+		#if heaps_mt_hxsl_cache
+		pipelineMutex.release();
+		#end
 		if ( currentPipelineState != cache.pipeline ) {
 			frame.commandList.setPipelineState(cache.pipeline);
 			currentPipelineState = cache.pipeline;
 		}
+		return true;
 	}
 
 	// MARKING
@@ -2938,7 +3138,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if ( (tmp.rect.right - tmp.rect.left) <= 0 || (tmp.rect.bottom - tmp.rect.top) <= 0 )
 			return;
 
-		flushPipeline();
+		if( !flushPipeline() )
+			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
 			final vbuf:BufferData = ibuf.vbuf;
@@ -2953,7 +3154,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if ( (tmp.rect.right - tmp.rect.left) <= 0 || (tmp.rect.bottom - tmp.rect.top) <= 0 )
 			return;
 
-		flushPipeline();
+		if( !flushPipeline() )
+			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
 			final vbuf:BufferData = ibuf.vbuf;
@@ -3030,6 +3232,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		currentPipelineState = null;
 		currentShader = null;
 		Driver.flushMessages();
+		psoConfigCache?.save();
 		frame.fenceValue = ++fenceValue;
 		directQueue.signal(fence, frame.fenceValue);
 	}

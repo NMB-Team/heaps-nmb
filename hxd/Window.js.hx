@@ -33,6 +33,8 @@ class Window {
 	var eventTargets : List<Event -> Void>;
 	var dropTargets : List<DropFileEvent -> Void>;
 
+	public var x(get, never) : Int;
+	public var y(get, never) : Int;
 	public var width(get, never) : Int;
 	public var height(get, never) : Int;
 	public var mouseX(get, never) : Int;
@@ -255,6 +257,10 @@ class Window {
 	public function resize( width : Int, height : Int ) : Void {
 	}
 
+	public function setPosition(x: Int, y: Int) {
+	}
+
+
 	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
 		if( dropTargets.length == 0 ) {
 			var element = canvas; // Probably should adhere to `globalEvents`?
@@ -335,6 +341,14 @@ class Window {
 
 	function getPixelRatio() {
 		return useScreenPixels ? Math.min(js.Browser.window.devicePixelRatio, maxPixelRatio) : 1;
+	}
+
+	function get_x() : Int {
+		return Math.round(canvasPos.left);
+	}
+
+	function get_y() : Int {
+		return Math.round(canvasPos.top);
 	}
 
 	function get_width() {
