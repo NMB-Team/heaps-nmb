@@ -40,9 +40,9 @@ class FpsGraph {
 	var cpuDtMsData : FrameData;
 
 	// GPU Data
-	var driver : h3d.impl.Driver;
-	var gpuFreeQueryPool : Array<h3d.impl.Driver.Query> = [];
-	var gpuPendingQueries : Array<h3d.impl.Driver.Query> = [];
+	var driver : h3d.impl.driver.Driver;
+	var gpuFreeQueryPool : Array<h3d.impl.driver.Query> = [];
+	var gpuPendingQueries : Array<h3d.impl.driver.Query> = [];
 	var gpuDtMs : Float;
 	var gpuFpsData : FrameData;
 
