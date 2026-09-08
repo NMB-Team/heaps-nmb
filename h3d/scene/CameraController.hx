@@ -1,6 +1,7 @@
 package h3d.scene;
 
 import hxd.Key.KeyCode.*;
+import hxd.System.KeyboardLayout;
 
 abstract class CameraController extends h3d.scene.Object {
 	public var distance(get, never) : Float;
@@ -375,9 +376,89 @@ class FPSCameraController extends CameraController {
 	public var zFar = 10000.0;
 	public var snapToGround = true;
 
+	/**
+		Keyboard layout used by the default movement input.
+		Can be changed manually if automatic detection is not available.
+	**/
+	public var keyboardLayout : KeyboardLayout;
+
 	public function new(?distance: Float, ?parent : h3d.scene.Object) {
 		super(distance, parent);
 		name = "FPSCameraController";
+
+		keyboardLayout = hxd.System.getKeyboardLayout();
+
+		if( keyboardLayout == Unknown )
+			keyboardLayout = QWERTY;
+	}
+
+		inline function getForwardKey() {
+		return switch( keyboardLayout ) {
+		case AZERTY, QZERTY: Z;
+		default: W;
+		}
+	}
+
+	inline function getLeftKey() {
+		return switch( keyboardLayout ) {
+		case AZERTY: Q;
+		default: A;
+		}
+	}
+
+	inline function getDownKey() {
+		return switch( keyboardLayout ) {
+		case AZERTY: A;
+		default: Q;
+		}
+	}
+
+	/**
+		Returns forward/backward movement input in the [-1, 1] range.
+		Positive values move forward, negative values move backward.
+	**/
+	public dynamic function getForwardInput() : Float {
+		var value = 0.0;
+
+		if( hxd.Key.isDown(UP) || hxd.Key.isDown(getForwardKey()) )
+			value += 1.0;
+
+		if( hxd.Key.isDown(DOWN) || hxd.Key.isDown(S) )
+			value -= 1.0;
+
+		return value;
+	}
+
+	/**
+		Returns horizontal movement input in the [-1, 1] range.
+		Positive values move right, negative values move left.
+	**/
+	public dynamic function getStrafeInput() : Float {
+		var value = 0.0;
+
+		if( hxd.Key.isDown(LEFT) || hxd.Key.isDown(getLeftKey()) )
+			value -= 1.0;
+
+		if( hxd.Key.isDown(RIGHT) || hxd.Key.isDown(D) )
+			value += 1.0;
+
+		return value;
+	}
+
+	/**
+		Returns vertical movement input in the [-1, 1] range.
+		Positive values move up, negative values move down.
+	**/
+	public dynamic function getVerticalInput() : Float {
+		var value = 0.0;
+
+		if( hxd.Key.isDown(getDownKey()) )
+			value -= 1.0;
+
+		if( hxd.Key.isDown(E) )
+			value += 1.0;
+
+		return value;
 	}
 
 	override function sync(ctx : h3d.scene.RenderContext) {
@@ -395,7 +476,7 @@ class FPSCameraController extends CameraController {
 		cam.zFar = zFar;
 
 		if( pushing == 2 || pushing == 1)
-			moveKeys();
+			moveFromInput();
 
 		ctx.elapsedTime = old;
 	}
@@ -445,24 +526,33 @@ class FPSCameraController extends CameraController {
 		}
 	}
 
-	function moveKeys() {
+	function moveFromInput() {
+		var forward = hxd.Math.clamp(getForwardInput(), -1.0, 1.0);
+		var strafe = hxd.Math.clamp(getStrafeInput(), -1.0, 1.0);
+		var vertical = hxd.Math.clamp(getVerticalInput(), -1.0, 1.0);
+
+		var lengthSq =
+			forward * forward +
+			strafe * strafe +
+			vertical * vertical;
+
+		if( lengthSq == 0 )
+			return;
+
+		if( lengthSq > 1.0 ) {
+			var scale = 1.0 / Math.sqrt(lengthSq);
+
+			forward *= scale;
+			strafe *= scale;
+			vertical *= scale;
+		}
+
 		var cam = getScene().camera;
 		var mov = new h3d.Vector();
-		if( hxd.Key.isDown(UP) || hxd.Key.isDown(Z) || hxd.Key.isDown(W) )
-			mov += cam.getForward() * -1;
-		if( hxd.Key.isDown(DOWN) || hxd.Key.isDown(S) )
-			mov += cam.getForward() * 1;
-		if( hxd.Key.isDown(LEFT) || hxd.Key.isDown(Q) )
-			mov += cam.getRight() * 1;
-		if( hxd.Key.isDown(RIGHT) || hxd.Key.isDown(D) )
-			mov += cam.getRight() * -1;
-		if ( hxd.Key.isDown(A) )
-			mov += cam.getUp() * -1;
-		if ( hxd.Key.isDown(E) )
-			mov += cam.getUp() * 1;
 
-		if( mov.x == 0 && mov.y == 0 && mov.z == 0 )
-			return;
+		mov += cam.getForward() * -forward;
+		mov += cam.getRight() * -strafe;
+		mov += cam.getUp() * -vertical;
 
 		var delta = mov.scaled(moveSpeed * (hxd.Timer.dt * 60.0));
 		offset(delta);
