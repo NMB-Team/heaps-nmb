@@ -392,7 +392,7 @@ class FPSCameraController extends CameraController {
 			keyboardLayout = QWERTY;
 	}
 
-		inline function getForwardKey() {
+	inline function getForwardKey() {
 		return switch( keyboardLayout ) {
 		case AZERTY, QZERTY: Z;
 		default: W;
