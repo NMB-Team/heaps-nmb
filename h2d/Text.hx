@@ -119,7 +119,7 @@ class Text extends Drawable {
 	/**
 		If not null, represents current text selection range.
 	**/
-	public var selectionRange:{start:Int, length:Int};
+	public var colorSelectionRange:{start:Int, length:Int};
 	public var selectionColor: h3d.Vector4;
 	var _textColorVec: h3d.Vector4;
 
@@ -494,7 +494,7 @@ class Text extends Drawable {
 			} else {
 				if( e != null ) {
 					if( rebuild ) {
-						if (selectionRange != null && selectionRange.start <= i && i < selectionRange.start + selectionRange.length)
+						if (colorSelectionRange != null && colorSelectionRange.start <= i && i < colorSelectionRange.start + colorSelectionRange.length)
 							glyphs.addColor(x + offs, y, selectionColor.r, selectionColor.g, selectionColor.b, selectionColor.a, e.t);
 						else
 							glyphs.addColor(x + offs, y, _textColorVec.r, _textColorVec.g, _textColorVec.b, _textColorVec.a, e.t);// glyphs.add(x + offs, y, e.t);

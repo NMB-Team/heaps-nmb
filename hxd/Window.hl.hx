@@ -26,9 +26,7 @@ enum DisplayMode {
 typedef Monitor = {
 	name : String,
 	width : Int,
-	height : Int,
-	x : Int,
-	y : Int,
+	height : Int
 }
 
 typedef DisplaySetting = {
@@ -270,19 +268,6 @@ class Window {
 	public function captureMouseEvents(enable: Bool) : Void {
 		#if limen
 		window.captureMouseEvents(enable);
-		#end
-	}
-
-	public function setMonitorIndex(idx: Int) : Void {
-		#if limen
-		var monitors = getMonitors();
-		if(idx < 0 || idx >= monitors.length) return;
-		var m = monitors[idx];
-		window.setPosition(
-			m.x + (m.width - windowWidth) >> 1,
-			m.y + (m.height - windowHeight) >> 1
-		);
-		monitor = idx;
 		#end
 	}
 
@@ -840,7 +825,7 @@ class Window {
 	#if (hl_ver >= version("1.12.0"))
 	public static function getMonitors() : Array<Monitor> {
 		#if limen
-		return [for(m in LPlatform.getDisplays()) { name: m.name, width: m.width, height: m.height, x: m.left, y: m.top}];
+		return [for(m in LPlatform.getDisplays()) { name: m.name, width: m.width, height: m.height}];
 		#else
 		return [];
 		#end
