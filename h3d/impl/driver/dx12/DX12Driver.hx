@@ -757,6 +757,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	override function resize(width:Int, height:Int)  {
 
+		if( width < 1 ) width = 1;
+		if( height < 1 ) height = 1;
+
 		if( defaultDepth == null )
 			initTextureResources();
 		if( currentWidth == width && currentHeight == height )
