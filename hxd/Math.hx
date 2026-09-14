@@ -63,6 +63,15 @@ class Math {
 		return std.Math.ffloor(v * exp + .49999) * neg / exp;
 	}
 
+	public static function truncate(val:Float, decimals:Int):Float {
+		final p = Math.pow(10, decimals);
+		return Math.fround(val * p) / p;
+	}
+
+	public static function remap(value:Float, start1:Float, stop1:Float, start2:Float, stop2:Float):Float {
+		return start2 + (value - start1) * ((stop2 - start2) / (stop1 - start1));
+	}
+
 	public static inline function exp( f : Float ) {
 		return std.Math.exp(f);
 	}
@@ -105,6 +114,10 @@ class Math {
 
 	public static inline function clamp( f : Float, min = 0., max = 1. ) {
 		return f < min ? min : f > max ? max : f;
+	}
+
+	public static inline function wrap( f : Float, min = 0., max = 1. ) {
+		return f < min ? max : f > max ? min : f;
 	}
 
 	public static inline function pow( v : Float, p : Float ) {
@@ -173,6 +186,10 @@ class Math {
 
 	public static inline function iclamp( v : Int, min : Int, max : Int ) {
 		return v < min ? min : (v > max ? max : v);
+	}
+
+	public static inline function iwrap( v : Int, min : Int, max : Int ) {
+		return v < min ? max : (v > max ? min : v);
 	}
 
 	/**
@@ -316,11 +333,30 @@ class Math {
 		return std.Math.random() * max;
 	}
 
+	public inline static function irandom( max = 1 ) {
+		return Std.int(std.Math.random() * max);
+	}
+
+	public inline static function randomRange( from = 0.0, to = 1.0 ) {
+		return remap(std.Math.random(), 0, 1, from, to);
+	}
+
+	public inline static function randomRangei( from = 0, to = 1 ) {
+		return Std.int(remap(std.Math.random(), 0, 1, from, to));
+	}
+
 	/**
-		Returns a signed random between -max and max (both included).
+		Returns a signed random float between -max and max (both included).
 	**/
 	public static function srand( max = 1.0 ) {
 		return (std.Math.random() - 0.5) * (max * 2);
+	}
+
+	/**
+		Returns a signed random integer between -max and max (both included).
+	**/
+	public static function srandi( max = 1 ) {
+		return Std.int((std.Math.random() - 0.5) * (max * 2));
 	}
 
 	/**

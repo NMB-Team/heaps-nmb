@@ -382,7 +382,8 @@ class Manager {
 				#end
 				playedSamples = 0;
 			}
-			c.position = s.start / targetRate + playedSamples / s.buffers[0].sampleRate;
+			var sampleRate = s.buffers[0].sampleRate;
+			c.position = (s.start + playedSamples) / sampleRate;
 			c.positionChanged = false;
 
 			// enqueue next buffers
@@ -412,7 +413,12 @@ class Manager {
 			c.calcAudibleVolume(now);
 			if( c.isLoading && !c.sound.getData().isLoading() )
 				c.isLoading = false;
+			var wasVirtual = c.isVirtual;
 			c.isVirtual = suspended || c.pause || c.mute || c.channelGroup.mute || (c.allowVirtual && c.audibleVolume < VIRTUAL_VOLUME_THRESHOLD) || c.isLoading;
+
+			if (c.isVirtual && !wasVirtual)
+				c.lastStamp = now;
+
 			c = c.next;
 		}
 

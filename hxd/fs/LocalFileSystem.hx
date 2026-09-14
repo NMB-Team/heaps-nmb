@@ -234,7 +234,7 @@ class LocalEntry extends FileEntry {
 		if(watchHandle != null)
 			watchHandle.close();
 		lastChanged = getModifTime();
-		watchHandle = new hl.uv.Fs(hl.uv.Loop.getDefault(), originalFile, function(ev) {
+		watchHandle = new hl.uv.Fs(hl.uv.Loop.getDefault(), originalFile != null ? originalFile : file, function(ev) {
 			switch(ev) {
 				case Change|Rename:
 					if (!sys.FileSystem.exists(originalFile))
@@ -477,7 +477,7 @@ class LocalFileSystem implements FileSystem {
 
 	public var baseDir(default,null) : String;
 
-	public function new( dir : String ) {
+	public function new( dir : String, ?configuration : String, ?storagePath ) {
 		throw "Local file system is not supported for this platform";
 	}
 

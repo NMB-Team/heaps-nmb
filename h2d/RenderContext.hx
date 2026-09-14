@@ -271,6 +271,8 @@ class RenderContext extends h3d.impl.RenderContext {
 	**/
 	@:access(h2d.Camera)
 	public function pushCamera( cam : h2d.Camera ) {
+		flush();
+
 		var entry = cameraStack[cameraStackIndex++];
 		if ( entry == null ) {
 			entry = { va: 0, vb: 0, vc: 0, vd: 0, vx: 0, vy: 0, camera: null };
@@ -352,6 +354,8 @@ class RenderContext extends h3d.impl.RenderContext {
 		Restores previous viewport state prior to camera rendering, removing it from the camera stack.
 	**/
 	public function popCamera() {
+		flush();
+
 		if (cameraStackIndex == 0) throw "Too many popCamera()";
 		var inf = cameraStack[--cameraStackIndex];
 		viewA = inf.va;
@@ -530,6 +534,8 @@ class RenderContext extends h3d.impl.RenderContext {
 		`RenderContext.popRenderZone` should be called afterwards to clear render zone stack.
 	**/
 	public function pushRenderZone( x : Float, y : Float, w : Float, h : Float ) {
+		flush();
+
 		var inf = renderZoneStack[renderZoneIndex++];
 		if ( inf == null ) {
 			inf = { hasRZ: hasRenderZone, x: renderX, y: renderY, w: renderW, h: renderH };
@@ -551,6 +557,8 @@ class RenderContext extends h3d.impl.RenderContext {
 		Restores previous render zone settings.
 	**/
 	public function popRenderZone() {
+		flush();
+
 		if (renderZoneIndex == 0) throw "Too many popRenderZone()";
 		var inf = renderZoneStack[--renderZoneIndex];
 		if (inf.hasRZ) {
@@ -597,8 +605,6 @@ class RenderContext extends h3d.impl.RenderContext {
 		renderY = y;
 		renderW = w;
 		renderH = h;
-		var scaleX = scene.viewportA * engine.width / 2;
-		var scaleY = scene.viewportD * engine.height / 2;
 		if( inFilter != null ) {
 			var fa = baseShader.filterMatrixA;
 			var fb = baseShader.filterMatrixB;
@@ -613,15 +619,59 @@ class RenderContext extends h3d.impl.RenderContext {
 			h = ry2 - ry1;
 		}
 
-		engine.setRenderZone(
-			Std.int(x * scaleX + (scene.viewportX+1) * (engine.width / 2) + 1e-10),
-			Std.int(y * scaleY + (scene.viewportY+1) * (engine.height / 2) + 1e-10),
-			Std.int(w * scaleX + 1e-10),
-			Std.int(h * scaleY + 1e-10)
-		);
+		// Map the (filter-transformed) render zone to pixels of the CURRENT render target via the CURRENT
+		// viewport, instead of always assuming the scene/screen viewport. view* equals scene.viewport* at the
+		// top level (begin()) and the target dims are engine.width/height there, so a non-filtered render zone
+		// is mapped exactly as before (same expression, viewB/viewC == 0). When a zone is set while rendering
+		// into a filter target (h2d.filter.Mask), the active target is the filter texture sized to the
+		// content bounds — its own viewport/size apply, not the scene's. Under a non-identity scale mode
+		// (Scene.ScaleMode where scene.viewportA != 2/engine.width) the old code scaled/offset a TextInput's
+		// absolute-coord clip by the scene scale rather than the target's, landing it off the glyphs and
+		// clipping them all away (a text input inside a scrolled/clipped container rendered no text). Using
+		// viewA*targetW/2 makes the scale 1 for the filter texture and viewX/viewY carry the target-origin
+		// (content bounds top-left) offset. The GL scissor is not Y-flipped for a texture target and the
+		// content is stored flipped in it, so the same top-down formula is correct there too.
+		var targetW = curTarget == null ? engine.width : curTarget.width;
+		var targetH = curTarget == null ? engine.height : curTarget.height;
+		var halfW = targetW / 2;
+		var halfH = targetH / 2;
+		if( viewB == 0 && viewC == 0 && viewA > 0 && viewD > 0 ) {
+			// Axis-aligned, non-flipped viewport — the screen top level, a filter texture target, and a pan/zoom
+			// camera all set viewB == viewC == 0 with positive scales. Direct per-axis map; identical expression
+			// to the original, so the non-filtered screen path is byte-identical.
+			var scaleX = viewA * halfW;
+			var scaleY = viewD * halfH;
+			engine.setRenderZone(
+				Std.int(x * scaleX + (viewX + 1) * halfW + 1e-10),
+				Std.int(y * scaleY + (viewY + 1) * halfH + 1e-10),
+				Std.int(w * scaleX + 1e-10),
+				Std.int(h * scaleY + 1e-10)
+			);
+		} else {
+			// A rotating/shearing camera makes viewB/viewC != 0; a flipping one makes viewA/viewD < 0 (which the
+			// per-axis map would turn into a negative scissor width/height). A GPU scissor is always axis-aligned,
+			// so clip to the pixel-space bounding box of the zone's four transformed corners — min/max keeps the
+			// extents non-negative and the zone no longer collapses at 90°.
+			inline function px( lx : Float, ly : Float ) return (lx * viewA + ly * viewC + viewX + 1) * halfW;
+			inline function py( lx : Float, ly : Float ) return (lx * viewB + ly * viewD + viewY + 1) * halfH;
+			var x2 = x + w, y2 = y + h;
+			var ax = px(x, y), bx = px(x2, y), cx = px(x, y2), dx = px(x2, y2);
+			var ay = py(x, y), by = py(x2, y), cy = py(x, y2), dy = py(x2, y2);
+			var minX = Math.min(Math.min(ax, bx), Math.min(cx, dx));
+			var maxX = Math.max(Math.max(ax, bx), Math.max(cx, dx));
+			var minY = Math.min(Math.min(ay, by), Math.min(cy, dy));
+			var maxY = Math.max(Math.max(ay, by), Math.max(cy, dy));
+			engine.setRenderZone(
+				Std.int(minX + 1e-10),
+				Std.int(minY + 1e-10),
+				Std.int(maxX - minX + 1e-10),
+				Std.int(maxY - minY + 1e-10)
+			);
+		}
 	}
 
 	inline function clearRZ() {
+		flush();
 		hasRenderZone = false;
 		engine.setRenderZone();
 	}
@@ -854,7 +904,7 @@ class RenderContext extends h3d.impl.RenderContext {
 			return false;
 
 		var stride = 8;
-		if( hasBuffering() && currentObj != null && (texture != this.texture || stride != this.stride || obj.blendMode != currentObj.blendMode || obj.filter != currentObj.filter) )
+		if( hasBuffering() && currentObj != null && (texture != this.texture || stride != this.stride || obj.blendMode != currentObj.blendMode || obj.filter != currentObj.filter || obj.smooth != currentObj.smooth) )
 			flush();
 		var shaderChanged = needInitShaders, paramsChanged = false;
 		var objShaders = obj.shaders;

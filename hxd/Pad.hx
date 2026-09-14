@@ -462,7 +462,7 @@ class Pad {
 	}
 
 	private static function onEvent( e : Event ){
-		var p = pads.get( e.controller );
+		var p = pads.get( e.controller ) ?? pads.get(0);
 		switch( e.type ){
 			case GamepadAdded:
 				if( initDone )

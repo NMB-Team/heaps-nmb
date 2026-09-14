@@ -7,7 +7,7 @@ enum abstract FillMode(Int) {
 	var RAYCAST_FILL = 2;
 }
 
-@:hlNative("heaps", "vhacd_")
+@:hlNative("?heaps", "vhacd_")
 abstract Instance(hl.Abstract<"vhacd">) {
 	public function clean() {}
 
@@ -95,7 +95,7 @@ class VHACD {
 		instance = null;
 	}
 
-	@:hlNative("heaps", "create_vhacd")
+	@:hlNative("?heaps", "create_vhacd")
 	static function createVhacd() : Instance {
 		return null;
 	}

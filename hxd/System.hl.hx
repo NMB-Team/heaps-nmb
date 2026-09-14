@@ -124,7 +124,7 @@ class System {
 
 	static function renderFrame() {
 		// present
-		var cur = h3d.Engine.getCurrent();
+		final cur = h3d.Engine.getCurrent();
 		if( cur != null && cur.ready ) {
 			#if hl_profile
 			hl.Profile.event(-1); // pause

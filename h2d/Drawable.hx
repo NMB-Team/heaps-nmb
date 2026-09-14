@@ -49,7 +49,7 @@ class Drawable extends Object {
 		Create a new Drawable instance with given parent.
 		@param parent An optional parent `h2d.Object` instance to which Drawable adds itself if set.
 	**/
-	function new(parent : h2d.Object) {
+	function new(?parent : h2d.Object) {
 		super(parent);
 		color = new h3d.Vector4(1, 1, 1, 1);
 	}

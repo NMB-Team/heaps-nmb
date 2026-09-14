@@ -18,6 +18,7 @@ import hxd.Math;
 	But it should be noted that in order to ensure up-to-date values, it's advised to call `Object.syncPos` before accessing them.
 **/
 @:allow(h2d.Tools)
+@:access(h2d.filter.Group)
 class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #end {
 
 	static var nullDrawable : h2d.Drawable;
@@ -71,6 +72,12 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 	public var rotation(default, set) : Float = 0;
 
 	/**
+		The amount of horizontal and vertical scaling of this object, in one point.
+		Setting `scaleX` and `scaleY` will also work fine, and will modify this value as well.
+	 */
+	public var totalScale(default, null) : h2d.col.Point = new h2d.col.Point(1, 1); // TODO: find a better name for this?? totalScale seems off to me idk
+
+	/**
 		Is the object and its children are displayed on screen.
 	**/
 	public var visible(default, set) : Bool = true;
@@ -86,6 +93,13 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 		When set, `Object.alpha` value affects both filter and object transparency (use `Drawable.color.a` to set transparency only for the object).
 	**/
 	public var filter(default,set) : h2d.filter.Filter;
+
+	/**
+		The post process filters for this object.
+		Equivelent to `Object.filter = new h2d.filter.Group([f1, f2])`
+		When set, `Object.alpha` value affects both filter and object transparency (use `Drawable.color.a` to set transparency only for the object).
+	**/
+	public var filters(get,set) : Array<h2d.filter.Filter>;
 
 	/**
 		The blending mode of the object.
@@ -164,7 +178,7 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 		the full glyphs size whereas `getSize` will ignore the pixels under the baseline.
 		@param out An optional bounds instance to fill. Allocates new Bounds instance and returns it if not set.
 	**/
-	public final function getSize( ?out : h2d.col.Bounds ) : h2d.col.Bounds {
+	public function getSize( ?out : h2d.col.Bounds ) : h2d.col.Bounds {
 		if( out == null ) out = new h2d.col.Bounds() else out.empty();
 		syncPos();
 		getBoundsRec(parent, out, true);
@@ -230,6 +244,35 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 		for( o in children )
 			o.findAll(f,arr);
 		return arr;
+	}
+
+	function get_filters() : Array<h2d.filter.Filter> {
+		if( filter == null )
+			return [];
+
+		if( filter != null && Std.isOfType(filter, h2d.filter.Group) ) {
+			var group : h2d.filter.Group = cast filter;
+			return group.filters;
+		}
+		return [filter];
+	}
+
+	function set_filters(f : Array<h2d.filter.Filter>) {
+		if( f == null )
+			f = [];
+
+		if( f.length > 1 ) {
+			if( filter != null && Std.isOfType(filter, h2d.filter.Group) ) {
+				var group : h2d.filter.Group = cast filter;
+				return group.filters = f;
+			}
+			else {
+				filter = new h2d.filter.Group(f);
+				return f;
+			}
+		}
+		filter = f[0];
+		return f;
 	}
 
 	function set_filter(f : h2d.filter.Filter) {
@@ -598,6 +641,12 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 	**/
 	@:dox(show)
 	function sync( ctx : RenderContext ) {
+		if( totalScale.x != scaleX || totalScale.y != scaleY ) {
+			@:bypassAccessor scaleX = totalScale.x;
+			@:bypassAccessor scaleY = totalScale.y;
+			posChanged = true;
+		}
+
 		var changed = posChanged;
 		if( changed ) {
 			calcAbsPos();
@@ -1004,11 +1053,13 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 
 	inline function set_scaleX(v) {
 		posChanged = true;
+		totalScale.x = v;
 		return scaleX = v;
 	}
 
 	inline function set_scaleY(v) {
 		posChanged = true;
+		totalScale.y = v;
 		return scaleY = v;
 	}
 
@@ -1128,5 +1179,25 @@ class Object #if (domkit && !domkit_heaps) implements domkit.Model<h2d.Object> #
 	function constraintSize( maxWidth : Float, maxHeight : Float ) {
 	}
 
-}
+	public function clone(?o:Object):Object
+	{
+		if( o == null ) o = new Object();
+		#if debug
+		if( Type.getClass(o) != Type.getClass(this) ) throw this + " is missing clone()";
+		#end
+		o.x = x;
+		o.y = y;
+		o.scaleX = scaleX;
+		o.scaleY = scaleY;
+		o.rotation = rotation;
+		o.name = name;
+		o.visible = visible;
+		for( c in children ) {
+			var c = c.clone();
+			c.parent = o;
+			o.children.push(c);
+		}
+		return o;
+	}
 
+}

@@ -21,7 +21,7 @@ class Mikktspace {
 	}
 
 	#if (hl_ver >= version("1.15.0"))
-	@:hlNative("heaps", "compute_mikkt_tangents")
+	@:hlNative("?heaps", "compute_mikkt_tangents")
 	#else
 	@:hlNative("fmt", "compute_mikkt_tangents")
 	#end

@@ -116,6 +116,12 @@ class Text extends Drawable {
 		Without it, a word longer than `maxWidth` overflows the text bounds.
 	**/
 	public var wordBreak(default,set) : Bool = false;
+	/**
+		If not null, represents current text selection range.
+	**/
+	public var selectionRange:{start:Int, length:Int};
+	public var selectionColor: h3d.Vector4;
+	var _textColorVec: h3d.Vector4;
 
 	var glyphs : TileGroup;
 	var needsRebuild : Bool;
@@ -146,7 +152,10 @@ class Text extends Drawable {
 		textAlign = Left;
 		text = "";
 		currentText = "";
+		_textColorVec = new h3d.Vector4(1, 1, 1, 1);
 		textColor = 0xFFFFFF;
+		this.color = new h3d.Vector4(1, 1, 1, 1);
+		selectionColor = new h3d.Vector4(1, 1, 1, 1);
 	}
 
 	function resolveFont(font:Font) {
@@ -274,7 +283,13 @@ class Text extends Drawable {
 			absY = oldY;
 			color.set(oldR, oldG, oldB, oldA);
 		}
+		var oldR = color.r;
+		var oldG = color.g;
+		var oldB = color.b;
+		var oldA = color.a;
+		color.set(1, 1, 1, _textColorVec.a);
 		glyphs.drawWith(ctx,this);
+		color.set(oldR, oldG, oldB, oldA);
 	}
 
 	function set_text(t : String) {
@@ -478,7 +493,12 @@ class Text extends Drawable {
 				prevChar = -1;
 			} else {
 				if( e != null ) {
-					if( rebuild ) glyphs.add(x + offs, y, e.t);
+					if( rebuild ) {
+						if (selectionRange != null && selectionRange.start <= i && i < selectionRange.start + selectionRange.length)
+							glyphs.addColor(x + offs, y, selectionColor.r, selectionColor.g, selectionColor.b, selectionColor.a, e.t);
+						else
+							glyphs.addColor(x + offs, y, _textColorVec.r, _textColorVec.g, _textColorVec.b, _textColorVec.a, e.t);// glyphs.add(x + offs, y, e.t);
+					}
 					if( y == 0 && e.t.dy < yMin ) yMin = e.t.dy;
 					var ty = y + e.t.dy + e.t.height;
 					if( ty > yMax ) yMax = ty;
@@ -536,8 +556,9 @@ class Text extends Drawable {
 		if( this.textColor == c ) return c;
 		this.textColor = c;
 		var a = color.w;
-		color.setColor(c);
-		color.w = a;
+		this._textColorVec.setColor(c);
+		this._textColorVec.w = a;
+		rebuild();
 		return c;
 	}
 

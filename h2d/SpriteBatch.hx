@@ -235,6 +235,8 @@ class BasicElement extends BatchElement {
 **/
 class SpriteBatch extends Drawable {
 
+	public static var bufferLoads:Int = 0;
+
 	/**
 		The Tile used as a base Texture to draw contents with.
 	**/
@@ -262,7 +264,7 @@ class SpriteBatch extends Drawable {
 	var first : BatchElement;
 	var last : BatchElement;
 	var tmpBuf : hxd.FloatBuffer;
-	var buffer : h3d.Buffer;
+	var buffer : Null<h3d.Buffer>;
 	var state : BatchDrawState;
 	var empty : Bool;
 
@@ -587,8 +589,10 @@ class SpriteBatch extends Drawable {
 			buffer = null;
 		}
 		empty = bufferVertices == 0;
-		if( bufferVertices > 0 )
-			buffer = h3d.Buffer.ofSubFloats(tmpBuf, bufferVertices, hxd.BufferFormat.H2D, [Dynamic]);
+		if( bufferVertices > 0 ) {
+			buffer = hxd.impl.Allocator.get().ofSubFloats(tmpBuf, bufferVertices, hxd.BufferFormat.H2D, Dynamic);
+			bufferLoads += 1;
+		}
 	}
 
 	override function draw( ctx : RenderContext ) {

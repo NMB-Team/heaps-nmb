@@ -89,6 +89,13 @@ class Camera {
 		Makes camera to follow the referenced Object position.
 	**/
 	public var follow : h2d.Object;
+
+	/**
+		How fast the camera should follow it's target.
+		0 means not moving, 1 means instant snapping.
+	**/
+	public var followSpeed(default,set) : Float = 1;
+
 	/**
 		Enables `h2d.Object.rotation` sync between `Camera.follow` object and Camera.
 	**/
@@ -211,10 +218,22 @@ class Camera {
 	{
 		if (scene == null) return;
 
-		if ( follow != null ) {
-			this.x = follow.absX;
-			this.y = follow.absY;
-			if ( followRotation ) this.rotation = -follow.rotation;
+		if ( follow != null && followSpeed > 0 ) {
+			if ( followSpeed >= 1 ) {
+				this.x = follow.absX;
+				this.y = follow.absY;
+				if ( followRotation ) this.rotation = -follow.rotation;
+			} else {
+				this.x = hxd.Math.lerpTime(this.x, follow.absX, followSpeed, ctx.elapsedTime);
+				this.y = hxd.Math.lerpTime(this.y, follow.absY, followSpeed, ctx.elapsedTime);
+				if ( followRotation ) this.rotation = hxd.Math.lerpTime(this.rotation, -follow.rotation, followSpeed, ctx.elapsedTime);
+
+				if( Math.abs(this.x - follow.absX) <= 0.001 ) this.x = follow.absX;
+				if( Math.abs(this.y - follow.absY) <= 0.001 ) this.y = follow.absY;
+
+				if( followRotation && Math.abs(this.rotation - -follow.rotation) <= 0.001 )
+					this.rotation = -follow.rotation;
+			}
 		}
 		if ( posChanged || force ) {
 			if ( rotation == 0 ) {
@@ -525,6 +544,10 @@ class Camera {
 	inline function set_anchorY( v ) {
 		posChanged = true;
 		return anchorY = v;
+	}
+
+	inline function set_followSpeed( v ) {
+		return followSpeed = hxd.Math.clamp(v, 0, 1);
 	}
 
 }

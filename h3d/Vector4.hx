@@ -6,10 +6,10 @@ using hxd.Math;
 **/
 class Vector4Impl /*#if apicheck implements h2d.impl.PointApi<Vector4,Matrix> #end*/ {
 
-	public var x : Float;
-	public var y : Float;
-	public var z : Float;
-	public var w : Float;
+	public var x : Float = 0;
+	public var y : Float = 0;
+	public var z : Float = 0;
+	public var w : Float = 0;
 
 	// -- gen api
 

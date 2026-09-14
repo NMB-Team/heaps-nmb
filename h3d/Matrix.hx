@@ -13,22 +13,22 @@ class MatrixImpl {
 
 	static var tmp = new Matrix();
 
-	public var _11 : Float;
-	public var _12 : Float;
-	public var _13 : Float;
-	public var _14 : Float;
-	public var _21 : Float;
-	public var _22 : Float;
-	public var _23 : Float;
-	public var _24 : Float;
-	public var _31 : Float;
-	public var _32 : Float;
-	public var _33 : Float;
-	public var _34 : Float;
-	public var _41 : Float;
-	public var _42 : Float;
-	public var _43 : Float;
-	public var _44 : Float;
+	public var _11 : Float = 0;
+	public var _12 : Float = 0;
+	public var _13 : Float = 0;
+	public var _14 : Float = 0;
+	public var _21 : Float = 0;
+	public var _22 : Float = 0;
+	public var _23 : Float = 0;
+	public var _24 : Float = 0;
+	public var _31 : Float = 0;
+	public var _32 : Float = 0;
+	public var _33 : Float = 0;
+	public var _34 : Float = 0;
+	public var _41 : Float = 0;
+	public var _42 : Float = 0;
+	public var _43 : Float = 0;
+	public var _44 : Float = 0;
 
 	public var tx(get, set) : Float;
 	public var ty(get, set) : Float;
@@ -44,28 +44,28 @@ class MatrixImpl {
 	inline function set_ty(v) return _42 = v;
 	inline function set_tz(v) return _43 = v;
 
-	public function equal( other : Matrix ) {
+	public inline function equal( other : Matrix ) {
 		return	_11 == other._11 && _12 == other._12 && _13 == other._13 && _14 == other._14
 			&& 	_21 == other._21 && _22 == other._22 && _23 == other._23 && _24 == other._24
 			&& 	_31 == other._31 && _32 == other._32 && _33 == other._33 && _34 == other._34
 			&& 	_41 == other._41 && _42 == other._42 && _43 == other._43 && _44 == other._44;
 	}
 
-	public function zero() {
+	public inline function zero() {
 		_11 = 0.0; _12 = 0.0; _13 = 0.0; _14 = 0.0;
 		_21 = 0.0; _22 = 0.0; _23 = 0.0; _24 = 0.0;
 		_31 = 0.0; _32 = 0.0; _33 = 0.0; _34 = 0.0;
 		_41 = 0.0; _42 = 0.0; _43 = 0.0; _44 = 0.0;
 	}
 
-	public function identity() {
+	public inline function identity() {
 		_11 = 1.0; _12 = 0.0; _13 = 0.0; _14 = 0.0;
 		_21 = 0.0; _22 = 1.0; _23 = 0.0; _24 = 0.0;
 		_31 = 0.0; _32 = 0.0; _33 = 1.0; _34 = 0.0;
 		_41 = 0.0; _42 = 0.0; _43 = 0.0; _44 = 1.0;
 	}
 
-	public function isIdentity() {
+	public inline function isIdentity() {
 		if( _41 != 0 || _42 != 0 || _43 != 0 )
 			return false;
 		if( _11 != 1 || _22 != 1 || _33 != 1 )
@@ -79,7 +79,7 @@ class MatrixImpl {
 		return _44 == 1;
 	}
 
-	public function isIdentityEpsilon( e : Float ) {
+	public inline function isIdentityEpsilon( e : Float ) {
 		if( Math.abs(_41) > e || Math.abs(_42) > e || Math.abs(_43) > e )
 			return false;
 		if( Math.abs(_11-1) > e || Math.abs(_22-1) > e || Math.abs(_33-1) > e )
@@ -93,7 +93,7 @@ class MatrixImpl {
 		return Math.abs(_44 - 1) <= e;
 	}
 
-	public function initRotationX( a : Float ) {
+	public inline function initRotationX( a : Float ) {
 		var cos = Math.cos(a);
 		var sin = Math.sin(a);
 		_11 = 1.0; _12 = 0.0; _13 = 0.0; _14 = 0.0;
@@ -102,7 +102,7 @@ class MatrixImpl {
 		_41 = 0.0; _42 = 0.0; _43 = 0.0; _44 = 1.0;
 	}
 
-	public function initRotationY( a : Float ) {
+	public inline function initRotationY( a : Float ) {
 		var cos = Math.cos(a);
 		var sin = Math.sin(a);
 		_11 = cos; _12 = 0.0; _13 = -sin; _14 = 0.0;
@@ -111,7 +111,7 @@ class MatrixImpl {
 		_41 = 0.0; _42 = 0.0; _43 = 0.0; _44 = 1.0;
 	}
 
-	public function initRotationZ( a : Float ) {
+	public inline function initRotationZ( a : Float ) {
 		var cos = Math.cos(a);
 		var sin = Math.sin(a);
 		_11 = cos; _12 = sin; _13 = 0.0; _14 = 0.0;
@@ -120,14 +120,14 @@ class MatrixImpl {
 		_41 = 0.0; _42 = 0.0; _43 = 0.0; _44 = 1.0;
 	}
 
-	public function initTranslation( x = 0., y = 0., z = 0. ) {
+	public inline function initTranslation( x = 0., y = 0., z = 0. ) {
 		_11 = 1.0; _12 = 0.0; _13 = 0.0; _14 = 0.0;
 		_21 = 0.0; _22 = 1.0; _23 = 0.0; _24 = 0.0;
 		_31 = 0.0; _32 = 0.0; _33 = 1.0; _34 = 0.0;
 		_41 = x; _42 = y; _43 = z; _44 = 1.0;
 	}
 
-	public function initScale( x = 1., y = 1., z = 1. ) {
+	public inline function initScale( x = 1., y = 1., z = 1. ) {
 		_11 = x; _12 = 0.0; _13 = 0.0; _14 = 0.0;
 		_21 = 0.0; _22 = y; _23 = 0.0; _24 = 0.0;
 		_31 = 0.0; _32 = 0.0; _33 = z; _34 = 0.0;
@@ -159,7 +159,7 @@ class MatrixImpl {
 		_41 = 0.; _42 = 0.; _43 = 0.; _44 = 1.;
 	}
 
-	public function initRotation( x : Float, y : Float, z : Float ) {
+	public inline function initRotation( x : Float, y : Float, z : Float ) {
 		var cx = Math.cos(x);
 		var sx = Math.sin(x);
 		var cy = Math.cos(y);
@@ -186,7 +186,7 @@ class MatrixImpl {
 		_44 = 1;
 	}
 
-	public function translate( x = 0., y = 0., z = 0. ) {
+	public inline function translate( x = 0., y = 0., z = 0. ) {
 		_11 += x * _14;
 		_12 += y * _14;
 		_13 += z * _14;
@@ -201,7 +201,7 @@ class MatrixImpl {
 		_43 += z * _44;
 	}
 
-	public function scale( x = 1., y = 1., z = 1. ) {
+	public inline function scale( x = 1., y = 1., z = 1. ) {
 		_11 *= x;
 		_21 *= x;
 		_31 *= x;
@@ -216,13 +216,13 @@ class MatrixImpl {
 		_43 *= z;
 	}
 
-	public function rotate( x, y, z ) {
+	public inline function rotate( x, y, z ) {
 		var tmp = tmp;
 		tmp.initRotation(x,y,z);
 		multiply(this, tmp);
 	}
 
-	public function rotateAxis( axis, angle ) {
+	public inline function rotateAxis( axis, angle ) {
 		var tmp = tmp;
 		tmp.initRotationAxis(axis, angle);
 		multiply(this, tmp);
@@ -240,7 +240,7 @@ class MatrixImpl {
 		_43 = v.z;
 	}
 
-	public function prependTranslation( x = 0., y = 0., z = 0. ) {
+	public inline function prependTranslation( x = 0., y = 0., z = 0. ) {
 		var vx = _11 * x + _21 * y + _31 * z + _41;
 		var vy = _12 * x + _22 * y + _32 * z + _42;
 		var vz = _13 * x + _23 * y + _33 * z + _43;
@@ -264,19 +264,19 @@ class MatrixImpl {
 		return v;
 	}
 
-	public function prependRotation( x, y, z ) {
+	public inline function prependRotation( x, y, z ) {
 		var tmp = tmp;
 		tmp.initRotation(x,y,z);
 		multiply(tmp, this);
 	}
 
-	public function prependRotationAxis( axis, angle ) {
+	public inline function prependRotationAxis( axis, angle ) {
 		var tmp = tmp;
 		tmp.initRotationAxis(axis, angle);
 		multiply(tmp, this);
 	}
 
-	public function prependScale( sx = 1., sy = 1., sz = 1. ) {
+	public inline function prependScale( sx = 1., sy = 1., sz = 1. ) {
 		var tmp = tmp;
 		tmp.initScale(sx,sy,sz);
 		multiply(tmp, this);
@@ -343,7 +343,7 @@ class MatrixImpl {
 		_44 = 1;
 	}
 
-	public function multiply( a : Matrix, b : Matrix ) {
+	public inline function multiply( a : Matrix, b : Matrix ) {
 		var a11 = a._11; var a12 = a._12; var a13 = a._13; var a14 = a._14;
 		var a21 = a._21; var a22 = a._22; var a23 = a._23; var a24 = a._24;
 		var a31 = a._31; var a32 = a._32; var a33 = a._33; var a34 = a._34;
@@ -374,7 +374,7 @@ class MatrixImpl {
 		_44 = a41 * b14 + a42 * b24 + a43 * b34 + a44 * b44;
 	}
 
-	public function multiplyValue( v : Float ) {
+	public inline function multiplyValue( v : Float ) {
 		_11 *= v;
 		_12 *= v;
 		_13 *= v;
@@ -397,7 +397,7 @@ class MatrixImpl {
 		initInverse(this);
 	}
 
-	public function getInverse( ?m : h3d.Matrix ) {
+	public inline function getInverse( ?m : h3d.Matrix ) {
 		if( m == null ) m = new h3d.Matrix();
 		m.initInverse(this);
 		return m;
@@ -407,7 +407,7 @@ class MatrixImpl {
 		return _11 * (_22*_33 - _23*_32) + _12 * (_23*_31 - _21*_33) + _13 * (_21*_32 - _22*_31);
 	}
 
-	public function inverse3x4( m : Matrix ) {
+	public inline function inverse3x4( m : Matrix ) {
 		var m11 = m._11, m12 = m._12, m13 = m._13;
 		var m21 = m._21, m22 = m._22, m23 = m._23;
 		var m31 = m._31, m32 = m._32, m33 = m._33;
@@ -441,7 +441,7 @@ class MatrixImpl {
 		_41 *= invDet; _42 *= invDet; _43 *= invDet;
 	}
 
-	public function initInverse( m : Matrix ) {
+	public inline function initInverse( m : Matrix ) {
 		var m11 = m._11; var m12 = m._12; var m13 = m._13; var m14 = m._14;
 		var m21 = m._21; var m22 = m._22; var m23 = m._23; var m24 = m._24;
 		var m31 = m._31; var m32 = m._32; var m33 = m._33; var m34 = m._34;
@@ -490,7 +490,7 @@ class MatrixImpl {
 	}
 
 
-	public function initInverse3x3( m : Matrix ) {
+	public inline function initInverse3x3( m : Matrix ) {
 		var m11 = m._11; var m12 = m._12; var m13 = m._13;
 		var m21 = m._21; var m22 = m._22; var m23 = m._23;
 		var m31 = m._31; var m32 = m._32; var m33 = m._33;
@@ -548,7 +548,7 @@ class MatrixImpl {
         return v;
     }
 
-	public function transpose() {
+	public inline function transpose() {
 		var tmp;
 		tmp = _12; _12 = _21; _21 = tmp;
 		tmp = _13; _13 = _31; _31 = tmp;
@@ -558,7 +558,7 @@ class MatrixImpl {
 		tmp = _34; _34 = _43; _43 = tmp;
 	}
 
-	public function clone() {
+	public inline function clone() {
 		var m = new Matrix();
 		m._11 = _11; m._12 = _12; m._13 = _13; m._14 = _14;
 		m._21 = _21; m._22 = _22; m._23 = _23; m._24 = _24;
@@ -567,25 +567,25 @@ class MatrixImpl {
 		return m;
 	}
 
-	public function load( m : Matrix ) {
+	public inline function load( m : Matrix ) {
 		_11 = m._11; _12 = m._12; _13 = m._13; _14 = m._14;
 		_21 = m._21; _22 = m._22; _23 = m._23; _24 = m._24;
 		_31 = m._31; _32 = m._32; _33 = m._33; _34 = m._34;
 		_41 = m._41; _42 = m._42; _43 = m._43; _44 = m._44;
 	}
 
-	public function loadValues( a : Array<Float> ) {
+	public inline function loadValues( a : Array<Float> ) {
 		_11 = a[0]; _12 = a[1]; _13 = a[2]; _14 = a[3];
 		_21 = a[4]; _22 = a[5]; _23 = a[6]; _24 = a[7];
 		_31 = a[8]; _32 = a[9]; _33 = a[10]; _34 = a[11];
 		_41 = a[12]; _42 = a[13]; _43 = a[14]; _44 = a[15];
 	}
 
-	public function getFloats() {
+	public inline function getFloats() {
 		return [_11, _12, _13, _14, _21, _22, _23, _24, _31, _32, _33, _34, _41, _42, _43, _44];
 	}
 
-	public function getDirection() {
+	public inline function getDirection() {
 		var q = new h3d.Quat();
 		q.initRotateMatrix(this);
 		q.normalize();
@@ -595,7 +595,7 @@ class MatrixImpl {
 	/**
 		Extracts Euler rotation angles from rotation matrix
 	**/
-	public function getEulerAngles() {
+	public inline function getEulerAngles() {
 		var m = this.clone();
 		var s = this.getScale();
 		m.prependScale(1.0 / s.x, 1.0 / s.y, 1.0 / s.z);
@@ -637,7 +637,7 @@ class MatrixImpl {
 	static inline var lumB = 0.072169;
 
 	static inline var SQ13 = 0.57735026918962576450914878050196; // sqrt(1/3)
-	public function colorHue( hue : Float ) {
+	public inline function colorHue( hue : Float ) {
 		if( hue == 0. )
 			return;
 
@@ -663,7 +663,7 @@ class MatrixImpl {
 		multiply3x4(this, tmp);
 	}
 
-	public function colorSaturate( sat : Float ) {
+	public inline function colorSaturate( sat : Float ) {
 		sat += 1;
 		var ins = 1 - sat;
 		var r = ins * lumR;
@@ -685,7 +685,7 @@ class MatrixImpl {
 		multiply3x4(this, tmp);
 	}
 
-	public function colorContrast( contrast : Float ) {
+	public inline function colorContrast( contrast : Float ) {
 		var tmp = tmp;
 		var v = contrast + 1;
 		tmp._11 = v;
@@ -703,13 +703,13 @@ class MatrixImpl {
 		multiply3x4(this, tmp);
 	}
 
-	public function colorLightness( lightness : Float ) {
+	public inline function colorLightness( lightness : Float ) {
 		_41 += lightness;
 		_42 += lightness;
 		_43 += lightness;
 	}
 
-	public function colorGain( color : Int, alpha : Float ) {
+	public inline function colorGain( color : Int, alpha : Float ) {
 		var tmp = tmp;
 		tmp._11 = 1 - alpha;
 		tmp._12 = 0;
@@ -727,7 +727,7 @@ class MatrixImpl {
 	}
 
 
-	public function colorBits( bits : Int, blend : Float ) {
+	public inline function colorBits( bits : Int, blend : Float ) {
 		var t11 = 0., t12 = 0., t13 = 0.;
 		var t21 = 0., t22 = 0., t23 = 0.;
 		var t31 = 0., t32 = 0., t33 = 0.;
@@ -886,31 +886,31 @@ class MatrixImpl {
 
 	// STATICS
 
-	public static function I() {
+	public static inline function I() {
 		var m = new Matrix();
 		m.identity();
 		return m;
 	}
 
-	public static function L( a : Array<Float> ) {
+	public static inline function L( a : Array<Float> ) {
 		var m = new Matrix();
 		m.loadValues(a);
 		return m;
 	}
 
-	public static function T( x = 0., y = 0., z = 0. ) {
+	public static inline function T( x = 0., y = 0., z = 0. ) {
 		var m = new Matrix();
 		m.initTranslation(x, y, z);
 		return m;
 	}
 
-	public static function R(x,y,z) {
+	public static inline function R(x,y,z) {
 		var m = new Matrix();
 		m.initRotation(x,y,z);
 		return m;
 	}
 
-	public static function S( x = 1., y = 1., z = 1.0 ) {
+	public static inline function S( x = 1., y = 1., z = 1.0 ) {
 		var m = new Matrix();
 		m.initScale(x, y, z);
 		return m;
@@ -948,7 +948,7 @@ class MatrixImpl {
 		return m;
 	}
 
-	public static function lookAtX( dir : Vector, ?up : Vector, ?m : Matrix ) {
+	public static inline function lookAtX( dir : Vector, ?up : Vector, ?m : Matrix ) {
 		if( up == null ) up = new Vector(0, 0, 1);
 		if( m == null ) m = new Matrix();
 		return lookAtXInline(dir, up, m);

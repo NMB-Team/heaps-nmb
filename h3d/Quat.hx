@@ -4,10 +4,10 @@ using hxd.Math;
 @:noDebug
 class Quat {
 
-	public var x : Float;
-	public var y : Float;
-	public var z : Float;
-	public var w : Float;
+	public var x : Float = 0;
+	public var y : Float = 0;
+	public var z : Float = 0;
+	public var w : Float = 0;
 
 	public inline function new( x = 0., y = 0., z = 0., w = 1. ) {
 		this.x = x;
@@ -62,7 +62,7 @@ class Quat {
 		normalize();
 	}
 
-	public function initNormal( dir : h3d.col.Point, rotate : Float = 0.0 ) {
+	public inline function initNormal( dir : h3d.col.Point, rotate : Float = 0.0 ) {
 		var dir = dir.normalized();
 		if( dir.x*dir.x+dir.y*dir.y < Math.EPSILON2 )
 			initDirection(new h3d.Vector(1,0,0));
@@ -82,7 +82,7 @@ class Quat {
 		}
 	}
 
-	public function initDirection( dir : Vector, ?up : Vector ) {
+	public inline function initDirection( dir : Vector, ?up : Vector ) {
 		// inlined version of initRotationMatrix(Matrix.lookAtX(dir))
 		var ax = dir.clone().normalized();
 		var ay = new Vector(-ax.y, ax.x, 0);
@@ -127,7 +127,7 @@ class Quat {
 		}
 	}
 
-	public function initRotateAxis( x : Float, y : Float, z : Float, a : Float ) {
+	public inline function initRotateAxis( x : Float, y : Float, z : Float, a : Float ) {
 		var sin = (a / 2).sin();
 		var cos = (a / 2).cos();
 		this.x = x * sin;
@@ -137,7 +137,7 @@ class Quat {
 		normalize();
 	}
 
-	public function initRotateMatrix( m : Matrix ) {
+	public inline function initRotateMatrix( m : Matrix ) {
 		var tr = m._11 + m._22 + m._33;
 		if( tr > 0 ) {
 			var s = (tr + 1.0).sqrt() * 2;
@@ -170,7 +170,7 @@ class Quat {
 		}
 	}
 
-	public function normalize() {
+	public inline function normalize() {
 		var len = x * x + y * y + z * z + w * w;
 		if( len < hxd.Math.EPSILON2 ) {
 			x = y = z = 0;
@@ -184,7 +184,7 @@ class Quat {
 		}
 	}
 
-	public function initRotation( ax : Float, ay : Float, az : Float ) {
+	public inline function initRotation( ax : Float, ay : Float, az : Float ) {
 		var sinX = ( ax * 0.5 ).sin();
 		var cosX = ( ax * 0.5 ).cos();
 		var sinY = ( ay * 0.5 ).sin();
@@ -199,7 +199,7 @@ class Quat {
 		w = cosX * cosYZ + sinX * sinYZ;
 	}
 
-	public function multiply( q1 : Quat, q2 : Quat ) {
+	public inline function multiply( q1 : Quat, q2 : Quat ) {
 		var x2 = q1.x * q2.w + q1.w * q2.x + q1.y * q2.z - q1.z * q2.y;
 		var y2 = q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x;
 		var z2 = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w;
@@ -210,7 +210,7 @@ class Quat {
 		w = w2;
 	}
 
-	public function toEuler() {
+	public inline function toEuler() {
 		return toMatrix().getEulerAngles();
 	}
 
@@ -228,7 +228,7 @@ class Quat {
 		this.w = w;
 	}
 
-	public function slerp( q1 : Quat, q2 : Quat, v : Float ) {
+	public inline function slerp( q1 : Quat, q2 : Quat, v : Float ) {
 		// calc cosine
 		var cosom = q1.dot(q2);
 
@@ -320,11 +320,11 @@ class Quat {
 	public inline function getRightAxis() {
 		return new h3d.Vector(2 * ( x*y - z*w ), 1 - 2 * ( x*x + z*z ), 2 * ( y*z + x*w ));
 	}
-	
+
 	/**
 		Save to a Left-Handed matrix
 	**/
-	public function toMatrix( ?m : h3d.Matrix ) {
+	public inline function toMatrix( ?m : h3d.Matrix ) {
 		if( m == null ) m = new h3d.Matrix();
 		var xx = x * x;
 		var xy = x * y;
@@ -354,7 +354,7 @@ class Quat {
 		return m;
 	}
 
-	public function toString() {
+	public inline function toString() {
 		return '{${x.fmt()},${y.fmt()},${z.fmt()},${w.fmt()}}';
 	}
 

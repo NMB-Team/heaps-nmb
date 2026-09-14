@@ -26,7 +26,9 @@ enum DisplayMode {
 typedef Monitor = {
 	name : String,
 	width : Int,
-	height : Int
+	height : Int,
+	x : Int,
+	y : Int,
 }
 
 typedef DisplaySetting = {
@@ -53,8 +55,8 @@ class Window {
 	var closeRequested = false;
 
 	public var id : Int;
-	public var x(get, never) : Int;
-	public var y(get, never) : Int;
+	public var x(get, set) : Int;
+	public var y(get, set) : Int;
 	public var width(get, never) : Int;
 	public var height(get, never) : Int;
 	public var mouseX(get, never) : Int;
@@ -271,6 +273,19 @@ class Window {
 		#end
 	}
 
+	public function setMonitorIndex(idx: Int) : Void {
+		#if limen
+		var monitors = getMonitors();
+		if(idx < 0 || idx >= monitors.length) return;
+		var m = monitors[idx];
+		window.setPosition(
+			m.x + (m.width - windowWidth) >> 1,
+			m.y + (m.height - windowHeight) >> 1
+		);
+		monitor = idx;
+		#end
+	}
+
 	function get_x() : Int {
 		#if limen
 		return window.x;
@@ -285,6 +300,16 @@ class Window {
 		#else
 		return 0;
 		#end
+	}
+
+	function set_x(v: Int) : Int {
+		window.setPosition(v, window.y);
+		return v;
+	}
+
+	function set_y(v: Int) : Int {
+		window.setPosition(window.x, v);
+		return v;
 	}
 
 	function get_mouseX() : Int {
@@ -815,7 +840,7 @@ class Window {
 	#if (hl_ver >= version("1.12.0"))
 	public static function getMonitors() : Array<Monitor> {
 		#if limen
-		return [for(m in LPlatform.getDisplays()) { name: m.name, width: m.width, height: m.height}];
+		return [for(m in LPlatform.getDisplays()) { name: m.name, width: m.width, height: m.height, x: m.left, y: m.top}];
 		#else
 		return [];
 		#end

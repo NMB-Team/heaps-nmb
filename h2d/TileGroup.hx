@@ -708,7 +708,7 @@ class TileGroup extends Drawable {
 	**/
 	@:allow(h2d)
 	@:dox(show)
-	function drawWith( ctx:RenderContext, obj : Drawable ) {
+	public function drawWith( ctx:RenderContext, obj : Drawable ) {
 		var max = content.triCount();
 		if( max == 0 )
 			return;
