@@ -586,6 +586,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		tsFreq = directQueue.getTimestampFrequency();
 
 		compiler = new ShaderCompiler();
+
+		resize(window.width, window.height);
 	}
 
 	function initTextureResources() {
