@@ -1435,25 +1435,22 @@ class OpenGLDriver extends Driver {
 		gl.bindTexture(bind, t.t.t);
 		pixels.convert(t.format);
 		var dataLen = pixels.dataSize;
-		// S3TC needs this
-		var uw = (pixels.width + 3) & ~3;
-		var uh = (pixels.height + 3) & ~3;
 		#if hl
 		var stream = streamData(pixels.bytes.getData(),pixels.offset,dataLen);
 		if( t.format.match(S3TC(_)) ) {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				#if limen
-				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, uw, uh, 1, t.t.internalFmt, dataLen, stream);
+				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, t.t.internalFmt, dataLen, stream);
 				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
-				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, uw, uh, 0, dataLen, stream);
+				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, dataLen, stream);
 		} else {
 			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				#if limen
-				gl.texSubImage3D(face, mipLevel, 0, 0, side, uw, uh, 1, getChannels(t.t), t.t.pixelFmt, stream);
+				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, stream);
 				#else throw "TextureArray support requires limen 1.12+"; #end
 			else
-				gl.texImage2D(face, mipLevel, t.t.internalFmt, uw, uh, 0, getChannels(t.t), t.t.pixelFmt, stream);
+				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, stream);
 		}
 		#elseif js
 		#if hxnodejs
