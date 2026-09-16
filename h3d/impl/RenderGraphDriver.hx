@@ -31,6 +31,10 @@ class RenderGraphDriver extends Driver {
 		return d.isDisposed();
 	}
 
+	override function isFrameReady() {
+		return d.isFrameReady();
+	}
+
 	override function dispose() {
 		d.dispose();
 	}

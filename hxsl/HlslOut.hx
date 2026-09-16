@@ -122,7 +122,7 @@ class HlslOut {
 		m.set(IntBitsToFloat, "asfloat");
 		m.set(UintBitsToFloat, "_uintBitsToFloat");
 		m.set(RoundEven, "round");
-		m.set(GroupMemoryBarrier, "GroupMemoryBarrier");
+		m.set(GroupMemoryBarrier, "GroupMemoryBarrierWithGroupSync");
 		m.set(FindLSB, "firstbitlow");
 		m.set(FindMSB, "firstbithigh");
 		m.set(BitCount, "countbits");
@@ -1103,7 +1103,12 @@ class HlslOut {
 		for( v in s.vars )
 			if( v.kind == Local ) {
 				var isConst = v.qualifiers != null && v.qualifiers.indexOf(Final) >= 0;
-				add(STATIC);
+				var isShared = v.qualifiers != null && v.qualifiers.indexOf(Shared) >= 0;
+				if( isShared ) {
+					if( !isCompute ) throw "Workgroup-shared variables are only valid in compute shaders";
+					add("groupshared ");
+				} else
+					add(STATIC);
 				if( isConst )
 					add(CONST);
 				addVar(v);

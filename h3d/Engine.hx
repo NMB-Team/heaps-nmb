@@ -296,7 +296,7 @@ class Engine {
 	}
 
 	public function begin() {
-		if( driver.isDisposed() )
+		if( driver.isDisposed() || !driver.isFrameReady() )
 			return false;
 		// init
 		inRender = true;

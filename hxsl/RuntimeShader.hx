@@ -115,7 +115,7 @@ class RuntimeShader {
 	}
 
 	public inline function hasBindless() : Bool {
-		return vertex.hasBindless || (fragment != null && fragment.hasBindless);
+		return mode == Compute ? compute.hasBindless : vertex.hasBindless || (fragment != null && fragment.hasBindless);
 	}
 
 	public inline function hasGlobal( gid : Int ) {

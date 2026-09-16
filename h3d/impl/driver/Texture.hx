@@ -7,7 +7,7 @@ typedef Texture = { t : js.html.webgl.Texture, width : Int, height : Int, intern
 #elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))
 typedef Texture = Dynamic;
 #elseif (limen && gfx_vulkan)
-typedef Texture = { img : limen.graphics.vulkan.memory.Memory.VkImage, mem : limen.graphics.vulkan.memory.Memory.VkDeviceMemory, view : limen.graphics.vulkan.memory.Memory.VkImageView };
+typedef Texture = h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
 #elseif (limen && gfx_dx12)
 typedef Texture = h3d.impl.driver.dx12.resource.TextureData;
 #elseif (limen && gfx_dx11)
