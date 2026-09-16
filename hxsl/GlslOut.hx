@@ -1,6 +1,11 @@
 package hxsl;
 using hxsl.Ast;
 
+private typedef BindlessResolvedResource = {
+	var handle:TExpr;
+	var type:Type;
+}
+
 class GlslOut {
 
 	static var KWD_LIST = "attribute const uniform varying buffer shared
@@ -93,6 +98,8 @@ class GlslOut {
 	var allNames : Map<String, Int>;
 	var outIndexes : Map<Int, Int>;
 	var isCompute : Bool;
+	var bindlessSamplers : Map<String, BindlessResolvedResource>;
+	var bindlessBuffers : Map<String, BindlessResolvedResource>;
 
 	var isES(get,never) : Bool;
 	var isES2(get,never) : Bool;
@@ -108,6 +115,7 @@ class GlslOut {
 	public var glES : Null<Float>;
 	public var version : Null<Int>;
 	public var isVulkan : Bool;
+	public var vulkanLayout : VulkanGlslLayout;
 
 	/*
 		Intel HD driver fix:
@@ -216,6 +224,10 @@ class GlslOut {
 			throw "assert";
 		case TChannel(n):
 			add("channel" + n);
+		case TTextureHandle if( isVulkan ):
+			add("uvec2");
+		case TBufferHandle if( isVulkan ):
+			add("uint");
 		case TTextureHandle, TBufferHandle:
 			throw "assert";
 		}
@@ -319,6 +331,9 @@ class GlslOut {
 			if( isVertex ) throw "Can't use "+g+" in vertex shader";
 			if( isES && version < 300 )
 				decl("#extension GL_OES_standard_derivatives:enable");
+		case GroupMemoryBarrier:
+			decl("void _groupMemoryBarrier() { groupMemoryBarrier(); barrier(); }");
+			return "_groupMemoryBarrier";
 		case Pack:
 			decl("vec4 pack( float v ) { vec4 color = fract(v * vec4(1, 255, 255.*255., 255.*255.*255.)); return color - color.yzww * vec4(1. / 255., 1. / 255., 1. / 255., 0.); }");
 		case Unpack:
@@ -357,12 +372,12 @@ class GlslOut {
 			var sufix = "";
 			switch( args[0].t ) {
 			case TChannel(_):
-				decl("vec2 _textureSize(sampler2D sampler, int lod) { return vec2(textureSize(sampler, lod)); }");
+				decl("vec2 _textureSize(sampler2D tex, int lod) { return vec2(textureSize(tex, lod)); }");
 			case TSampler(dim,arr):
 				var size = Tools.getDimSize(dim,arr);
 				sufix = (arr?"Array":"");
 				var t = "sampler"+dim.getName().substr(1)+sufix;
-				decl('vec$size _texture${sufix}Size($t sampler, int lod) { return vec$size(textureSize(sampler, lod)); }');
+				decl('vec$size _texture${sufix}Size($t tex, int lod) { return vec$size(textureSize(tex, lod)); }');
 			case TRWTexture(dim,arr,_):
 				var size = Tools.getDimSize(dim,arr);
 				return "vec"+size+"(imageSize";
@@ -401,10 +416,33 @@ class GlslOut {
 			decl("float invLerp(float v, float a, float b) { return clamp((v - a) / (b - a), 0.0, 1.0); }");
 		default:
 		}
-		return GLOBALS[g.getIndex()];
+		return globalName(g);
+	}
+
+	inline function globalName(global:TGlobal):String {
+		if (isVulkan)
+			return switch (global) {
+			case VertexID: "gl_VertexIndex";
+			case InstanceID: "gl_InstanceIndex";
+			default: GLOBALS[global.getIndex()];
+			}
+		return GLOBALS[global.getIndex()];
 	}
 
 	function addExpr( e : TExpr, tabs : String ) {
+		final bindlessKey = bindlessTargetKey(e);
+		if( bindlessKey != null ) {
+			final sampler = bindlessSamplers == null ? null : bindlessSamplers.get(bindlessKey);
+			final buffer = bindlessBuffers == null ? null : bindlessBuffers.get(bindlessKey);
+			if( sampler != null ) {
+				addResolvedBindlessSampler(sampler, tabs);
+				return;
+			}
+			if( buffer != null ) {
+				addResolvedBindlessBuffer(buffer, tabs);
+				return;
+			}
+		}
 		switch( e.e ) {
 		case TConst(c):
 			switch( c ) {
@@ -421,7 +459,7 @@ class GlslOut {
 		case TVar(v):
 			ident(v);
 		case TGlobal(g):
-			add(GLOBALS[g.getIndex()]);
+			add(globalName(g));
 		case TParenthesis(e):
 			add("(");
 			addValue(e,tabs);
@@ -507,12 +545,23 @@ class GlslOut {
 			}
 		case TCall( { e : TGlobal(SetLayout) }, _):
 			// nothing
+		case TCall({ e : TGlobal(ResolveSampler) }, [handle, target]) if( isVulkan && vulkanLayout != null && vulkanLayout.bindless != null ):
+			final key = bindlessTargetKey(target);
+			if( key == null ) throw "Vulkan ResolveSampler target is not a stable shader variable";
+			bindlessSamplers.set(key, {handle: handle, type: target.t});
+			add("/* bindless sampler resolved */");
+		case TCall({ e : TGlobal(ResolveBuffer) }, [handle, target]) if( isVulkan && vulkanLayout != null && vulkanLayout.bindless != null ):
+			final key = bindlessTargetKey(target);
+			if( key == null ) throw "Vulkan ResolveBuffer target is not a stable shader variable";
+			bindlessBuffers.set(key, {handle: handle, type: target.t});
+			add("/* bindless buffer resolved */");
 		case TCall( { e : TGlobal(Saturate) }, [e]):
 			add("clamp(");
 			addValue(e, tabs);
 			add(", 0., 1.)");
 		case TCall( { e : TGlobal(g = AtomicAdd|AtomicAnd|AtomicOr) }, args):
 			add(getFunName(g,args,e.t));
+			add("(");
 			addValue(args[0], tabs);
 			add("[");
 			addValue(args[1], tabs);
@@ -765,13 +814,25 @@ class GlslOut {
 			case TBuffer(_, _, Storage|StoragePartial):
 				if ( version < 430 )
 					throw "SSBO are available since version 4.3";
-				add("layout(std430) readonly buffer ");
+				if( isVulkan && vulkanLayout != null ) {
+					final binding = vulkanLayout.requireBinding(v.id);
+					add('layout(std430, set=${binding.set}, binding=${binding.binding}) readonly buffer ');
+				} else
+					add("layout(std430) readonly buffer ");
 			case TBuffer(_, _, RW|RWPartial):
 				if ( version < 430 )
 					throw "SSBO are available since version 4.3";
-				add("layout(std430) buffer ");
+				if( isVulkan && vulkanLayout != null ) {
+					final binding = vulkanLayout.requireBinding(v.id);
+					add('layout(std430, set=${binding.set}, binding=${binding.binding}) buffer ');
+				} else
+					add("layout(std430) buffer ");
 			case TBuffer(_, _, kind):
-				add("layout(std140) ");
+				if( isVulkan && vulkanLayout != null ) {
+					final binding = vulkanLayout.requireBinding(v.id);
+					add('layout(std140, set=${binding.set}, binding=${binding.binding}) ');
+				} else
+					add("layout(std140) ");
 				switch( kind ) {
 				case Uniform, Partial:
 					add("uniform ");
@@ -780,22 +841,44 @@ class GlslOut {
 				}
 			case TArray(TRWTexture(_, _, chans), SConst(n)):
 				var format = "rgba".substr(0, chans);
-				add('layout(${format}32f, binding=${rwTextures}) uniform ');
-				rwTextures += n;
+				if( isVulkan && vulkanLayout != null ) {
+					final binding = vulkanLayout.requireBinding(v.id);
+					add('layout(${format}32f, set=${binding.set}, binding=${binding.binding}) uniform ');
+				} else {
+					add('layout(${format}32f, binding=${rwTextures}) uniform ');
+					rwTextures += n;
+				}
+			case TRWTexture(_, _, chans):
+				var format = "rgba".substr(0, chans);
+				if( isVulkan && vulkanLayout != null ) {
+					final binding = vulkanLayout.requireBinding(v.id);
+					add('layout(${format}32f, set=${binding.set}, binding=${binding.binding}) uniform ');
+				} else
+					add('layout(${format}32f, binding=${rwTextures++}) uniform ');
 			default:
-				if( isVulkan && isSampler(v.type) )
-					add('layout(binding=${textureIndex++}) ');
+				if( isVulkan && isSampler(v.type) ) {
+					if( vulkanLayout == null )
+						add('layout(binding=${textureIndex++}) ');
+					else {
+						final binding = vulkanLayout.requireBinding(v.id);
+						add('layout(set=${binding.set}, binding=${binding.binding}) ');
+					}
+				}
 				add("uniform ");
 			}
 		case Input:
-			if( isVulkan )
-				add('layout(location=${inputIndex++}) ');
+			if( isVulkan ) {
+				final location = vulkanLayout == null ? inputIndex++ : vulkanLayout.requireLocation(v.id);
+				add('layout(location=$location) ');
+			}
 			add( isLegacy ? "attribute " : "in ");
 		case Var:
 			if ( Tools.hasQualifier(v, Flat) )
 				add("flat ");
-			if( isVulkan )
-				add('layout(location=${varyingIndex++}) ');
+			if( isVulkan ) {
+				final location = vulkanLayout == null ? varyingIndex++ : vulkanLayout.requireLocation(v.id);
+				add('layout(location=$location) ');
+			}
 			add( isLegacy ? "varying " : (isVertex ? "out " : "in "));
 		case Output:
 			if( isLegacy ) {
@@ -803,12 +886,18 @@ class GlslOut {
 				return;
 			}
 			if( isVertex ) return;
-			if( isES || isVulkan )
-				add('layout(location=${outIndex++}) ');
+			if( isES || isVulkan ) {
+				final location = isVulkan && vulkanLayout != null ? vulkanLayout.requireLocation(v.id) : outIndex++;
+				add('layout(location=$location) ');
+			}
 			add("out ");
 		case Function:
 			return;
 		case Local:
+			if( Tools.hasQualifier(v, Shared) ) {
+				if( !isCompute ) throw "Workgroup-shared variables are only valid in compute shaders";
+				add("shared ");
+			}
 		}
 		if( v.qualifiers != null )
 			for( q in v.qualifiers )
@@ -833,6 +922,61 @@ class GlslOut {
 		}
 	}
 
+	function bindlessTargetKey(expression:TExpr):Null<String> {
+		return switch (expression.e) {
+		case TVar(variable): 'v${variable.id}';
+		case TArray(parent, {e: TConst(CInt(index))}):
+			final parentKey = bindlessTargetKey(parent);
+			parentKey == null ? null : '$parentKey[$index]';
+		default: null;
+		}
+	}
+
+	function addResolvedBindlessSampler(resource:BindlessResolvedResource, tabs:String) {
+		final bindless = vulkanLayout.bindless;
+		final names = switch( resource.type ) {
+		case TSampler(T1D, false): {texture: "texture1D", sampler: "sampler1D", suffix: "1D"};
+		case TSampler(T1D, true): {texture: "texture1DArray", sampler: "sampler1DArray", suffix: "1DArray"};
+		case TSampler(T2D, false): {texture: "texture2D", sampler: "sampler2D", suffix: "2D"};
+		case TSampler(T2D, true): {texture: "texture2DArray", sampler: "sampler2DArray", suffix: "2DArray"};
+		case TSampler(T3D, false): {texture: "texture3D", sampler: "sampler3D", suffix: "3D"};
+		case TSampler(TCube, false): {texture: "textureCube", sampler: "samplerCube", suffix: "Cube"};
+		case TSampler(TCube, true): {texture: "textureCubeArray", sampler: "samplerCubeArray", suffix: "CubeArray"};
+		default: throw 'Unsupported Vulkan bindless sampler type ${resource.type}';
+		}
+		decl("#extension GL_EXT_nonuniform_qualifier : require");
+		decl('layout(set=${bindless.set}, binding=${bindless.imageBinding}) uniform ${names.texture} _bindlessImages${names.suffix}[${bindless.imageCapacity}];');
+		decl('layout(set=${bindless.set}, binding=${bindless.samplerBinding}) uniform sampler _bindlessSamplers[${bindless.samplerCapacity}];');
+		add('${names.sampler}(_bindlessImages${names.suffix}[');
+		addBindlessIndex(resource.handle, "x", tabs);
+		add('], _bindlessSamplers[');
+		addBindlessIndex(resource.handle, "y", tabs);
+		add('])');
+	}
+
+	function addResolvedBindlessBuffer(resource:BindlessResolvedResource, tabs:String) {
+		final bindless = vulkanLayout.bindless;
+		final element = switch( resource.type ) {
+		case TBuffer(TInt, _, Storage | StoragePartial): {type: "int", suffix: "Int"};
+		case TBuffer(TFloat, _, Storage | StoragePartial): {type: "float", suffix: "Float"};
+		default: throw 'Unsupported Vulkan bindless buffer type ${resource.type}';
+		}
+		decl("#extension GL_EXT_nonuniform_qualifier : require");
+		decl('layout(std430, set=${bindless.set}, binding=${bindless.bufferBinding}) readonly buffer _BindlessBuffer${element.suffix} { ${element.type} values[]; } _bindlessBuffers${element.suffix}[${bindless.bufferCapacity}];');
+		add('_bindlessBuffers${element.suffix}[');
+		addBindlessIndex(resource.handle, null, tabs);
+		add('].values');
+	}
+
+	function addBindlessIndex(handle:TExpr, component:Null<String>, tabs:String) {
+		add("nonuniformEXT(");
+		add("(");
+		addValue(handle, tabs);
+		add(")");
+		if( component != null ) add('.$component');
+		add(")");
+	}
+
 	function initVars( s : ShaderData ){
 		outIndex = 0;
 		textureIndex = 0;
@@ -840,7 +984,31 @@ class GlslOut {
 		rwTextures = 0;
 		uniformBuffer = 0;
 		outIndexes = new Map();
-		if( isVulkan ) {
+		if( isVulkan && vulkanLayout != null ) {
+			final variables = new Map<Int,TVar>();
+			for( v in s.vars ) {
+				variables.set(v.id, v);
+				switch( v.kind ) {
+				case Param, Global:
+					if( vulkanLayout.bindings.exists(v.id) )
+						initVar(v);
+				default:
+					initVar(v);
+				}
+			}
+			for( block in vulkanLayout.constantBlocks ) {
+				add('layout(std140, set=${block.set}, binding=${block.binding}) uniform ${block.name} {\n');
+				for( member in block.members ) {
+					final variable = variables.get(member.variableId);
+					if( variable == null )
+						throw 'Vulkan constant block ${block.name} references missing HxSL variable ${member.variableId}';
+					add('\tlayout(offset=${member.offset}) ');
+					addVar(variable);
+					add(";\n");
+				}
+				add("};\n");
+			}
+		} else if( isVulkan ) {
 			var params = [], globals = [];
 			for( v in s.vars )
 				switch( v.kind ) {
@@ -902,6 +1070,8 @@ class GlslOut {
 			collectGlobals(foundGlobals, f.expr);
 
 		locals = new Map();
+		bindlessSamplers = new Map();
+		bindlessBuffers = new Map();
 		decls = [];
 		buf = new StringBuf();
 		exprValues = [];
@@ -913,7 +1083,7 @@ class GlslOut {
 
 		if( isCompute ) {
 			// no prec
-		} else if( isVertex )
+		} else if( isVertex || isVulkan )
 			decl("precision highp float;");
 		else
 			decl("precision mediump float;");
@@ -955,6 +1125,9 @@ class GlslOut {
 		var locals = Lambda.array(locals);
 		locals.sort(function(v1, v2) return Reflect.compare(v1.name, v2.name));
 		for( v in locals ) {
+			final key = 'v${v.id}';
+			if( bindlessSamplers.exists(key) || bindlessBuffers.exists(key) )
+				continue;
 			addVar(v);
 			add(";\n");
 		}
@@ -967,6 +1140,8 @@ class GlslOut {
 
 		if( isES )
 			decl("#version " + (version < 100 ? 100 : version) + (version > 150 ? " es" : ""));
+		else if( isVulkan )
+			decl("#version " + (version == null || version < 450 ? 450 : version));
 		else if( isCompute || version >= 430 )
 			decl("#version 430");
 		else if( version != null )

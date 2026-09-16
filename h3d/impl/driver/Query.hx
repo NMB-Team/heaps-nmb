@@ -7,7 +7,7 @@ typedef Query = {};
 #elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))
 typedef Query = Dynamic;
 #elseif (limen && gfx_vulkan)
-typedef Query = {};
+typedef Query = h3d.impl.driver.vulkan.query.VulkanQuery;
 #elseif (limen && gfx_dx12)
 typedef Query = h3d.impl.driver.dx12.query.QueryData;
 #elseif (limen && gfx_dx11)

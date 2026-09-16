@@ -37,6 +37,10 @@ class Driver {
 		return true;
 	}
 
+	public function isFrameReady() {
+		return true;
+	}
+
 	public function dispose() {
 	}
 

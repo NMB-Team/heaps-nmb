@@ -1031,7 +1031,7 @@ class Checker {
 					if( tv.kind != Global ) error("Explicit name is only allowed for global var", pos);
 				case Shared:
 					if( parent != null ) error("Cannot share a structure field", pos);
-					if( tv.kind != Param ) error("Can only share a @param", pos);
+					if( tv.kind != Param && tv.kind != Local ) error("Can only share a @param or workgroup-local variable", pos);
 				case Precision(_):
 					switch( v.type ) {
 					case TVec(_, VFloat), TFloat:
@@ -1333,7 +1333,7 @@ class Checker {
 			default:
 				error("Cannot apply " + g.toString() + " to these parameters", pos);
 			}
-		case Trace:
+		case Trace, GroupMemoryBarrier:
 			type = TVoid;
 		case ImageStore:
 			switch( ([for( a in args ) a.t]) ) {
