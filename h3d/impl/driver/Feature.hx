@@ -53,4 +53,16 @@ enum Feature {
 		Supports DLSS.
 	*/
 	DLSS;
+	/*
+		Can render into a single layer of a depth texture array.
+	*/
+	DepthTextureArray;
+	/*
+		Supports compute shaders and read/write storage buffers.
+	*/
+	ComputeShaders;
+	/*
+		Sampler arrays can be indexed by a non-constant, dynamically uniform expression.
+	*/
+	DynamicSamplerIndex;
 }
