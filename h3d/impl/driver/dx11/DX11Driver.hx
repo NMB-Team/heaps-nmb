@@ -927,7 +927,10 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	override function hasFeature(f:Feature) {
 		return switch(f) {
-		case Queries, BottomLeftCoords, Bindless:
+		// rendering into a single depth array slice needs a sliced DSV, which hldx does not expose
+		case Queries, BottomLeftCoords, Bindless, DepthTextureArray, ComputeShaders:
+			false;
+		case DynamicSamplerIndex:
 			false;
 		default:
 			true;
@@ -1063,9 +1066,11 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		Driver.rsSetViewports(1, viewport);
 	}
 
-	override function setDepth( depthBuffer : h3d.mat.Texture ) {
+	override function setDepth( depthBuffer : h3d.mat.Texture, layer = 0 ) {
 		if( hasDeviceError )
 			return;
+		if( layer != 0 || (depthBuffer != null && depthBuffer.flags.has(IsArray)) )
+			throw "Not implemented";
 		currentDepth = @:privateAccess (depthBuffer == null ? null : depthBuffer.t);
 		depthBuffer.lastFrame = frame;
 		final currentDepth:DX11Texture = currentDepth;

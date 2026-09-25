@@ -991,16 +991,16 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		return getDepthView(tex == null ? null : tex.depthBuffer, readOnly);
 	}
 
-	function getDepthView( depthBuffer : h3d.mat.Texture, readOnly : Bool ) {
+	function getDepthView( depthBuffer : h3d.mat.Texture, readOnly : Bool, layer = 0 ) {
 		if ( depthBuffer == null )
 			depthBuffer = getDefaultDepthBuffer();
 		var depthView = depthStenciViews.alloc(1);
 		var viewDesc = tmp.dstStencilViewDesc;
 		viewDesc.arraySize = 1;
 		viewDesc.mipSlice = 0;
-		viewDesc.firstArraySlice = 0;
+		viewDesc.firstArraySlice = layer;
 		viewDesc.format = toDxgiDepthFormat(depthBuffer.format);
-		viewDesc.viewDimension = TEXTURE2D;
+		viewDesc.viewDimension = depthBuffer.flags.has(IsArray) ? TEXTURE2DARRAY : TEXTURE2D;
 		if ( readOnly ) {
 			viewDesc.flags.set(READ_ONLY_DEPTH);
 			viewDesc.flags.set(READ_ONLY_STENCIL);
@@ -1172,8 +1172,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		currentDepth = depthBuffer;
 	}
 
-	override function setDepth(depthBuffer : h3d.mat.Texture) {
-		var view = getDepthView(depthBuffer, false);
+	override function setDepth(depthBuffer : h3d.mat.Texture, layer = 0) {
+		var view = getDepthView(depthBuffer, false, layer);
 		depthEnabled = true;
 		frame.commandList.omSetRenderTargets(0, null, true, view);
 		depthBuffer.lastFrame = frameCount;
@@ -1680,8 +1680,11 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			return sh;
 		}
 
-		if ( shader.hasBindless() && !useSM6_6 )
-			throw "Shader using bindless detected, but Shader Model 6.6 is not used. Please call enableBindless().";
+		if ( shader.hasBindless() && !useSM6_6 ) {
+			enableBindless();
+			if ( !useSM6_6 )
+				throw "Shader using bindless detected, but Shader Model 6.6 is not used. SM6_6 unavailable on this device.";
+		}
 
 		var res = computeRootSignature(shader);
 
@@ -2154,7 +2157,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		desc.dimension = TEXTURE2D;
 		desc.width = b.width;
 		desc.height = b.height;
-		desc.depthOrArraySize = 1;
+		desc.depthOrArraySize = b.layerCount;
 		desc.mipLevels = 1;
 		desc.sampleDesc.count = 1;
 		desc.format = toDxgiDepthFormat(b.format);
@@ -2392,7 +2395,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			desc.resourceMinLODClamp = 0;
 		} else if( t.flags.has(IsArray) ) {
 			var desc = unsafeCastTo(srvDesc, Tex2DArraySRV);
-			desc.format = texture.format;
+			desc.format = t.isDepth() ? toDepthFormat(t.format) : texture.format;
 			desc.dimension = TEXTURE2DARRAY;
 			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
 			desc.mostDetailedMip = t.startingMip;
@@ -2661,6 +2664,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 							var srv = frame.srvHeap.alloc(1);
 							if( !t.flags.has(Writable) )
 								throw "Texture was allocated without Writable flag";
+							t.flags.set(WasCleared);
 							transition(t.t, UNORDERED_ACCESS);
 							var desc = tmp.wtexDesc;
 							desc.format = cast getTextureFormat(t);

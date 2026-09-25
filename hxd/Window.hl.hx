@@ -120,7 +120,7 @@ class Window {
 	static var suppressWindowEventWatch = false;
 	#end
 
-	public function new(title:String, width:Int, height:Int, ?flags: { ?fixed:Bool, ?hidden:Bool }) {
+	public function new(title:String, width:Int, height:Int, ?flags: { ?fixed:Bool, ?hidden:Bool, ?background:Bool }) { // todo: implement background as dx NO_ACTIVATE for sdl
 		this.windowWidth = width;
 		this.windowHeight = height;
 		eventTargets = new List();

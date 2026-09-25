@@ -137,7 +137,9 @@ class Driver {
 	public function setRenderTargets( textures : Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 	}
 
-	public function setDepth( tex : Null<h3d.mat.Texture> ) {
+	public function setDepth( tex : Null<h3d.mat.Texture>, layer = 0 ) {
+		if( layer != 0 )
+			throw "Not implemented";
 	}
 
 	public function setDepthClamp( enabled : Bool ) {
