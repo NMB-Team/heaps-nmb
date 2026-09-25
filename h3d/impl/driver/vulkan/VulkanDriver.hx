@@ -749,6 +749,8 @@ class VulkanDriver extends Driver {
 		return switch( f ) {
 		case HardwareAccelerated, StandardDerivatives, ShaderModel3, InstancedRendering: true;
 		case AllocDepthBuffer: depthFormat != UNDEFINED;
+		case DepthTextureArray: true;
+		case ComputeShaders: capabilities != null && capabilities.graphicsQueueCompute;
 		case MultipleRenderTargets: limits != null && limits.maxColorAttachments > 1;
 		case FloatTextures: isSupportedFormat(RGBA16F);
 		case SRGBTextures: isSupportedFormat(SRGB_ALPHA);
@@ -1527,11 +1529,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		changeTarget(makeTextureTargetSet(textures, 0, 0, depthBinding));
 	}
 
-	override function setDepth(texture:Null<h3d.mat.Texture>) {
+	override function setDepth(texture:Null<h3d.mat.Texture>, layer = 0) {
 		if( texture == null )
 			throw "Vulkan depth-only rendering requires a depth texture";
 		final depth = resolveTextureAttachment(texture, 0, 0, true);
-		final key = 'depth:${depth.resource.allocation.debugId}:${cast(depth.format, Int)}';
+		final key = 'depth:${depth.resource.allocation.debugId}:${cast(depth.format, Int)}:${depth.layer}';
 		changeTarget(new VulkanRenderingTargetSet([], depth, formatHasStencil(depth.format) ? depth : null,
 			texture.width, texture.height, 1, DepthOnly, false, key));
 	}

@@ -2055,6 +2055,7 @@ class OpenGLDriver extends Driver {
 		#else
 		return switch(f) {
 		case HardwareAccelerated, AllocDepthBuffer, BottomLeftCoords:
+			true;
 		case DepthTextureArray:
 			glES >= 3;
 		case ComputeShaders:

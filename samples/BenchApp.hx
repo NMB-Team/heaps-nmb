@@ -66,10 +66,10 @@ class BenchGpuTimer {
 	public var samples : Array<Float> = [];
 	public var idle = 0;
 
-	var driver : h3d.impl.Driver;
-	var free : Array<h3d.impl.Driver.Query> = [];
-	var pending : Array<h3d.impl.Driver.Query> = [];
-	var started : h3d.impl.Driver.Query;
+	var driver : h3d.impl.driver.Driver;
+	var free : Array<h3d.impl.driver.Query> = [];
+	var pending : Array<h3d.impl.driver.Query> = [];
+	var started : h3d.impl.driver.Query;
 
 	public function new( name : String ) {
 		this.name = name;
