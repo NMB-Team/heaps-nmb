@@ -238,7 +238,7 @@ class Benchmark extends h2d.Graphics {
 			if( estimateWait ) {
 				var waitT = frameTime - totalTime;
 				if( waitT > 0 ) {
-					if( hxd.Window.getInstance().vsync ) {
+					if( hxd.Window.getInstance().presentMode != hxd.PresentMode.Immediate ) {
 						var vst = 1e9 / hxd.System.getDefaultFrameRate() - totalTime;
 						if( vst > waitT ) vst = waitT;
 						if( vst > 0 ) {

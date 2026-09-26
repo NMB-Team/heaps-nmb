@@ -312,7 +312,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		if( defaultTarget == null ) return;
 		var old = hxd.System.allowTimeout;
 		if( old ) hxd.System.allowTimeout = false;
-		Driver.present(hxd.Window.getInstance().vsync ? 1 : 0, None);
+		Driver.present(hxd.Window.getInstance().presentMode == hxd.PresentMode.Immediate ? 0 : 1, None);
 		if( old ) hxd.System.allowTimeout = true;
 
 		if( hasDeviceError ) {

@@ -243,7 +243,7 @@ class VulkanDriver extends Driver {
 	var outImages : Array<VulkanSwapchainImage>;
 	var viewportWidth : Int;
 	var viewportHeight : Int;
-	var swapchainVsync : Bool;
+	var swapchainPresentMode : hxd.PresentMode;
 	var swapchainTransferSource = false;
 	var renderZoneX : Int;
 	var renderZoneY : Int;
@@ -415,8 +415,8 @@ class VulkanDriver extends Driver {
 
 	function initSwapchain( width : Int, height : Int ) : Bool {
 		var images = new hl.NativeArray(8);
-		swapchainVsync = hxd.Window.getInstance().vsync;
-		var info = new VkSwapchainInfo(width, height, swapchainVsync);
+		var requestedMode = hxd.Window.getInstance().presentMode;
+		var info = new VkSwapchainInfo(width, height, cast requestedMode);
 		var status = ctx.initSwapchain(info, images);
 		if( status == Deferred ) {
 			swapchainReady = false;
@@ -424,6 +424,7 @@ class VulkanDriver extends Driver {
 		}
 		if( status != Success )
 			throw Runtime.error('Failed to initialize Vulkan swapchain (status $status)');
+		swapchainPresentMode = requestedMode;
 		width = info.actualWidth;
 		height = info.actualHeight;
 		var format = info.format;
@@ -1088,7 +1089,7 @@ class VulkanDriver extends Driver {
 		endFrame();
 		submit();
 		var window = hxd.Window.getInstance();
-		if( recreatePending || window.vsync != swapchainVsync )
+		if( recreatePending || window.presentMode != swapchainPresentMode )
 			recreateSwapchain(window.width, window.height);
 		if( swapchainReady )
 			beginFrame();

@@ -42,7 +42,7 @@ class App implements h3d.IDrawable {
 			engine.onReady = setup;
 			haxe.Timer.delay(setup, 0);
 		} else {
-			HSystem.start(function() {
+			HSystem.start(() -> {
 				this.engine = engine = @:privateAccess new h3d.Engine();
 				engine.onReady = setup;
 				engine.init();
@@ -56,7 +56,7 @@ class App implements h3d.IDrawable {
 		By default does nothing. Override this method to provide custom on-resize logic.
 	**/
 	@:dox(show)
-	function onResize() {
+	private function onResize() {
 	}
 
 	/**
@@ -103,11 +103,11 @@ class App implements h3d.IDrawable {
 		HSystem.setLoop(mainLoop);
 	}
 
-	function onContextLost() {
-		if( s3d != null ) s3d.onContextLost();
+	private function onContextLost() {
+		s3d?.onContextLost();
 	}
 
-	function setScene2D( s2d : h2d.Scene, disposePrevious = true ) {
+	private function setScene2D( s2d : h2d.Scene, disposePrevious = true ) {
 		sevents.removeScene(this.s2d);
 		sevents.addScene(s2d,0);
 		if( disposePrevious )
@@ -116,7 +116,7 @@ class App implements h3d.IDrawable {
 		s2d.mark = mark;
 	}
 
-	function setScene3D( s3d : h3d.scene.Scene, disposePrevious = true ) {
+	private function setScene3D( s3d : h3d.scene.Scene, disposePrevious = true ) {
 		sevents.removeScene(this.s3d);
 		sevents.addScene(s3d);
 		if ( disposePrevious )
@@ -129,11 +129,11 @@ class App implements h3d.IDrawable {
 		s2d.render(e);
 	}
 
-	function mark(name : String) {
+	private function mark(name : String) {
 		s3d.mark(name);
 	}
 
-	function setup() {
+	private function setup() {
 		var initDone = false;
 		engine.onReady = staticHandler;
 		engine.onContextLost = onContextLost;
@@ -159,13 +159,13 @@ class App implements h3d.IDrawable {
 		});
 	}
 
-	function dispose() {
+	private function dispose() {
 		engine.onResized = staticHandler;
 		engine.onContextLost = staticHandler;
 		isDisposed = true;
-		if( s2d != null ) s2d.dispose();
-		if( s3d != null ) s3d.dispose();
-		if( sevents != null ) sevents.dispose();
+		s2d?.dispose();
+		s3d?.dispose();
+		sevents?.dispose();
 	}
 
 	/**
@@ -175,10 +175,10 @@ class App implements h3d.IDrawable {
 		Override this method to provide asynchronous asset loading logic.
 
 		@param onLoaded a callback that should be called by the overriden
-		                method when loading is complete
+				method when loading is complete
 	**/
 	@:dox(show)
-	function loadAssets( onLoaded : Void->Void ) {
+	private function loadAssets( onLoaded : Void->Void ) {
 		onLoaded();
 	}
 
@@ -189,18 +189,18 @@ class App implements h3d.IDrawable {
 		By default does nothing. Override this method to provide application initialization logic.
 	**/
 	@:dox(show)
-	function init() {
+	private function init() {
 	}
 
-	function mainLoop() {
+	private function mainLoop() {
 		hxd.Timer.update();
 		sevents.checkEvents();
 		if( isDisposed ) return;
 		update(hxd.Timer.dt);
 		if( isDisposed ) return;
-		var dt = hxd.Timer.dt; // fetch again in case it's been modified in update()
-		if( s2d != null ) s2d.setElapsedTime(dt);
-		if( s3d != null ) s3d.setElapsedTime(dt);
+		final dt = hxd.Timer.dt; // fetch again in case it's been modified in update()
+		s2d?.setElapsedTime(dt);
+		s3d?.setElapsedTime(dt);
 		engine.render(this);
 	}
 
@@ -213,7 +213,7 @@ class App implements h3d.IDrawable {
 		@param dt Time elapsed since last frame, normalized.
 	**/
 	@:dox(show)
-	function update( dt : Float ) {
+	private function update( dt : Float ) {
 	}
 
 	static function staticHandler() {}

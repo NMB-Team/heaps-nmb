@@ -3,14 +3,6 @@ package hxd;
 import js.Browser;
 import hxd.impl.MouseMode;
 
-enum DisplayMode {
-	Windowed;
-	ExclusiveFullscreen;
-	WindowedFullscreen;
-	DesktopFullscreen;
-	FullscreenResize;
-}
-
 private class NativeDroppedFile extends hxd.DropFileEvent.DroppedFile {
 
 	public function new( native : js.html.File ) {
@@ -51,6 +43,8 @@ class Window {
 		@see `hxd.impl.MouseMode` for more details on each mode.
 	**/
 	public var mouseMode(default, set) : MouseMode = Absolute;
+	public var presentMode(default, set) : PresentMode = PresentMode.VSync;
+	@:deprecated("Use presentMode = Immediate")
 	public var vsync(get, set) : Bool;
 	public var isFocused(get, never) : Bool;
 	public var visible(default, set) : Bool = true;
@@ -399,10 +393,16 @@ class Window {
 		return mouseMode = v;
 	}
 
-	function get_vsync() : Bool return true;
+	function set_presentMode( mode : PresentMode ) : PresentMode {
+		set_vsync(mode != PresentMode.Immediate);
+		return presentMode = mode;
+	}
+
+	function get_vsync() : Bool return presentMode != PresentMode.Immediate;
 
 	function set_vsync( b : Bool ) : Bool {
 		if( !b ) throw "Can't disable vsync on this platform";
+		presentMode = PresentMode.VSync;
 		return true;
 	}
 

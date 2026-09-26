@@ -49,7 +49,7 @@ class Engine {
 	public var backgroundColor : Null<Int> = 0xFF000000;
 	public var autoResize : Bool;
 	public var fullScreen(default, set) : Bool;
-	public var fullScreenMode(default, set) : hxd.Window.DisplayMode = DesktopFullscreen;
+	public var fullScreenMode(default, set) : hxd.DisplayMode = DesktopFullscreen;
 
 	public var fps(get, never) : Float;
 
