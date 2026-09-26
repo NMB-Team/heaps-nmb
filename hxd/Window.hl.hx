@@ -12,15 +12,6 @@ import limen.platform.window.Window as LWindow;
 import limen.platform.window.WindowFlags;
 import limen.platform.Platform as LPlatform;
 import limen.platform.Surface as LSurface;
-
-typedef DisplayMode = limen.platform.window.WindowMode;
-#else
-enum DisplayMode {
-	Windowed; 				// 0
-	ExclusiveFullscreen;	// 1
-	WindowedFullscreen; 	// 2
-	DesktopFullscreen; 		// 3
-}
 #end
 
 typedef Monitor = {
@@ -73,6 +64,8 @@ class Window {
 	public var mouseMode(default, set): MouseMode = Absolute;
 	public var monitor : Null<Int> = null;
 	public var framerate : Null<Int> = null;
+	public var presentMode(default, set) : PresentMode = PresentMode.VSync;
+	@:deprecated("Use presentMode = Immediate")
 	public var vsync(get, set) : Bool;
 	public var isFocused(get, never) : Bool;
 	public var visible(default, set) : Bool = true;
@@ -108,7 +101,6 @@ class Window {
 	var startMouseY = 0;
 	var savedSize : { x : Int, y : Int, width : Int, height : Int };
 	var flags : { fixed: Bool, hidden: Bool };
-	var _vsync = true;
 
 	static var CODEMAP : Array<KeyCode> = [for( i in 0...2048 ) i];
 	static var MIN_HEIGHT = 720;
@@ -384,10 +376,16 @@ class Window {
 
 	#if usesys
 
-	function get_vsync() : Bool return haxe.System.vsync;
+	function set_presentMode( mode : PresentMode ) : PresentMode {
+		haxe.System.vsync = mode != PresentMode.Immediate;
+		return presentMode = mode;
+	}
+
+	function get_vsync() : Bool return presentMode != PresentMode.Immediate;
 
 	function set_vsync( b : Bool ) : Bool {
-		return haxe.System.vsync = b;
+		presentMode = b ? PresentMode.VSync : PresentMode.Immediate;
+		return b;
 	}
 
 	function get_isFocused() : Bool return true;
@@ -399,10 +397,13 @@ class Window {
 
 	#elseif limen
 
-	function get_vsync() : Bool return _vsync;
+	function set_presentMode( mode : PresentMode ) : PresentMode return presentMode = mode;
+
+	function get_vsync() : Bool return presentMode != PresentMode.Immediate;
 
 	function set_vsync( b : Bool ) : Bool {
-		return _vsync = b;
+		presentMode = b ? PresentMode.VSync : PresentMode.Immediate;
+		return b;
 	}
 
 	function get_isFocused() : Bool return !wasBlurred;
@@ -720,10 +721,13 @@ class Window {
 
 	#else
 
-	function get_vsync() : Bool return true;
+	function set_presentMode( mode : PresentMode ) : PresentMode return presentMode = mode;
+
+	function get_vsync() : Bool return presentMode != PresentMode.Immediate;
 
 	function set_vsync( b : Bool ) : Bool {
-		return true;
+		presentMode = b ? PresentMode.VSync : PresentMode.Immediate;
+		return b;
 	}
 
 	function get_isFocused() : Bool return false;

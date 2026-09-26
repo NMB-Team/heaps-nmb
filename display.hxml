@@ -1,0 +1,25 @@
+-cp .
+-cp samples
+
+-lib heaps
+-lib castle
+-lib hxbit
+-lib limen
+-lib hlopenal
+
+--macro include('h3d')
+--macro include('h2d',true,['h2d.domkit'])
+--macro include('hxsl',true,['hxsl.Macros','hxsl.CacheFileBuilder','hxsl.Checker'])
+--macro include('hxd',true,['hxd.res.FileTree','hxd.Res','hxd.impl.BitsBuilder','hxd.fmt.pak.Build','hxd.snd.openal','hxd.res.Config'])
+
+--no-output
+
+-D apicheck
+
+-D gfx_opengl
+-D gfx_vulkan
+-D gfx_dx11
+-D gfx_dx12
+-D hl-ver=2.0.0
+
+-hl heaps.hl

@@ -3257,7 +3257,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		pclMarker(PCLMarker.PRESENT_START);
 		#end
 
-		directQueue.present(hxd.Window.getInstance().vsync);
+		directQueue.present(hxd.Window.getInstance().presentMode == hxd.PresentMode.Immediate ? 0 : 1);
 		#if dlss_allowed
 		pclMarker(PCLMarker.PRESENT_END);
 		if ( dlssgMode == Off )

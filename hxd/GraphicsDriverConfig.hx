@@ -86,6 +86,7 @@ final class GraphicsDriverConfig {
 			case Vulkan: Vulkan;
 			case D3D11: Dx11;
 			case D3D12: Dx12;
+			case Metal: Auto;
 			case None: Auto;
 		};
 	}

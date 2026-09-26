@@ -21,7 +21,7 @@
 hxsl.CacheFileBuilder
 -D default_gfx_opengl
 -D gfx_opengl
--D hl-ver=1.15.0
+-D hl-ver=1.16.0
 
 --next
 
@@ -32,7 +32,7 @@ hxsl.CacheFileBuilder
 hxsl.CacheFileBuilder
 -D default_gfx_vulkan
 -D gfx_vulkan
--D hl-ver=1.15.0
+-D hl-ver=1.16.0
 
 --next
 
@@ -42,7 +42,7 @@ hxsl.CacheFileBuilder
 -xml heaps_d3d11.xml
 -D default_gfx_dx11
 -D gfx_dx11
--D hl-ver=1.15.0
+-D hl-ver=1.16.0
 
 --next
 
@@ -52,4 +52,4 @@ hxsl.CacheFileBuilder
 -D default_gfx_dx12
 -D gfx_dx12
 -xml heaps_d3d12.xml
--D hl-ver=1.15.0
+-D hl-ver=1.16.0

@@ -137,7 +137,7 @@ class OpenGLDriver extends Driver {
 			minimumMajor: computeEnabled ? 4 : 2,
 			minimumMinor: computeEnabled ? 3 : 1,
 			samples: antiAlias > 0 ? antiAlias : 1,
-			vsync: hxd.Window.getInstance().vsync
+			presentMode: cast hxd.Window.getInstance().presentMode
 		});
 		#end
 
@@ -1769,7 +1769,7 @@ class OpenGLDriver extends Driver {
 
 	override function present() {
 		#if limen
-		context.vsync = hxd.Window.getInstance().vsync;
+		context.setPresentMode(cast hxd.Window.getInstance().presentMode);
 		context.present();
 		#elseif usesys
 		haxe.System.present();
