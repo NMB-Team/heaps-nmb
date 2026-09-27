@@ -186,6 +186,7 @@ class MemoryManager {
 			if( t.lastFrame == h3d.mat.Texture.PREVENT_AUTO_DISPOSE ) break;
 			if( force || t.lastFrame < hxd.Timer.frameCount - cleanupFrames ) {
 				t.dispose();
+				if( hxd.NMBTrace.enabled() ) hxd.NMBTrace.instant("heaps.memory", "GPU Texture Cleanup");
 				return true;
 			}
 		}
@@ -204,6 +205,8 @@ class MemoryManager {
 				autoDisposeGpuFreeMB = -1;
 				return;
 			}
+			if( (stats.free/(1024*1024)) <= autoDisposeGpuFreeMB && hxd.NMBTrace.enabled() )
+				hxd.NMBTrace.instant("heaps.memory", "GPU Memory Pressure");
 			if( (stats.free/(1024*1024)) > autoDisposeGpuFreeMB || !cleanTextures(false) )
 				lastAutoDispose = hxd.Timer.frameCount; // wait a bit
 		}
@@ -220,10 +223,30 @@ class MemoryManager {
 	}
 
 	public function tryFreeMemory() {
+		var trace = hxd.NMBTrace.enabled();
+		if( trace ) hxd.NMBTrace.begin("heaps.memory", "GPU OOM Recovery");
 		var size = bufferMemory + texMemory;
-		if( !cleanTextures(false) ) garbage();
-		if( bufferMemory + texMemory == size )
-			errorOutOfMemory();
+		try {
+			if( !cleanTextures(false) ) garbage();
+			if( bufferMemory + texMemory == size ) errorOutOfMemory();
+		} catch( e : Dynamic ) {
+			if( trace ) hxd.NMBTrace.end("heaps.memory");
+			throw e;
+		}
+		if( trace ) hxd.NMBTrace.end("heaps.memory");
+	}
+
+	public function traceCounters() {
+		if( !hxd.NMBTrace.enabled() ) return;
+		var usage = driver.getMemoryUsage();
+		var total = bufferMemory + texMemory;
+		hxd.NMBTrace.counter("heaps.memory", "GPU Buffer Memory", bufferMemory);
+		hxd.NMBTrace.counter("heaps.memory", "GPU Texture Memory", texMemory);
+		hxd.NMBTrace.counter("heaps.memory", "GPU Total Memory", usage == null ? total : usage.allocated);
+		hxd.NMBTrace.counter("heaps.memory", "GPU Other Memory", usage == null ? 0 : Math.max(0, usage.allocated - total));
+		hxd.NMBTrace.counter("heaps.memory", "GPU Max Memory", usage == null ? 0 : usage.total);
+		hxd.NMBTrace.counter("heaps.memory", "GPU Buffer Count", buffers.length);
+		hxd.NMBTrace.counter("heaps.memory", "GPU Texture Count", textures.length);
 	}
 
 	@:allow(h3d.mat.Texture.dispose)

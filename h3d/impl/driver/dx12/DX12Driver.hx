@@ -1322,7 +1322,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			key += arg;
 		var bytes = getBinaryPayload(sh.code, key);
 		if( bytes == null ) {
-			bytes = compiler.compile(sh.code, profile, SHADER_ARGS);
+			var tracing = hxd.NMBTrace.enabled();
+			if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
+			try bytes = compiler.compile(sh.code, profile, SHADER_ARGS) catch( e : Dynamic ) {
+				if( tracing ) hxd.NMBTrace.end("heaps.shader");
+				throw e;
+			}
+			if( tracing ) hxd.NMBTrace.end("heaps.shader");
 			if( shaderCache != null )
 				shaderCache.saveCompiledShader(sh.code, bytes, key);
 		}

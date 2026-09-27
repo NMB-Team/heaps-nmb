@@ -136,7 +136,9 @@ class ShaderCache {
 		if( data == null ) load();
 		var encodedSource = haxe.crypto.Md5.encode(source);
 		var key = configurationKey + encodedSource;
-		return data.get(key);
+		var result = data.get(key);
+		if( result == null ) hxd.NMBTrace.shaderCacheMiss() else hxd.NMBTrace.shaderCacheHit();
+		return result;
 	}
 
 	var saveTimer : haxe.Timer;
@@ -167,6 +169,8 @@ class ShaderCache {
 	public function save() {
 		if( !dirty )
 			return;
+		var tracing = hxd.NMBTrace.enabled();
+		if( tracing ) hxd.NMBTrace.begin("heaps.shader", "Shader Cache Save");
 		dirty = false;
 		var out = new haxe.io.BytesOutput();
 		var keys = Lambda.array({ iterator : data.keys });
@@ -182,6 +186,7 @@ class ShaderCache {
 		#if sys
 		try sys.io.File.saveBytes(outputFile, out.getBytes()) catch( e : Dynamic ) { trace("Something went wrong"); };
 		#end
+		if( tracing ) hxd.NMBTrace.end("heaps.shader");
 	}
 
 	function writeCache(keys : Array<String>, out : haxe.io.BytesOutput) {

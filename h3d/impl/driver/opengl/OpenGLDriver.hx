@@ -349,7 +349,10 @@ class OpenGLDriver extends Driver {
 			#end
 		}
 		gl.shaderSource(s, shader.code);
+		var tracing = hxd.NMBTrace.enabled();
+		if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
 		gl.compileShader(s);
+		if( tracing ) hxd.NMBTrace.end("heaps.shader");
 		if ( gl.getShaderParameter(s, GL.COMPILE_STATUS) != cast 1 ) {
 			var log = gl.getShaderInfoLog(s);
 			var lid = Std.parseInt(log.substr(9));
@@ -2207,6 +2210,8 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocQuery(kind:QueryKind) {
+		if( kind == TimeElapsed && !(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query")) )
+			return null;
 		return { q : GL.createQuery(), kind : kind };
 	}
 

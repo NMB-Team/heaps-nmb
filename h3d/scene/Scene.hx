@@ -572,6 +572,7 @@ class Scene extends Object implements h3d.IDrawable implements hxd.SceneEvents.I
 	}
 
 	public dynamic function mark(name : String) {
+		hxd.NMBTrace.instant("heaps.mark", name);
 		@:privateAccess renderer.mark(name);
 	}
 

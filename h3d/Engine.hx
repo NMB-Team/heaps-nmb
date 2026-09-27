@@ -35,6 +35,7 @@ class Engine {
 	public var driver(default,null) : h3d.impl.driver.Driver;
 
 	public var mem(default,null) : h3d.impl.MemoryManager;
+	@:allow(h3d.pass.Output) var gpuTrace : h3d.impl.GpuTrace;
 
 	public var hardware(default, null) : Bool;
 	public var width(default, null) : Int;
@@ -232,6 +233,7 @@ class Engine {
 			height = window.height;
 		}
 		if( disposed ) {
+			if( gpuTrace != null ) { gpuTrace.dispose(); gpuTrace = null; }
 			hxd.impl.Allocator.get().onContextLost();
 			mem.onContextLost();
 		} else {
@@ -312,6 +314,7 @@ class Engine {
 		mem.beginFrame();
 		#if dlss driver.pclSimulationEnd(); #end
 		driver.begin(hxd.Timer.frameCount);
+		if( gpuTrace != null ) gpuTrace.poll(hxd.Timer.frameCount);
 		if( backgroundColor != null ) clear(backgroundColor, 1, 0);
 		return true;
 	}
@@ -450,6 +453,7 @@ class Engine {
 	}
 
 	public function dispose() {
+		if( gpuTrace != null ) { gpuTrace.dispose(); gpuTrace = null; }
 		driver.dispose();
 		window.removeResizeEvent(onWindowResize);
 		if ( mem != null )

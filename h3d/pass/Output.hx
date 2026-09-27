@@ -80,46 +80,76 @@ class Output {
 	public function draw( passes : h3d.pass.PassList, ?sort : h3d.pass.PassList -> Void ) {
 		if( passes.isEmpty() )
 			return;
-		ctx.engine.driver.beginEvent(@:privateAccess passes.current.pass.name);
-		#if sceneprof
-		h3d.impl.SceneProf.begin('draw_${@:privateAccess passes.current.pass.name}', ctx.frame);
-		#end
-		ctx.setupTarget();
-		setupShaders(passes);
-		if( sort == null )
-			defaultSort(passes);
-		else
-			sort(passes);
-		var buf = ctx.shaderBuffers, prevShader = null;
-		for( p in passes ) {
-			#if sceneprof h3d.impl.SceneProf.mark(p.obj); #end
-			ctx.globalPreviousModelView = p.obj.prevAbsPos ?? p.obj.absPos;
-			ctx.globalModelView = p.obj.absPos;
-			if( p.shader.hasGlobal(ctx.globalModelViewInverse_id.toInt()) )
-				ctx.globalModelViewInverse = p.obj.getInvPos();
-			if( prevShader != p.shader ) {
-				prevShader = p.shader;
-				if( onShaderError != null ) {
-					try {
+		var trace = hxd.NMBTrace.enabled();
+		var passName = @:privateAccess passes.current.pass.name;
+		var engine = ctx.engine;
+		var drawCalls = 0, shaderSwitches = 0, dispatches = 0;
+		var triangles = 0.;
+		if( trace ) {
+			drawCalls = engine.drawCalls;
+			triangles = engine.drawTriangles;
+			shaderSwitches = engine.shaderSwitches;
+			dispatches = engine.dispatches;
+		}
+		ctx.engine.driver.beginEvent(passName);
+		if( trace ) hxd.NMBTrace.begin("heaps.pass", passName);
+		if( trace && engine.gpuTrace == null ) engine.gpuTrace = new h3d.impl.GpuTrace(engine.driver);
+		var gpuQuery = trace ? engine.gpuTrace.begin(passName, ctx.frame) : null;
+		try {
+			#if sceneprof
+			h3d.impl.SceneProf.begin('draw_${passName}', ctx.frame);
+			#end
+			ctx.setupTarget();
+			setupShaders(passes);
+			if( sort == null )
+				defaultSort(passes);
+			else
+				sort(passes);
+			var buf = ctx.shaderBuffers, prevShader = null;
+			for( p in passes ) {
+				#if sceneprof h3d.impl.SceneProf.mark(p.obj); #end
+				ctx.globalPreviousModelView = p.obj.prevAbsPos ?? p.obj.absPos;
+				ctx.globalModelView = p.obj.absPos;
+				if( p.shader.hasGlobal(ctx.globalModelViewInverse_id.toInt()) )
+					ctx.globalModelViewInverse = p.obj.getInvPos();
+				if( prevShader != p.shader ) {
+					prevShader = p.shader;
+					if( onShaderError != null ) {
+						try {
+							ctx.engine.selectShader(p.shader);
+						} catch(e) {
+							onShaderError(e.message, p);
+							continue;
+						}
+					} else {
 						ctx.engine.selectShader(p.shader);
-					} catch(e) {
-						onShaderError(e.message, p);
-						continue;
 					}
-				} else {
-					ctx.engine.selectShader(p.shader);
+					buf.grow(p.shader);
+					ctx.fillGlobals(buf, p.shader);
+					ctx.engine.uploadShaderBuffers(buf, Globals);
 				}
-				buf.grow(p.shader);
-				ctx.fillGlobals(buf, p.shader);
-				ctx.engine.uploadShaderBuffers(buf, Globals);
+				if( !p.pass.dynamicParameters ) {
+					ctx.fillParams(buf, p.shader, p.shaders);
+					ctx.engine.uploadInstanceShaderBuffers(buf);
+				}
+				drawObject(p);
 			}
-			if( !p.pass.dynamicParameters ) {
-				ctx.fillParams(buf, p.shader, p.shaders);
-				ctx.engine.uploadInstanceShaderBuffers(buf);
-			}
-			drawObject(p);
+		} catch(e:Dynamic) {
+			if( gpuQuery != null ) engine.gpuTrace.end(gpuQuery);
+			ctx.engine.driver.endEvent();
+			if( trace ) hxd.NMBTrace.end("heaps.pass");
+			#if sceneprof h3d.impl.SceneProf.end(); #end
+			throw e;
+		}
+		if( trace ) {
+			hxd.NMBTrace.counter("heaps.pass", "Pass Draw Calls", engine.drawCalls - drawCalls);
+			hxd.NMBTrace.counter("heaps.pass", "Pass Triangles", engine.drawTriangles - triangles);
+			hxd.NMBTrace.counter("heaps.pass", "Pass Shader Switches", engine.shaderSwitches - shaderSwitches);
+			hxd.NMBTrace.counter("heaps.pass", "Pass Dispatches", engine.dispatches - dispatches);
 		}
 		ctx.engine.driver.endEvent();
+		if( gpuQuery != null ) engine.gpuTrace.end(gpuQuery);
+		if( trace ) hxd.NMBTrace.end("heaps.pass");
 		#if sceneprof h3d.impl.SceneProf.end(); #end
 		ctx.nextPass();
 	}

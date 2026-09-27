@@ -125,8 +125,23 @@ class App implements h3d.IDrawable {
 	}
 
 	public function render(e:h3d.Engine) {
-		s3d.render(e);
-		s2d.render(e);
+		var trace = NMBTrace.enabled();
+		if( trace ) NMBTrace.begin("heaps", "Scene 3D");
+		try {
+			s3d.render(e);
+		} catch(e:Dynamic) {
+			if( trace ) NMBTrace.end("heaps");
+			throw e;
+		}
+		if( trace ) NMBTrace.end("heaps");
+		if( trace ) NMBTrace.begin("heaps", "Scene 2D");
+		try {
+			s2d.render(e);
+		} catch(e:Dynamic) {
+			if( trace ) NMBTrace.end("heaps");
+			throw e;
+		}
+		if( trace ) NMBTrace.end("heaps");
 	}
 
 	private function mark(name : String) {
@@ -193,15 +208,70 @@ class App implements h3d.IDrawable {
 	}
 
 	private function mainLoop() {
-		hxd.Timer.update();
-		sevents.checkEvents();
-		if( isDisposed ) return;
-		update(hxd.Timer.dt);
-		if( isDisposed ) return;
-		final dt = hxd.Timer.dt; // fetch again in case it's been modified in update()
-		s2d?.setElapsedTime(dt);
-		s3d?.setElapsedTime(dt);
-		engine.render(this);
+		var trace = NMBTrace.enabled();
+		if( trace ) NMBTrace.begin("heaps", "Heaps Frame");
+		try {
+			if( trace ) NMBTrace.begin("heaps", "Timer");
+			try {
+				hxd.Timer.update();
+			} catch(e:Dynamic) {
+				if( trace ) NMBTrace.end("heaps");
+				throw e;
+			}
+			if( trace ) NMBTrace.end("heaps");
+			if( trace ) {
+				NMBTrace.counter("heaps.frame", "Frame Time", hxd.Timer.elapsedTime * 1000);
+				NMBTrace.counter("heaps.frame", "FPS", hxd.Timer.fps());
+				NMBTrace.counter("heaps.frame", "Raw Frame Delta", hxd.Timer.elapsedTime * 1000);
+			}
+			if( trace ) NMBTrace.begin("heaps", "Events");
+			try {
+				sevents.checkEvents();
+			} catch(e:Dynamic) {
+				if( trace ) NMBTrace.end("heaps");
+				throw e;
+			}
+			if( trace ) NMBTrace.end("heaps");
+			if( isDisposed ) {
+				if( trace ) NMBTrace.end("heaps");
+				return;
+			}
+			if( trace ) NMBTrace.begin("heaps", "Game Update");
+			try {
+				update(hxd.Timer.dt);
+			} catch(e:Dynamic) {
+				if( trace ) NMBTrace.end("heaps");
+				throw e;
+			}
+			if( trace ) NMBTrace.end("heaps");
+			if( isDisposed ) {
+				if( trace ) NMBTrace.end("heaps");
+				return;
+			}
+			final dt = hxd.Timer.dt; // fetch again in case it's been modified in update()
+			if( trace ) NMBTrace.counter("heaps.frame", "Game DT", dt * 1000);
+			s2d?.setElapsedTime(dt);
+			s3d?.setElapsedTime(dt);
+			if( trace ) NMBTrace.begin("heaps", "Render");
+			try {
+				var rendered = engine.render(this);
+				if( trace && rendered ) {
+					NMBTrace.counter("heaps.render", "Draw Calls", engine.drawCalls);
+					NMBTrace.counter("heaps.render", "Triangles", engine.drawTriangles);
+					NMBTrace.counter("heaps.render", "Shader Switches", engine.shaderSwitches);
+					NMBTrace.counter("heaps.render", "Dispatches", engine.dispatches);
+					engine.mem.traceCounters();
+				}
+			} catch(e:Dynamic) {
+				if( trace ) NMBTrace.end("heaps");
+				throw e;
+			}
+			if( trace ) NMBTrace.end("heaps");
+		} catch(e:Dynamic) {
+			if( trace ) NMBTrace.end("heaps");
+			throw e;
+		}
+		if( trace ) NMBTrace.end("heaps");
 	}
 
 	/**

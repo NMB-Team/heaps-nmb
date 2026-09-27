@@ -165,7 +165,15 @@ class System {
 	}
 
 	public static function presentFrame( engine : h3d.Engine ) {
-		engine.driver.present();
+		var trace = NMBTrace.enabled();
+		if( trace ) NMBTrace.begin("gpu", "Present");
+		try {
+			engine.driver.present();
+		} catch(e:Dynamic) {
+			if( trace ) NMBTrace.end("gpu");
+			throw e;
+		}
+		if( trace ) NMBTrace.end("gpu");
 		@:privateAccess engine.updateFps();
 		markFirstFramePresented();
 	}

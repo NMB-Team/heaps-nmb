@@ -76,15 +76,24 @@ class VulkanShaderCompilerService {
 		final generated = generate(shader, abi);
 		final cacheKey = makeCacheKey(shader, abi, generated);
 		final cached = cache.get(cacheKey);
-		if (cached != null)
+		if (cached != null) {
+			hxd.NMBTrace.shaderCacheHit();
 			return cached;
+		}
+		hxd.NMBTrace.shaderCacheMiss();
 
 		final stages = [];
 		for (stage in generated) {
 			saveGeneratedArtifact(stage, cacheKey);
 			final request = new ShaderCompileRequest(stage.source, stage.sourceName, "main", stage.kind, Vulkan13, Spirv16,
 				optimization, debugInfo, true);
-			final result = compiler.compile(request);
+			final tracing = hxd.NMBTrace.enabled();
+			if (tracing) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
+			final result = try compiler.compile(request) catch (error:Dynamic) {
+				if (tracing) hxd.NMBTrace.end("heaps.shader");
+				throw error;
+			};
+			if (tracing) hxd.NMBTrace.end("heaps.shader");
 			if (!result.succeeded) {
 				saveFailureArtifact(stage, cacheKey);
 				throw 'Vulkan shader compilation failed: program=${shader.signature}, stage=${VulkanShaderAbi.stageName(stage.stage)}, '

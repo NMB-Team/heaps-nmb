@@ -854,7 +854,10 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		}
 		var bytes = getBinaryPayload(shader.kind == Vertex, shader.code);
 		if( bytes == null ) {
+			var tracing = hxd.NMBTrace.enabled();
+			if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
 			bytes = try Driver.compileShader(shader.code, "", "main", (shader.kind==Vertex?"vs_":"ps_") + shaderVersion, OptimizationLevel3) catch( err : String ) {
+				if( tracing ) hxd.NMBTrace.end("heaps.shader");
 				err = ~/^\(([0-9]+),([0-9]+)-([0-9]+)\)/gm.map(err, function(r) {
 					var line = Std.parseInt(r.matched(1));
 					var char = Std.parseInt(r.matched(2));
@@ -863,6 +866,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 				});
 				throw "Shader compilation error " + err + "\n\nin\n\n" + shader.code;
 			}
+			if( tracing ) hxd.NMBTrace.end("heaps.shader");
 			if( shaderCache == null )
 				shader.code += addBinaryPayload(bytes);
 		}
