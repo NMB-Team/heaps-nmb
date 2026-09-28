@@ -6,13 +6,13 @@ import h3d.impl.driver.vulkan.resource.VulkanAllocation;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation.VulkanMemoryBlock;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation.VulkanMemoryClass;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation.VulkanMemoryRange;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.vulkan.memory.Memory.VkImage;
-import limen.graphics.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryRequirementsInfo;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 
 class VulkanAllocatorConfig {
 	public var deviceBufferPageSize:Int64;
@@ -102,7 +102,7 @@ class VulkanMemoryAllocator {
 		if (memory == null && cleanupCallback != null && cleanupCallback())
 			memory = context.allocateMemory64((size : hl.I64), memoryType, dedicatedBuffer, dedicatedImage);
 		if (memory == null)
-			throw Runtime.error('Vulkan allocation failed for $debugName: size=$size, memoryType=$memoryType, class=$memoryClass, dedicated=$dedicated');
+			throw VulkanRuntime.error('Vulkan allocation failed for $debugName: size=$size, memoryType=$memoryType, class=$memoryClass, dedicated=$dedicated');
 		final blockId = nextBlockId++;
 		final memoryName = 'allocator-$memoryClass-block-$blockId-$debugName';
 		context.setMemoryName(memory, @:privateAccess memoryName.toUtf8());
@@ -112,7 +112,7 @@ class VulkanMemoryAllocator {
 			mapped = context.mapMemory64(memory, (Int64.ofInt(0) : hl.I64), (size : hl.I64), 0);
 			if (mapped == null) {
 				context.freeMemory(memory);
-				throw Runtime.error('Failed to persistently map Vulkan allocation $debugName: size=$size, memoryType=$memoryType');
+				throw VulkanRuntime.error('Failed to persistently map Vulkan allocation $debugName: size=$size, memoryType=$memoryType');
 			}
 		}
 		final block = new VulkanMemoryBlock(blockId, memory, size, memoryType, properties, memoryClass, mapped, dedicated);
@@ -239,7 +239,7 @@ class VulkanMemoryAllocator {
 			? context.invalidateMappedMemory(block.memory, (alignedStart : hl.I64), (alignedEnd - alignedStart : hl.I64))
 			: context.flushMappedMemory(block.memory, (alignedStart : hl.I64), (alignedEnd - alignedStart : hl.I64));
 		if (result != 0)
-			throw Runtime.error('${invalidate ? "vkInvalidateMappedMemoryRanges" : "vkFlushMappedMemoryRanges"} failed for ${allocation.debugName}');
+			throw VulkanRuntime.error('${invalidate ? "vkInvalidateMappedMemoryRanges" : "vkFlushMappedMemoryRanges"} failed for ${allocation.debugName}');
 	}
 
 	function destroyBlock(block:VulkanMemoryBlock) {

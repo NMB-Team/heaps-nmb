@@ -1,7 +1,7 @@
 package h3d.impl.driver.vulkan.shader;
 
 #if (limen && gfx_vulkan)
-import limen.graphics.vulkan.VulkanCore.ArrayStruct;
+import limen.graphics.renderer.vulkan.VulkanCore.ArrayStruct;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanFragmentOutputInterface;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanProgramLayout;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanConstantBlock;
@@ -11,13 +11,13 @@ import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanVertexShaderInterface;
 import h3d.impl.driver.vulkan.resource.VulkanBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.vulkan.memory.Memory.VkImageView;
-import limen.graphics.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineLayout;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayout;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
 
 class VulkanComputeMetadata {
 	public final localSizeX:Int;

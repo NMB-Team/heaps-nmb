@@ -10,16 +10,16 @@ import h3d.impl.driver.vulkan.resource.VulkanBuffer.VulkanUploadBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImageState;
 import h3d.impl.driver.vulkan.resource.VulkanResourceState;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.vulkan.command.Commands.VkPipelineStage2;
-import limen.graphics.vulkan.internal.VulkanBindings;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.memory.Memory.VkAccess2;
-import limen.graphics.vulkan.memory.Memory.VkBufferImageCopy;
-import limen.graphics.vulkan.memory.Memory.VkBufferUsageFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryRequirementsInfo;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.renderer.vulkan.command.Commands.VkPipelineStage2;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 
 private class VulkanUploadPage {
 	public var buffer:VulkanUploadBuffer;
@@ -158,7 +158,7 @@ class VulkanUploadManager {
 		usage.set(UNIFORM_BUFFER);
 		final handle = context.createBuffer64((Int64.ofInt(capacity) : hl.I64), usage);
 		if (handle == null)
-			throw Runtime.error('Failed to create Vulkan upload page $nextPageId ($capacity bytes)');
+			throw VulkanRuntime.error('Failed to create Vulkan upload page $nextPageId ($capacity bytes)');
 		final requirements = new VkMemoryRequirementsInfo();
 		context.getBufferMemoryRequirements2(handle, requirements);
 		final name = 'frame-upload-page-${nextPageId++}';
@@ -170,7 +170,7 @@ class VulkanUploadManager {
 		if (!context.bindBufferMemory64(handle, allocation.memory, (allocation.offset : hl.I64))) {
 			allocation.dispose();
 			context.destroyBuffer(handle);
-			throw Runtime.error('Failed to bind Vulkan upload page $name');
+			throw VulkanRuntime.error('Failed to bind Vulkan upload page $name');
 		}
 		final buffer = new VulkanUploadBuffer(handle, allocation, Int64.ofInt(capacity), usage, 1, HostWrite, -1, name);
 		pageCreationCount++;

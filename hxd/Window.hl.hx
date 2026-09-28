@@ -23,7 +23,7 @@ typedef Monitor = {
 typedef DisplaySetting = {
 	width : Int,
 	height : Int,
-	framerate : Int
+	framerate : Float
 }
 
 private class NativeDroppedFile extends hxd.DropFileEvent.DroppedFile {
@@ -63,7 +63,7 @@ class Window {
 	**/
 	public var mouseMode(default, set): MouseMode = Absolute;
 	public var monitor : Null<Int> = null;
-	public var framerate : Null<Int> = null;
+	public var framerate : Null<Float> = null;
 	public var presentMode(default, set) : PresentMode = PresentMode.VSync;
 	@:deprecated("Use presentMode = Immediate")
 	public var vsync(get, set) : Bool;
@@ -787,7 +787,7 @@ class Window {
 			if( m == ExclusiveFullscreen ) {
 				var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
 				if(dm != null)
-					window.displaySetting = dm.mode;
+					window.displaySetting = { width: dm.mode.width, height: dm.mode.height, refreshRate: dm.mode.framerate };
 				window.displayMode = m;
 			}
 			else {
@@ -853,7 +853,8 @@ class Window {
 	public function getCurrentDisplaySetting(?monitorId : Int, registry : Bool = false) : DisplaySetting {
 		#if limen
 		var mon = LPlatform.getDisplays()[monitorId == null ? 0 : monitorId];
-		return LPlatform.getCurrentDisplayMode(mon.id, true);
+		var mode = LPlatform.getCurrentDisplayMode(mon.id, registry);
+		return mode == null ? null : { width: mode.width, height: mode.height, framerate: mode.refreshRate };
 		#else
 		return null;
 		#end
@@ -866,12 +867,13 @@ class Window {
 			monitorId = monitor;
 		#if limen
 		var m = LPlatform.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
-		var l = LPlatform.getDisplayModes(m.id);
+		var l : Array<DisplaySetting> = [for( mode in LPlatform.getDisplayModes(m.id) ) { width: mode.width, height: mode.height, framerate: mode.refreshRate }];
 		#else
 		var l = [];
 		#end
 		for(d in l) {
-			if(d.height >= MIN_HEIGHT && (d.framerate >= MIN_FRAMERATE || d.framerate == 30 || d.framerate == 60)) {
+			var nominalFramerate = Math.round(d.framerate);
+			if(d.height >= MIN_HEIGHT && (nominalFramerate >= MIN_FRAMERATE || nominalFramerate == 30 || nominalFramerate == 60)) {
 				f.push(d);
 			}
 		}
@@ -890,7 +892,7 @@ class Window {
 		#end
 	}
 
-	function getBestDisplayMode(width:Int, height:Int, framerate:Null<Int>) {
+	function getBestDisplayMode(width:Int, height:Int, framerate:Null<Float>) {
 		var m : {idx: Int, mode: DisplaySetting } = {
 			idx: -1,
 			mode: null

@@ -1,11 +1,11 @@
 package h3d.impl.driver.dx12.shader;
 
 #if (limen && gfx_dx12)
-import limen.graphics.d3d12.pipeline.InputLayout.InputElementDesc;
-import limen.graphics.d3d12.pipeline.Pipeline.ComputePipelineState;
-import limen.graphics.d3d12.pipeline.Pipeline.GraphicsPipelineState;
-import limen.graphics.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
-import limen.graphics.d3d12.pipeline.RootSignature.RootSignature;
+import limen.graphics.renderer.d3d12.pipeline.InputLayout.InputElementDesc;
+import limen.graphics.renderer.d3d12.pipeline.Pipeline.ComputePipelineState;
+import limen.graphics.renderer.d3d12.pipeline.Pipeline.GraphicsPipelineState;
+import limen.graphics.renderer.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
+import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootSignature;
 
 import h3d.impl.PipelineCache;
 

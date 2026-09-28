@@ -2,12 +2,12 @@ package h3d.impl.driver.vulkan.resource;
 
 #if (limen && gfx_vulkan)
 import haxe.Int64;
-import limen.graphics.vulkan.format.Formats.VkFormat;
-import limen.graphics.vulkan.memory.Memory.VkImage;
-import limen.graphics.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.vulkan.memory.Memory.VkImageUsageFlag;
-import limen.graphics.vulkan.memory.Memory.VkImageView;
-import limen.graphics.vulkan.memory.Memory.VkImageViewType;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageUsageFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewType;
 
 enum abstract VulkanImageState(Int) {
 	var Undefined;

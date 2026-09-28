@@ -4,7 +4,7 @@ package h3d.impl.driver.opengl;
 #if js
 private typedef Program = js.html.webgl.Program;
 #elseif limen
-private typedef Program = limen.graphics.opengl.OpenGLTypes.Program;
+private typedef Program = limen.graphics.renderer.opengl.shader.Shaders.Program;
 #elseif usegl
 private typedef Program = haxe.GLTypes.Program;
 #end

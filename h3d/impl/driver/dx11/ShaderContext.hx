@@ -1,8 +1,8 @@
 package h3d.impl.driver.dx11;
 
 #if (limen && gfx_dx11)
-import limen.graphics.d3d11.DX11Core.Resource;
-import limen.graphics.d3d11.DX11Shaders.Shader;
+import limen.graphics.renderer.d3d11.resource.Resources.Resource;
+import limen.graphics.renderer.d3d11.shader.Shaders.Shader;
 
 @:noCompletion
 class ShaderContext {

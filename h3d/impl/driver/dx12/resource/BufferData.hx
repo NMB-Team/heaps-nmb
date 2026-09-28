@@ -3,8 +3,8 @@ package h3d.impl.driver.dx12.resource;
 #if (limen && gfx_dx12)
 import h3d.impl.driver.dx12.descriptor.BlockHeap;
 
-import limen.graphics.d3d12.command.Commands.IndexBufferView;
-import limen.graphics.d3d12.command.Commands.VertexBufferView;
+import limen.graphics.renderer.d3d12.command.Commands.IndexBufferView;
+import limen.graphics.renderer.d3d12.command.Commands.VertexBufferView;
 
 class BufferData extends ResourceData {
 	public var view : VertexBufferView;

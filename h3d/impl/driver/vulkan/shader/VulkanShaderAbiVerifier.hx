@@ -6,10 +6,10 @@ import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderInterfaceVariable;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderResource;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage;
-import limen.graphics.vulkan.shader.SpirvReflection;
-import limen.graphics.vulkan.shader.SpirvReflection.SpirvBlockVariable;
-import limen.graphics.vulkan.shader.SpirvReflection.SpirvDescriptorBinding;
-import limen.graphics.vulkan.shader.SpirvReflection.SpirvInterfaceVariable;
+import limen.graphics.renderer.vulkan.shader.SpirvReflection;
+import limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvBlockVariable;
+import limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvDescriptorBinding;
+import limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvInterfaceVariable;
 
 class VulkanShaderAbiVerifier {
 	static inline final FLAT_DECORATION = 0x40;

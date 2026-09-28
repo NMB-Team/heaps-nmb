@@ -61,58 +61,58 @@ import h3d.impl.driver.vulkan.shader.VulkanShaderCompilerService;
 import h3d.impl.driver.vulkan.shader.VulkanShaderCompilerService.VulkanCompiledProgramData;
 import h3d.impl.driver.vulkan.shader.VulkanShaderStageData;
 import h3d.impl.driver.vulkan.swapchain.VulkanSwapchainImage;
-import limen.graphics.vulkan.VulkanCore.ArrayStruct;
-import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.vulkan.command.Commands.VkCommandBufferAllocateInfo;
-import limen.graphics.vulkan.command.Commands.VkCommandBufferBeginInfo;
-import limen.graphics.vulkan.command.Commands.VkCommandPool;
-import limen.graphics.vulkan.command.Commands.VkCommandPoolCreateInfo;
-import limen.graphics.vulkan.command.Commands.VkDynamicRenderingClearInfo;
-import limen.graphics.vulkan.command.Commands.VkIndexType;
-import limen.graphics.vulkan.command.Commands.VkFilter;
-import limen.graphics.vulkan.command.Commands.VkImageBlitRegion;
-import limen.graphics.vulkan.command.Commands.VkPipelineStage2;
-import limen.graphics.vulkan.command.Commands.VkFenceCreateInfo;
-import limen.graphics.vulkan.command.Commands.VkSemaphore;
-import limen.graphics.vulkan.command.Commands.VkSemaphoreCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
-import limen.graphics.vulkan.device.Capabilities;
-import limen.graphics.vulkan.format.Formats.VkFormat;
-import limen.graphics.vulkan.format.Formats.VkFormatFeature;
-import limen.graphics.vulkan.format.Formats.VkFormatProperties;
-import limen.graphics.vulkan.internal.VulkanBindings as Vulkan;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.internal.VulkanBindings.VkSwapchainInfo;
-import limen.graphics.vulkan.memory.Memory.VkBufferUsageFlag;
-import limen.graphics.vulkan.memory.Memory.VkAccess2;
-import limen.graphics.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.vulkan.memory.Memory.VkImageCreateInfo;
-import limen.graphics.vulkan.memory.Memory.VkImageLayout;
-import limen.graphics.vulkan.memory.Memory.VkImageView;
-import limen.graphics.vulkan.memory.Memory.VkImageViewCreateInfo;
-import limen.graphics.vulkan.memory.Memory.VkImageViewType;
-import limen.graphics.vulkan.memory.Memory.VkMemoryHeapBudgetInfo;
-import limen.graphics.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryRequirementsInfo;
-import limen.graphics.vulkan.pipeline.Pipeline.VkBlendFactor;
-import limen.graphics.vulkan.pipeline.Pipeline.VkBlendOp;
-import limen.graphics.vulkan.pipeline.Pipeline.VkCompareOp;
-import limen.graphics.vulkan.pipeline.Pipeline.VkCullModeFlags;
-import limen.graphics.vulkan.pipeline.Pipeline.VkFrontFace;
-import limen.graphics.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPrimitiveTopology;
-import limen.graphics.vulkan.pipeline.Pipeline.VkStencilOp;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
-import limen.graphics.vulkan.render.RenderPass.VkClearAttachment;
-import limen.graphics.vulkan.render.RenderPass.VkClearRect;
-import limen.graphics.vulkan.query.Queries.VkQueryControlFlag;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.shader.ShaderModule;
-import limen.graphics.vulkan.shader.ShaderModule.VkShaderStageFlag;
-import limen.graphics.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.vulkan.Surface;
+import limen.graphics.renderer.vulkan.VulkanCore.ArrayStruct;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBufferAllocateInfo;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBufferBeginInfo;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandPool;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandPoolCreateInfo;
+import limen.graphics.renderer.vulkan.command.Commands.VkDynamicRenderingClearInfo;
+import limen.graphics.renderer.vulkan.command.Commands.VkIndexType;
+import limen.graphics.renderer.vulkan.command.Commands.VkFilter;
+import limen.graphics.renderer.vulkan.command.Commands.VkImageBlitRegion;
+import limen.graphics.renderer.vulkan.command.Commands.VkPipelineStage2;
+import limen.graphics.renderer.vulkan.command.Commands.VkFenceCreateInfo;
+import limen.graphics.renderer.vulkan.command.Commands.VkSemaphore;
+import limen.graphics.renderer.vulkan.command.Commands.VkSemaphoreCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.graphics.renderer.vulkan.device.Capabilities;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormatFeature;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormatProperties;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings as Vulkan;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkSwapchainInfo;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageCreateInfo;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewCreateInfo;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewType;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryHeapBudgetInfo;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendFactor;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendOp;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCullModeFlags;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkFrontFace;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPrimitiveTopology;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkStencilOp;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
+import limen.graphics.renderer.vulkan.render.RenderPass.VkClearAttachment;
+import limen.graphics.renderer.vulkan.render.RenderPass.VkClearRect;
+import limen.graphics.renderer.vulkan.query.Queries.VkQueryControlFlag;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.shader.ShaderModule;
+import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
+import limen.graphics.renderer.vulkan.Surface;
 
 import hxd.Math;
 
@@ -221,7 +221,7 @@ class VulkanDriver extends Driver {
 	var commandPool : VkCommandPool;
 	var savedPointers : Array<Dynamic> = [];
 	var colorViewScratch = new hl.NativeArray<VkImageView>(0);
-	var vertexBufferScratch = new hl.NativeArray<limen.graphics.vulkan.memory.Memory.VkBuffer>(0);
+	var vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(0);
 	var vertexOffsetScratch = new hl.NativeArray<hl.I64>(0);
 	var descriptorSetScratch = new hl.NativeArray<VkDescriptorSet>(0);
 	var dynamicOffsetScratch = new hl.NativeArray<Int>(0);
@@ -357,8 +357,8 @@ class VulkanDriver extends Driver {
 	function initContext(surface) {
 		var queueFamily = 0;
 
-		ctx = Runtime.createContext(surface, queueFamily);
-		capabilities = Runtime.getCapabilities(ctx);
+		ctx = VulkanRuntime.createContext(surface, queueFamily);
+		capabilities = VulkanRuntime.getCapabilities(ctx);
 		shaderCompiler = new VulkanShaderCompilerService();
 		this.queueFamily = queueFamily;
 		this.depthFormat = selectDepthFormat();
@@ -368,7 +368,7 @@ class VulkanDriver extends Driver {
 		poolInf.queueFamilyIndex = queueFamily;
 		commandPool = ctx.createCommandPool(poolInf);
 		if( commandPool == null )
-			throw Runtime.error("Failed to create Vulkan command pool");
+			throw VulkanRuntime.error("Failed to create Vulkan command pool");
 
 
 		frames = [];
@@ -380,7 +380,7 @@ class VulkanDriver extends Driver {
 
 			var arr = new hl.NativeArray(1);
 			if( ctx.allocateCommandBuffers(inf,arr) != 0 )
-				throw Runtime.error("Failed to allocate Vulkan frame command buffer");
+				throw VulkanRuntime.error("Failed to allocate Vulkan frame command buffer");
 			frame.command = arr[0];
 
 			var inf = new VkFenceCreateInfo();
@@ -390,7 +390,7 @@ class VulkanDriver extends Driver {
 			var inf = new VkSemaphoreCreateInfo();
 			frame.imageAvailable = ctx.createSemaphore(inf);
 			if( frame.fence == null || frame.imageAvailable == null )
-				throw Runtime.error("Failed to create Vulkan frame synchronization objects");
+				throw VulkanRuntime.error("Failed to create Vulkan frame synchronization objects");
 
 			frame.descriptorArena = new VulkanDescriptorArena(ctx);
 			frames.push(frame);
@@ -423,7 +423,7 @@ class VulkanDriver extends Driver {
 			return false;
 		}
 		if( status != Success )
-			throw Runtime.error('Failed to initialize Vulkan swapchain (status $status)');
+			throw VulkanRuntime.error('Failed to initialize Vulkan swapchain (status $status)');
 		swapchainPresentMode = requestedMode;
 		width = info.actualWidth;
 		height = info.actualHeight;
@@ -451,7 +451,7 @@ class VulkanDriver extends Driver {
 
 			var depth = ctx.createImage(inf);
 			if( depth == null )
-				throw Runtime.error("Failed to create Vulkan depth image");
+				throw VulkanRuntime.error("Failed to create Vulkan depth image");
 			final depthName = 'swapchain-depth-$swapchainImageIndex';
 			ctx.setImageName(depth, @:privateAccess depthName.toUtf8());
 			var depthRequirements = new VkMemoryRequirementsInfo();
@@ -464,7 +464,7 @@ class VulkanDriver extends Driver {
 			if( !ctx.bindImageMemory64(depth, depthAllocation.memory, (depthAllocation.offset : hl.I64)) ) {
 				depthAllocation.dispose();
 				ctx.destroyImage(depth);
-				throw Runtime.error("Failed to bind Vulkan depth memory");
+				throw VulkanRuntime.error("Failed to bind Vulkan depth memory");
 			}
 
 			var viewInfo = new VkImageViewCreateInfo();
@@ -477,7 +477,7 @@ class VulkanDriver extends Driver {
 
 			var view = ctx.createImageView(viewInfo);
 			if( view == null )
-				throw Runtime.error("Failed to create Vulkan swapchain image view");
+				throw VulkanRuntime.error("Failed to create Vulkan swapchain image view");
 			final swapchainName = 'swapchain-image-$swapchainImageIndex';
 			final swapchainViewName = '$swapchainName-view';
 			ctx.setImageName(img, @:privateAccess swapchainName.toUtf8());
@@ -492,7 +492,7 @@ class VulkanDriver extends Driver {
 			viewInfo.aspectMask.set(DEPTH);
 			var depthView = ctx.createImageView(viewInfo);
 			if( depthView == null )
-				throw Runtime.error("Failed to create Vulkan depth image view");
+				throw VulkanRuntime.error("Failed to create Vulkan depth image view");
 			final depthViewName = '$depthName-view';
 			ctx.setImageViewName(depthView, @:privateAccess depthViewName.toUtf8());
 			var out = new VulkanSwapchainImage();
@@ -509,7 +509,7 @@ class VulkanDriver extends Driver {
 				depthAspect, inf.usage, false, VulkanMipmapMode.None, -1000 - swapchainImageIndex, depthName);
 			out.renderFinished = ctx.createSemaphore(new VkSemaphoreCreateInfo());
 			if( out.renderFinished == null )
-				throw Runtime.error("Failed to create Vulkan presentation semaphore");
+				throw VulkanRuntime.error("Failed to create Vulkan presentation semaphore");
 			newImages.push(out);
 			swapchainImageIndex++;
 		}
@@ -533,7 +533,7 @@ class VulkanDriver extends Driver {
 			return;
 		for( index => frame in frames ) {
 			if( ctx.waitForFence(frame.fence, -1) != 0 )
-				throw Runtime.error("Failed to wait for Vulkan frame completion");
+				throw VulkanRuntime.error("Failed to wait for Vulkan frame completion");
 			if( frame.submissionSerial > completedSubmissionSerial )
 				completedSubmissionSerial = frame.submissionSerial;
 			if( queryManager != null )
@@ -603,7 +603,7 @@ class VulkanDriver extends Driver {
 			return false;
 		var frame = frames[currentFrameIndex];
 		if( ctx.waitForFence(frame.fence, -1) != 0 )
-			throw Runtime.error("Failed to wait for Vulkan frame fence");
+			throw VulkanRuntime.error("Failed to wait for Vulkan frame fence");
 		if( frame.submissionSerial > completedSubmissionSerial )
 			completedSubmissionSerial = frame.submissionSerial;
 		queryManager.completeFrame(currentFrameIndex);
@@ -623,24 +623,24 @@ class VulkanDriver extends Driver {
 			acquireStatus = ctx.acquireNextImage(frame.imageAvailable, acquiredImage);
 		}
 		if( acquireStatus != Success && acquireStatus != Suboptimal )
-			throw Runtime.error('Failed to acquire Vulkan swapchain image (status $acquireStatus)');
+			throw VulkanRuntime.error('Failed to acquire Vulkan swapchain image (status $acquireStatus)');
 		currentImageIndex = acquiredImage;
 		frame.imageAvailableConsumed = false;
 		recreatePending = acquireStatus == Suboptimal;
 		var img = outImages[currentImageIndex];
 		if( img.fence != null && img.fence != frame.fence && ctx.waitForFence(img.fence, -1) != 0 )
-			throw Runtime.error("Failed to wait for Vulkan swapchain image fence");
+			throw VulkanRuntime.error("Failed to wait for Vulkan swapchain image fence");
 		img.fence = frame.fence;
 		if( ctx.resetFence(frame.fence) != 0 )
-			throw Runtime.error("Failed to reset Vulkan frame fence");
+			throw VulkanRuntime.error("Failed to reset Vulkan frame fence");
 		if( frame.command.reset() != 0 )
-			throw Runtime.error("Failed to reset Vulkan frame command buffer");
+			throw VulkanRuntime.error("Failed to reset Vulkan frame command buffer");
 
 		var inf = new VkCommandBufferBeginInfo();
 		inf.flags.set(ONE_TIME_SUBMIT);
 		command = frame.command;
 		if( command.begin(inf) != 0 )
-			throw Runtime.error("Failed to begin Vulkan frame command buffer");
+			throw VulkanRuntime.error("Failed to begin Vulkan frame command buffer");
 		queryManager.beginFrame(currentFrameIndex, command);
 		frameStarted = true;
 		renderingStarted = false;
@@ -741,7 +741,7 @@ class VulkanDriver extends Driver {
 		command.endDynamicRenderingPresent(image);
 		swapchain.colorLayout = PRESENT_SRC_KHR;
 		if( command.end() != 0 )
-			throw Runtime.error("Failed to end Vulkan frame command buffer");
+			throw VulkanRuntime.error("Failed to end Vulkan frame command buffer");
 		frameStarted = false;
 		renderingStarted = false;
 	}
@@ -797,7 +797,7 @@ class VulkanDriver extends Driver {
 		renderingStarted = false;
 		if( ctx != null ) {
 			if( ctx.waitIdle() != 0 )
-				throw Runtime.error("Failed to wait for Vulkan shutdown");
+				throw VulkanRuntime.error("Failed to wait for Vulkan shutdown");
 			if( queryManager != null ) {
 				queryManager.dispose();
 				queryManager = null;
@@ -875,7 +875,7 @@ class VulkanDriver extends Driver {
 				allocator.dispose();
 				allocator = null;
 			}
-			Runtime.destroyContext(ctx);
+			VulkanRuntime.destroyContext(ctx);
 			ctx = null;
 		}
 		if( surface != null ) {
@@ -1011,7 +1011,7 @@ class VulkanDriver extends Driver {
 		raw.dispose();
 	}
 
-	function captureImageSynchronous(source:limen.graphics.vulkan.memory.Memory.VkImage, resource:VulkanTexture,
+	function captureImageSynchronous(source:limen.graphics.renderer.vulkan.memory.Memory.VkImage, resource:VulkanTexture,
 		aspect:haxe.EnumFlags<VkImageAspectFlag>, mipLevel:Int, layer:Int, x:Int, y:Int, width:Int, height:Int,
 		vulkanFormat:VkFormat, heapsFormat:hxd.PixelFormat, blockWidth:Int, blockHeight:Int, bytesPerBlock:Int, pixels:hxd.Pixels,
 		rawRestoreLayout:VkImageLayout = UNDEFINED) {
@@ -1052,7 +1052,7 @@ class VulkanDriver extends Driver {
 		endFrame();
 		submit();
 		if (ctx.waitForFence(frames[submittedFrame].fence, -1) != 0)
-			throw Runtime.error("Failed to wait for synchronous Vulkan image readback");
+			throw VulkanRuntime.error("Failed to wait for synchronous Vulkan image readback");
 		completedSubmissionSerial = hxd.Math.imax(completedSubmissionSerial, frames[submittedFrame].submissionSerial);
 		deferredDestroy.collect(completedSubmissionSerial);
 		readbackManager.completeFrame(submittedFrame);
@@ -1154,13 +1154,13 @@ class VulkanDriver extends Driver {
 		var frame = frames[currentFrameIndex];
 		var image = outImages[currentImageIndex];
 		if( ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, image.renderFinished, frame.fence) != 0 )
-			throw Runtime.error("Failed to submit Vulkan frame");
+			throw VulkanRuntime.error("Failed to submit Vulkan frame");
 		frame.imageAvailableConsumed = true;
 		frame.submissionSerial = currentSubmissionSerial++;
 		queryManager.submitted(currentFrameIndex, frame.submissionSerial);
 		var presentStatus = ctx.present(image.renderFinished, currentImageIndex);
 		if( presentStatus != Success && presentStatus != Suboptimal && presentStatus != OutOfDate )
-			throw Runtime.error('Failed to present Vulkan frame (status $presentStatus)');
+			throw VulkanRuntime.error('Failed to present Vulkan frame (status $presentStatus)');
 		image.initialized = true;
 		recreatePending = presentStatus == Suboptimal || presentStatus == OutOfDate;
 		currentFrameIndex++;
@@ -1615,7 +1615,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 
 		var img = ctx.createImage(inf);
 		if( img == null )
-			throw Runtime.error('Failed to create Vulkan texture ${t.id}');
+			throw VulkanRuntime.error('Failed to create Vulkan texture ${t.id}');
 		final debugName = t.name == null ? 'texture-${t.id}' : 'texture-${t.id}-${t.name}';
 		ctx.setImageName(img, @:privateAccess debugName.toUtf8());
 
@@ -1630,7 +1630,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( !ctx.bindImageMemory64(img, allocation.memory, (allocation.offset : hl.I64)) ) {
 			allocation.dispose();
 			ctx.destroyImage(img);
-			throw Runtime.error('Failed to bind Vulkan texture ${t.id} memory');
+			throw VulkanRuntime.error('Failed to bind Vulkan texture ${t.id} memory');
 		}
 
 		var viewInfo = new VkImageViewCreateInfo();
@@ -1650,12 +1650,12 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( view == null ) {
 			ctx.destroyImage(img);
 			allocation.dispose();
-			throw Runtime.error('Failed to create Vulkan texture ${t.id} view');
+			throw VulkanRuntime.error('Failed to create Vulkan texture ${t.id} view');
 		}
 		final viewName = '$debugName-view';
 		ctx.setImageViewName(view, @:privateAccess viewName.toUtf8());
 
-		var aspect = new haxe.EnumFlags<limen.graphics.vulkan.memory.Memory.VkImageAspectFlag>();
+		var aspect = new haxe.EnumFlags<limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag>();
 		if( isDepth ) {
 			aspect.set(DEPTH);
 			if( t.hasStencil() )
@@ -1934,7 +1934,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		state:VulkanBufferState, debugId:Int, debugName:String) {
 		var buffer = ctx.createBuffer64((byteSize : hl.I64), usage);
 		if( buffer == null )
-			throw Runtime.error('Failed to create Vulkan buffer $debugName ($byteSize bytes)');
+			throw VulkanRuntime.error('Failed to create Vulkan buffer $debugName ($byteSize bytes)');
 		ctx.setBufferName(buffer, @:privateAccess debugName.toUtf8());
 		var requirements = new VkMemoryRequirementsInfo();
 		ctx.getBufferMemoryRequirements2(buffer, requirements);
@@ -1945,7 +1945,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( !ctx.bindBufferMemory64(buffer, allocation.memory, (allocation.offset : hl.I64)) ) {
 			allocation.dispose();
 			ctx.destroyBuffer(buffer);
-			throw Runtime.error('Failed to bind Vulkan buffer $debugName memory');
+			throw VulkanRuntime.error('Failed to bind Vulkan buffer $debugName memory');
 		}
 		var resource = new VulkanBuffer(buffer, allocation, byteSize, usage, stride, state, debugId, debugName);
 		liveBuffers.push(resource);
@@ -1955,7 +1955,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	function createInstanceBufferResource(usage:haxe.EnumFlags<VkBufferUsageFlag>, byteSize:Int, capacity:Int):VulkanInstanceBuffer {
 		final buffer = ctx.createBuffer64((haxe.Int64.ofInt(byteSize) : hl.I64), usage);
 		if( buffer == null )
-			throw Runtime.error('Failed to create Vulkan instance buffer ($byteSize bytes)');
+			throw VulkanRuntime.error('Failed to create Vulkan instance buffer ($byteSize bytes)');
 		final id = nextInstanceBufferId++;
 		final name = 'instance-buffer-$id';
 		ctx.setBufferName(buffer, @:privateAccess name.toUtf8());
@@ -1969,7 +1969,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( !ctx.bindBufferMemory64(buffer, allocation.memory, (allocation.offset : hl.I64)) ) {
 			allocation.dispose();
 			ctx.destroyBuffer(buffer);
-			throw Runtime.error('Failed to bind Vulkan instance buffer $name memory');
+			throw VulkanRuntime.error('Failed to bind Vulkan instance buffer $name memory');
 		}
 		final resource = new VulkanInstanceBuffer(buffer, allocation, haxe.Int64.ofInt(byteSize), usage, Undefined, -id, name, capacity);
 		liveBuffers.push(resource);
@@ -2011,7 +2011,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( buffers.length == 0 )
 			throw "Vulkan multi-buffer selection requires at least one buffer";
 		currentVertexBuffers.resize(buffers.length);
-		if( vertexBufferScratch.length < buffers.length ) vertexBufferScratch = new hl.NativeArray<limen.graphics.vulkan.memory.Memory.VkBuffer>(buffers.length);
+		if( vertexBufferScratch.length < buffers.length ) vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(buffers.length);
 		if( vertexOffsetScratch.length < buffers.length ) vertexOffsetScratch = new hl.NativeArray<hl.I64>(buffers.length);
 		for( index => buffer in buffers ) {
 			final vbuf:VulkanBuffer = @:privateAccess buffer.vbuf;
@@ -2247,7 +2247,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		endFrame();
 		submit();
 		if( ctx.waitForFence(frames[submittedFrame].fence, -1) != 0 )
-			throw Runtime.error("Failed to wait for synchronous Vulkan readback");
+			throw VulkanRuntime.error("Failed to wait for synchronous Vulkan readback");
 		readbackManager.completeFrame(submittedFrame);
 		if( swapchainReady )
 			beginFrame();
@@ -2861,7 +2861,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				frame.descriptorCacheMissCount++;
 				set = frame.descriptorArena.allocate(currentShader.descriptorSetLayouts[setIndex], metadata.descriptorCount);
 				final buffers:Array<VulkanBuffer> = [];
-				final bufferHandles:Array<limen.graphics.vulkan.memory.Memory.VkBuffer> = [];
+				final bufferHandles:Array<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer> = [];
 				final bufferRanges:Array<haxe.Int64> = [];
 				final images:Array<VulkanTexture> = [];
 				final views:Array<VkImageView> = [];
@@ -3100,7 +3100,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		info.aspectMask = aspect;
 		final view = ctx.createImageView(info);
 		if( view == null )
-			throw Runtime.error('Failed to create Vulkan texture view ${image.debugName}[$key]');
+			throw VulkanRuntime.error('Failed to create Vulkan texture view ${image.debugName}[$key]');
 		ctx.setImageViewName(view, @:privateAccess '${image.debugName}-view-$key'.toUtf8());
 		final entry = new VulkanImageViewEntry(type, format, aspectBits, baseMip, levelCount, baseLayer, layerCount, view, key);
 		@:privateAccess image.setExtraView(entry);
@@ -3462,7 +3462,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				completedSubmissionSerial = hxd.Math.imax(completedSubmissionSerial, frame.submissionSerial);
 				queryManager.completeFrame(index);
 			} else if (status != 1)
-				throw Runtime.error("Failed to poll Vulkan query submission fence");
+				throw VulkanRuntime.error("Failed to poll Vulkan query submission fence");
 		}
 	}
 
@@ -3475,11 +3475,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Vulkan pending query belongs to a different frame";
 		suspendRendering();
 		if (command.end() != 0)
-			throw Runtime.error("Failed to end Vulkan query command buffer");
+			throw VulkanRuntime.error("Failed to end Vulkan query command buffer");
 		frameStarted = false;
 		final frame = frames[submittedFrame];
 		if (ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, null, frame.fence) != 0)
-			throw Runtime.error("Failed to submit Vulkan query command buffer");
+			throw VulkanRuntime.error("Failed to submit Vulkan query command buffer");
 		frame.imageAvailableConsumed = true;
 		frame.submissionSerial = currentSubmissionSerial++;
 		queryManager.submitted(submittedFrame, frame.submissionSerial);
@@ -3490,14 +3490,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		frame.reclaimDescriptors();
 		frame.shaderConstants.clear();
 		if (ctx.resetFence(frame.fence) != 0)
-			throw Runtime.error("Failed to reset Vulkan query submission fence");
+			throw VulkanRuntime.error("Failed to reset Vulkan query submission fence");
 		if (frame.command.reset() != 0)
-			throw Runtime.error("Failed to reset Vulkan query command buffer");
+			throw VulkanRuntime.error("Failed to reset Vulkan query command buffer");
 		final inf = new VkCommandBufferBeginInfo();
 		inf.flags.set(ONE_TIME_SUBMIT);
 		command = frame.command;
 		if (command.begin(inf) != 0)
-			throw Runtime.error("Failed to resume Vulkan command recording after query submission");
+			throw VulkanRuntime.error("Failed to resume Vulkan command recording after query submission");
 		queryManager.beginFrame(submittedFrame, command);
 		frameStarted = true;
 		renderingStarted = false;
@@ -3517,7 +3517,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	function waitForQuerySubmission(generation:VulkanQueryGeneration) {
 		final frame = frames[generation.frameIndex];
 		if (ctx.waitForFence(frame.fence, -1) != 0)
-			throw Runtime.error("Failed to wait for Vulkan query submission");
+			throw VulkanRuntime.error("Failed to wait for Vulkan query submission");
 		completedSubmissionSerial = hxd.Math.imax(completedSubmissionSerial, generation.submissionSerial);
 		queryManager.completeFrame(generation.frameIndex);
 	}

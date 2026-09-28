@@ -5,8 +5,8 @@ package h3d.impl.driver.opengl;
 private typedef Uniform = js.html.webgl.UniformLocation;
 private typedef GLShader = js.html.webgl.Shader;
 #elseif limen
-private typedef Uniform = limen.graphics.opengl.OpenGLTypes.Uniform;
-private typedef GLShader = limen.graphics.opengl.OpenGLTypes.Shader;
+private typedef Uniform = limen.graphics.renderer.opengl.shader.Shaders.Uniform;
+private typedef GLShader = limen.graphics.renderer.opengl.shader.Shaders.Shader;
 #elseif usegl
 private typedef Uniform = haxe.GLTypes.Uniform;
 private typedef GLShader = haxe.GLTypes.Shader;

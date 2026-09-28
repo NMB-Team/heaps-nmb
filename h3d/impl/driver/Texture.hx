@@ -11,9 +11,9 @@ typedef Texture = h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
 #elseif (limen && gfx_dx12)
 typedef Texture = h3d.impl.driver.dx12.resource.TextureData;
 #elseif (limen && gfx_dx11)
-typedef Texture = { res : limen.graphics.d3d11.DX11Core.Resource, view : limen.graphics.d3d11.DX11Resources.ShaderResourceView, ?depthView : limen.graphics.d3d11.DX11States.DepthStencilView, ?readOnlyDepthView : limen.graphics.d3d11.DX11States.DepthStencilView, rt : Array<limen.graphics.d3d11.DX11Resources.RenderTargetView>, ?views : Array<limen.graphics.d3d11.DX11Resources.ShaderResourceView> };
+typedef Texture = { res : limen.graphics.renderer.d3d11.resource.Resources.Resource, view : limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceView, ?depthView : limen.graphics.renderer.d3d11.descriptor.ResourceViews.DepthStencilView, ?readOnlyDepthView : limen.graphics.renderer.d3d11.descriptor.ResourceViews.DepthStencilView, rt : Array<limen.graphics.renderer.d3d11.descriptor.ResourceViews.RenderTargetView>, ?views : Array<limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceView> };
 #elseif limen
-typedef Texture = { t : limen.graphics.opengl.OpenGLTypes.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
+typedef Texture = { t : limen.graphics.renderer.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 #elseif usegl
 typedef Texture = { t : haxe.GLTypes.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int };
 #elseif usesys

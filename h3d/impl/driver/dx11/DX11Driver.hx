@@ -9,39 +9,46 @@ import h3d.impl.driver.Texture;
 import h3d.impl.driver.dx11.CompiledShader;
 import h3d.impl.driver.dx11.ShaderContext;
 
-import limen.graphics.d3d11.DX11Core.Format;
-import limen.graphics.d3d11.DX11Core.MapType;
-import limen.graphics.d3d11.DX11Core.Resource;
-import limen.graphics.d3d11.DX11Core.ResourceBind;
-import limen.graphics.d3d11.DX11Core.ResourceBox;
-import limen.graphics.d3d11.DX11Core.ResourceMisc;
-import limen.graphics.d3d11.DX11Resources.RenderTargetDesc;
-import limen.graphics.d3d11.DX11Resources.RenderTargetView;
-import limen.graphics.d3d11.DX11Resources.ShaderResourceView;
-import limen.graphics.d3d11.DX11Resources.ShaderResourceViewDesc;
-import limen.graphics.d3d11.DX11Resources.Texture2dDesc;
-import limen.graphics.d3d11.DX11Shaders.Layout;
-import limen.graphics.d3d11.DX11Shaders.LayoutElement;
-import limen.graphics.d3d11.DX11Shaders.Shader;
-import limen.graphics.d3d11.DX11States.AddressMode;
-import limen.graphics.d3d11.DX11States.Blend;
-import limen.graphics.d3d11.DX11States.BlendOp;
-import limen.graphics.d3d11.DX11States.BlendState;
-import limen.graphics.d3d11.DX11States.ComparisonFunc;
-import limen.graphics.d3d11.DX11States.CullMode;
-import limen.graphics.d3d11.DX11States.DepthStencilDesc;
-import limen.graphics.d3d11.DX11States.DepthStencilState;
-import limen.graphics.d3d11.DX11States.DepthStencilView;
-import limen.graphics.d3d11.DX11States.FillMode;
-import limen.graphics.d3d11.DX11States.Filter;
-import limen.graphics.d3d11.DX11States.RasterizerDesc;
-import limen.graphics.d3d11.DX11States.RasterState;
-import limen.graphics.d3d11.DX11States.RenderTargetBlendDesc;
-import limen.graphics.d3d11.DX11States.SamplerDesc;
-import limen.graphics.d3d11.DX11States.SamplerState;
-import limen.graphics.d3d11.DX11States.StencilOp;
-import limen.graphics.d3d11.internal.D3D11Bindings as Driver;
-import limen.graphics.d3d11.internal.D3D11Bindings.Dx11DriverInitFlags;
+import limen.graphics.renderer.d3d11.DX11Core.Format;
+import limen.graphics.renderer.d3d11.resource.Resources.MapType;
+import limen.graphics.renderer.d3d11.resource.Resources.Resource;
+import limen.graphics.renderer.d3d11.resource.Resources.ResourceBind;
+import limen.graphics.renderer.d3d11.resource.Resources.ResourceBox;
+import limen.graphics.renderer.d3d11.resource.Resources.ResourceMisc;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.RenderTargetDesc;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.RenderTargetView;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceView;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceViewDesc;
+import limen.graphics.renderer.d3d11.resource.Resources.Texture2dDesc;
+import limen.graphics.renderer.d3d11.pipeline.InputLayout.Layout;
+import limen.graphics.renderer.d3d11.pipeline.InputLayout.LayoutElement;
+import limen.graphics.renderer.d3d11.shader.Shaders.Shader;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.AddressMode;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.Blend;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.BlendOp;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.BlendState;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.ComparisonFunc;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.CullMode;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.DepthStencilDesc;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.DepthStencilState;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.DepthStencilView;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.FillMode;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.Filter;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.RasterizerDesc;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.RasterState;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.RenderTargetBlendDesc;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.SamplerDesc;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.SamplerState;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.StencilOp;
+import limen.graphics.renderer.d3d11.internal.D3D11Bindings as Driver;
+import limen.graphics.renderer.d3d11.command.Commands as DX11Commands;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews as DX11ResourceViews;
+import limen.graphics.renderer.d3d11.pipeline.InputLayout as DX11InputLayout;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline as DX11Pipeline;
+import limen.graphics.renderer.d3d11.resource.Resources as DX11Resources;
+import limen.graphics.renderer.d3d11.shader.ShaderCompiler as DX11ShaderCompiler;
+import limen.graphics.renderer.d3d11.shader.Shaders as DX11Shaders;
+import limen.graphics.renderer.d3d11.DX11Core.Dx11DriverInitFlags;
 
 private typedef DX11Texture = {
 	res : Resource,
@@ -173,7 +180,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		var version = Driver.getSupportedVersion();
 		shaderVersion = if( version < 9.3 ) "4_0_level_9_1" else if( version < 10 ) "4_0_level_9_3" else if( version < 10.1 ) "4_0" else if( version < 11 ) "4_1" else "5_0";
 
-		Driver.iaSetPrimitiveTopology(TriangleList);
+		DX11Commands.iaSetPrimitiveTopology(TriangleList);
 		for( i in 0...VIEWPORTS_ELTS )
 			viewport[i] = 0;
 		for( i in 0...RECTS_ELTS )
@@ -228,10 +235,10 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		depthDesc.sampleCount = 1;
 		depthDesc.sampleQuality = 0;
 		depthDesc.bind = DepthStencil | ShaderResource;
-		var depth = Driver.createTexture2d(depthDesc);
+		var depth = DX11Resources.createTexture2d(depthDesc);
 		if( depth == null ) throw "Failed to create depthBuffer";
-		var depthView = Driver.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
-		var readOnlyDepthView = Driver.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
+		var depthView = DX11ResourceViews.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
+		var readOnlyDepthView = DX11ResourceViews.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
 
 		var vdesc = new ShaderResourceViewDesc();
 		vdesc.format = R24_UNORM_X8_TYPELESS;
@@ -239,7 +246,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		vdesc.arraySize = 1;
 		vdesc.start = 0;
 		vdesc.count = -1;
-		var shaderView = Driver.createShaderResourceView(depth, vdesc);
+		var shaderView = DX11ResourceViews.createShaderResourceView(depth, vdesc);
 
 		defaultDepth = { res : depth, view : shaderView, depthView : depthView, readOnlyDepthView : readOnlyDepthView, rt : null };
 		@:privateAccess {
@@ -249,8 +256,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		}
 
 		var buf = Driver.getBackBuffer();
-		defaultTarget = Driver.createRenderTargetView(buf);
-		Driver.clearColor(defaultTarget, 0, 0, 0, 0);
+		defaultTarget = DX11ResourceViews.createRenderTargetView(buf);
+		DX11Commands.clearColor(defaultTarget, 0, 0, 0, 0);
 		buf.release();
 
 		outputWidth = width;
@@ -285,13 +292,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	override function clear(?color:h3d.Vector4, ?depth:Float, ?stencil:Int) {
 		if( color != null ) {
 			for( i in 0...targetsCount )
-				Driver.clearColor(currentTargets[i], color.r, color.g, color.b, color.a);
+				DX11Commands.clearColor(currentTargets[i], color.r, color.g, color.b, color.a);
 			if (targetsCount == 0)
-				Driver.clearColor(defaultTarget, color.r, color.g, color.b, color.a);
+				DX11Commands.clearColor(defaultTarget, color.r, color.g, color.b, color.a);
 		}
 		if( currentDepth != null && (depth != null || stencil != null) ) {
 			final currentDepth:DX11Texture = currentDepth;
-			Driver.clearDepthStencilView(currentDepth.depthView, depth, stencil);
+			DX11Commands.clearDepthStencilView(currentDepth.depthView, depth, stencil);
 		}
 	}
 
@@ -339,8 +346,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	override function allocBuffer(b:Buffer):GPUBuffer {
 		var size = b.getMemSize();
-		var res = b.flags.has(UniformBuffer) ? Driver.createBuffer(size, Dynamic, ConstantBuffer, CpuWrite, None, 0, null) :
-				Driver.createBuffer(size, Default, b.flags.has(IndexBuffer) ? IndexBuffer : VertexBuffer, None, None, 0, null);
+		var res = b.flags.has(UniformBuffer) ? DX11Resources.createBuffer(size, Dynamic, ConstantBuffer, CpuWrite, None, 0, null) :
+				DX11Resources.createBuffer(size, Default, b.flags.has(IndexBuffer) ? IndexBuffer : VertexBuffer, None, None, 0, null);
 		if( res == null ) return null;
 		return res;
 	}
@@ -356,7 +363,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		depthDesc.sampleQuality = 0;
 		depthDesc.usage = Default;
 		depthDesc.bind = DepthStencil | ShaderResource;
-		var depth = Driver.createTexture2d(depthDesc);
+		var depth = DX11Resources.createTexture2d(depthDesc);
 		if( depth == null )
 			return null;
 		var vdesc = new ShaderResourceViewDesc();
@@ -365,9 +372,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		vdesc.arraySize = 1;
 		vdesc.start = 0;
 		vdesc.count = -1;
-		var srv = Driver.createShaderResourceView(depth,vdesc);
-		var depthView = Driver.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
-		var readOnlyDepthView = Driver.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
+		var srv = DX11ResourceViews.createShaderResourceView(depth,vdesc);
+		var depthView = DX11ResourceViews.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
+		var readOnlyDepthView = DX11ResourceViews.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
 		return { res : depth, view : srv, depthView : depthView, readOnlyDepthView : readOnlyDepthView, rt : null };
 	}
 
@@ -462,7 +469,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			desc.bind |= RenderTarget;
 			desc.misc |= GenerateMips;
 		}
-		var tex = Driver.createTexture2d(desc);
+		var tex = DX11Resources.createTexture2d(desc);
 		if( tex == null )
 			return null;
 
@@ -481,7 +488,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		vdesc.arraySize = isArray ? t.layerCount : isCube ? 6 : 0;
 		vdesc.start = startMip; // top mip level
 		vdesc.count = -1; // all mip levels
-		return Driver.createShaderResourceView(tex, vdesc);
+		return DX11ResourceViews.createShaderResourceView(tex, vdesc);
 	}
 
 	override function disposeTexture( t : h3d.mat.Texture ) {
@@ -507,7 +514,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	override function generateMipMaps(texture:h3d.mat.Texture) {
 		if( hasDeviceError ) return;
 		final t:DX11Texture = texture.t;
-		Driver.generateMips(t.view);
+		DX11Commands.generateMips(t.view);
 	}
 
 	function updateBuffer( res : Resource, bytes : hl.Bytes, startByte : Int, bytesCount : Int ) {
@@ -558,7 +565,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	override function readBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
 		var stride = b.format.strideBytes;
-		var tmp = Driver.createBuffer(vertexCount * stride, Staging, None, CpuRead | CpuWrite, None, 0, null);
+		var tmp = DX11Resources.createBuffer(vertexCount * stride, Staging, None, CpuRead | CpuWrite, None, 0, null);
 		box.left = startVertex * stride;
 		box.top = 0;
 		box.front = 0;
@@ -610,7 +617,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 		if( hasDeviceError ) throw "Can't capture if device disposed";
 
-		var tmp = Driver.createTexture2d(desc);
+		var tmp = DX11Resources.createTexture2d(desc);
 		if( tmp == null )
 			throw "Capture failed: can't create tmp texture";
 
@@ -719,7 +726,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 				desc.backFaceFail = STENCIL_OP[st.backSTfail.getIndex()];
 				desc.backFaceDepthFail = STENCIL_OP[st.backDPfail.getIndex()];
 			}
-			depth = Driver.createDepthStencilState(desc);
+			depth = DX11Pipeline.createDepthStencilState(desc);
 			if( depths == null ) {
 				depths = { def : null, stencils : [] };
 				depthStates.set(depthBits, depths);
@@ -733,7 +740,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			var ref = st == null ? 0 : st.reference;
 			currentDepthState = depth;
 			currentStencilRef = ref;
-			Driver.omSetDepthStencilState(depth, ref);
+			DX11Commands.omSetDepthStencilState(depth, ref);
 		}
 
 		var rasterBits = bits & (Pass.culling_mask | SCISSOR_BIT | Pass.wireframe_mask);
@@ -749,7 +756,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			}
 			desc.depthClipEnable = true;
 			desc.scissorEnable = bits & SCISSOR_BIT != 0;
-			raster = Driver.createRasterizerState(desc);
+			raster = DX11Pipeline.createRasterizerState(desc);
 			rasterStates.set(rasterBits, raster);
 		}
 
@@ -757,7 +764,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 		if( raster != currentRasterState ) {
 			currentRasterState = raster;
-			Driver.rsSetState(raster);
+			DX11Commands.rsSetState(raster);
 		}
 
 		var bitsMask = Pass.blendSrc_mask | Pass.blendDst_mask | Pass.blendAlphaSrc_mask | Pass.blendAlphaDst_mask | Pass.blendOp_mask | Pass.blendAlphaOp_mask;
@@ -804,15 +811,15 @@ class DX11Driver extends h3d.impl.driver.Driver {
 					}
 					maski = maski >> 4;
 				}
-				blend = Driver.createBlendState(false, true, blendDesc, targetsCount);
+				blend = DX11Pipeline.createBlendState(false, true, blendDesc, targetsCount);
 			} else {
-				blend = Driver.createBlendState(false, false, blendDesc, 1);
+				blend = DX11Pipeline.createBlendState(false, false, blendDesc, 1);
 			}
 			blendStates.set(blendBits, blend);
 		}
 		if( blend != currentBlendState ) {
 			currentBlendState = blend;
-			Driver.omSetBlendState(blend, blendFactors, -1);
+			DX11Commands.omSetBlendState(blend, blendFactors, -1);
 		}
 	}
 
@@ -827,7 +834,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			var bytes = shaderCache.resolveShaderBinary(code, shaderVersion);
 			if( bytes != null ) {
 				try {
-					var sh = vertex ? Driver.createVertexShader(bytes) : Driver.createPixelShader(bytes);
+					var sh = vertex ? DX11Shaders.createVertexShader(bytes) : DX11Shaders.createPixelShader(bytes);
 					// shader can't be compiled !
 					if( sh == null )
 						return null;
@@ -856,7 +863,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		if( bytes == null ) {
 			var tracing = hxd.NMBTrace.enabled();
 			if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
-			bytes = try Driver.compileShader(shader.code, "", "main", (shader.kind==Vertex?"vs_":"ps_") + shaderVersion, OptimizationLevel3) catch( err : String ) {
+			bytes = try DX11ShaderCompiler.compile(shader.code, "", "main", (shader.kind==Vertex?"vs_":"ps_") + shaderVersion, OptimizationLevel3) catch( err : String ) {
 				if( tracing ) hxd.NMBTrace.end("heaps.shader");
 				err = ~/^\(([0-9]+),([0-9]+)-([0-9]+)\)/gm.map(err, function(r) {
 					var line = Std.parseInt(r.matched(1));
@@ -872,7 +879,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		}
 		if( compileOnly )
 			return { s : null, bytes : bytes };
-		var s = shader.kind == Vertex ? Driver.createVertexShader(bytes) : Driver.createPixelShader(bytes);
+		var s = shader.kind == Vertex ? DX11Shaders.createVertexShader(bytes) : DX11Shaders.createPixelShader(bytes);
 		if( s == null ) {
 			if( hasDeviceError ) return null;
 			throw "Failed to create shader\n" + shader.code;
@@ -902,8 +909,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			p = p.next;
 		}
 		ctx.bufferCount = shader.bufferCount;
-		ctx.globals = Driver.createBuffer(shader.globalsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
-		ctx.params = Driver.createBuffer(shader.paramsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
+		ctx.globals = DX11Resources.createBuffer(shader.globalsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
+		ctx.params = DX11Resources.createBuffer(shader.paramsSize * 16, Dynamic, ConstantBuffer, CpuWrite, None, 0, null);
 		ctx.samplersMap = [];
 
 		var samplers = new hxsl.HlslOut.Samplers();
@@ -921,7 +928,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			var code = new hxsl.HlslOut().run(s.data);
 			try {
 				var scomp = compileShader(s, true).bytes;
-				code += "\n// ASM=\n" + Driver.disassembleShader(scomp, None, null) + "\n\n";
+				code += "\n// ASM=\n" + DX11ShaderCompiler.disassemble(scomp, None, null) + "\n\n";
 			} catch( e : Dynamic ) {
 			}
 			return code;
@@ -976,11 +983,11 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			default:
 				currentDepth.depthView;
 			}
-			Driver.omSetRenderTargets(1, currentTargets, depthView);
+			DX11Commands.omSetRenderTargets(1, currentTargets, depthView);
 			viewport[2] = outputWidth;
 			viewport[3] = outputHeight;
 			viewport[5] = 1.;
-			Driver.rsSetViewports(1, viewport);
+			DX11Commands.rsSetViewports(1, viewport);
 			return;
 		}
 		tmpTextures[0] = tex;
@@ -991,11 +998,11 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		for( i in 0...64 ) {
 			if( vertexShader.resources[i] == res ) {
 				vertexShader.resources[i] = null;
-				Driver.vsSetShaderResources(i, 1, vertexShader.resources.getRef().offset(i));
+				DX11Commands.vsSetShaderResources(i, 1, vertexShader.resources.getRef().offset(i));
 			}
 			if( pixelShader.resources[i] == res ) {
 				pixelShader.resources[i] = null;
-				Driver.psSetShaderResources(i, 1, pixelShader.resources.getRef().offset(i));
+				DX11Commands.psSetShaderResources(i, 1, pixelShader.resources.getRef().offset(i));
 			}
 		}
 	}
@@ -1033,7 +1040,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 				v.mipMap = mipLevel;
 				v.firstSlice = layer;
 				v.sliceCount = 1;
-				rt = Driver.createRenderTargetView(target.res, v);
+				rt = DX11ResourceViews.createRenderTargetView(target.res, v);
 				target.rt[index] = rt;
 			}
 			tex.lastFrame = frame;
@@ -1043,7 +1050,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			// prevent garbage
 			if( !tex.flags.has(WasCleared) ) {
 				tex.flags.set(WasCleared);
-				Driver.clearColor(rt, 0, 0, 0, 0);
+				DX11Commands.clearColor(rt, 0, 0, 0, 0);
 			}
 		}
 		var depthView = if ( currentDepth == null )
@@ -1059,7 +1066,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 				currentDepth.depthView;
 			}
 		}
-		Driver.omSetRenderTargets(textures.length, currentTargets, depthView);
+		DX11Commands.omSetRenderTargets(textures.length, currentTargets, depthView);
 		targetsCount = textures.length;
 
 		var w = tex.width >> mipLevel; if( w == 0 ) w = 1;
@@ -1067,7 +1074,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		viewport[2] = w;
 		viewport[3] = h;
 		viewport[5] = 1.;
-		Driver.rsSetViewports(1, viewport);
+		DX11Commands.rsSetViewports(1, viewport);
 	}
 
 	override function setDepth( depthBuffer : h3d.mat.Texture, layer = 0 ) {
@@ -1079,7 +1086,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		depthBuffer.lastFrame = frame;
 		final currentDepth:DX11Texture = currentDepth;
 		unbind(currentDepth.view);
-		Driver.omSetRenderTargets(0, null, currentDepth.depthView);
+		DX11Commands.omSetRenderTargets(0, null, currentDepth.depthView);
 		targetsCount = 0;
 
 		var w = depthBuffer.width; if( w == 0 ) w = 1;
@@ -1087,7 +1094,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		viewport[2] = w;
 		viewport[3] = h;
 		viewport[5] = 1.;
-		Driver.rsSetViewports(1, viewport);
+		DX11Commands.rsSetViewports(1, viewport);
 	}
 
 	override function setRenderZone(x:Int, y:Int, width:Int, height:Int) {
@@ -1110,7 +1117,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		rects[1] = y;
 		rects[2] = x + width;
 		rects[3] = y + height;
-		Driver.rsSetScissorRects(1, rects);
+		DX11Commands.rsSetScissorRects(1, rects);
 	}
 
 	override function selectShader(shader:hxsl.RuntimeShader) {
@@ -1155,8 +1162,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	function setShader( s : CompiledShader ) {
 		currentShader = s;
-		Driver.vsSetShader(s.vertex.shader);
-		Driver.psSetShader(s.fragment.shader);
+		DX11Commands.vsSetShader(s.vertex.shader);
+		DX11Commands.psSetShader(s.fragment.shader);
 		currentLayout = null;
 	}
 
@@ -1190,7 +1197,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 				e.inputSlotClass = PerVertexData;
 			layout[index] = e;
 		}
-		var l = Driver.createInputLayout(layout, currentShader.vertexBytes, currentShader.vertexBytes.length);
+		var l = DX11InputLayout.createInputLayout(layout, currentShader.vertexBytes, currentShader.vertexBytes.length);
 		if( l == null )
 			throw "Failed to create input layout";
 		return l;
@@ -1205,7 +1212,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			currentShader.layouts.set(buffer.format.uid, layout);
 		}
 		if( layout != currentLayout ) {
-			Driver.iaSetInputLayout(layout);
+			DX11Commands.iaSetInputLayout(layout);
 			currentLayout = layout;
 		}
 		var map = buffer.format.resolveMapping(currentShader.format);
@@ -1223,7 +1230,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			}
 		}
 		if( max >= 0 )
-			Driver.iaSetVertexBuffers(start, max - start + 1, currentVBuffers.getRef().offset(start), hl.Bytes.getArray(strides).offset(start << 2), hl.Bytes.getArray(offsets).offset(start << 2));
+			DX11Commands.iaSetVertexBuffers(start, max - start + 1, currentVBuffers.getRef().offset(start), hl.Bytes.getArray(strides).offset(start << 2), hl.Bytes.getArray(offsets).offset(start << 2));
 	}
 
 	override function selectMultiBuffers(formats:hxd.BufferFormat.MultiFormat,buffers:Array<Buffer>) {
@@ -1234,7 +1241,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			currentShader.layouts.set(-formats.uid-1, layout);
 		}
 		if( layout != currentLayout ) {
-			Driver.iaSetInputLayout(layout);
+			DX11Commands.iaSetInputLayout(layout);
 			currentLayout = layout;
 		}
 		var map = formats.resolveMapping(currentShader.format);
@@ -1251,7 +1258,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			}
 		}
 		if( max >= 0 )
-			Driver.iaSetVertexBuffers(start, max - start + 1, currentVBuffers.getRef().offset(start), hl.Bytes.getArray(strides).offset(start << 2), hl.Bytes.getArray(offsets).offset(start << 2));
+			DX11Commands.iaSetVertexBuffers(start, max - start + 1, currentVBuffers.getRef().offset(start), hl.Bytes.getArray(strides).offset(start << 2), hl.Bytes.getArray(offsets).offset(start << 2));
 	}
 
 	override function uploadShaderBuffers(buffers:h3d.shader.Buffers, which:h3d.shader.Buffers.BufferKind) {
@@ -1285,9 +1292,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 					state.buffers[0] = shader.globals;
 					switch( state.kind ) {
 					case Vertex:
-						Driver.vsSetConstantBuffers(0, 1, state.buffers);
+						DX11Commands.vsSetConstantBuffers(0, 1, state.buffers);
 					case Pixel:
-						Driver.psSetConstantBuffers(0, 1, state.buffers);
+						DX11Commands.psSetConstantBuffers(0, 1, state.buffers);
 					}
 				}
 			}
@@ -1298,9 +1305,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 					state.buffers[1] = shader.params;
 					switch( state.kind ) {
 					case Vertex:
-						Driver.vsSetConstantBuffers(1, 1, state.buffers.getRef().offset(1));
+						DX11Commands.vsSetConstantBuffers(1, 1, state.buffers.getRef().offset(1));
 					case Pixel:
-						Driver.psSetConstantBuffers(1, 1, state.buffers.getRef().offset(1));
+						DX11Commands.psSetConstantBuffers(1, 1, state.buffers.getRef().offset(1));
 					}
 				}
 			}
@@ -1319,9 +1326,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			if( max >= 0 )
 				switch( state.kind ) {
 				case Vertex:
-					Driver.vsSetConstantBuffers(first,max-first+1,state.buffers.getRef().offset(first));
+					DX11Commands.vsSetConstantBuffers(first,max-first+1,state.buffers.getRef().offset(first));
 				case Pixel:
-					Driver.psSetConstantBuffers(first,max-first+1,state.buffers.getRef().offset(first));
+					DX11Commands.psSetConstantBuffers(first,max-first+1,state.buffers.getRef().offset(first));
 				}
 		case Textures:
 			var start = -1, max = -1;
@@ -1387,7 +1394,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 						desc.maxLod = 1e30;
 						desc.mipLodBias = t.lodBias;
 						desc.maxAnisotropy = t.anisotropicMaxLevel;
-						ss = Driver.createSamplerState(desc);
+						ss = DX11Pipeline.createSamplerState(desc);
 						samplerStates.set(samplerBits, ss);
 					}
 					state.samplerBits[sidx] = samplerBits;
@@ -1405,9 +1412,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 							if( currentTargetResources[r] == state.resources[i] )
 								throw "Texture bound in output is set in shader";
 					#end
-					Driver.vsSetShaderResources(start, max - start + 1, state.resources.getRef().offset(start));
+					DX11Commands.vsSetShaderResources(start, max - start + 1, state.resources.getRef().offset(start));
 				}
-				if( smax >= 0 ) Driver.vsSetSamplers(sstart, smax - sstart + 1, state.samplers.getRef().offset(sstart));
+				if( smax >= 0 ) DX11Commands.vsSetSamplers(sstart, smax - sstart + 1, state.samplers.getRef().offset(sstart));
 			case Pixel:
 				if( max >= 0 ) {
 					#if dxdebug
@@ -1416,9 +1423,9 @@ class DX11Driver extends h3d.impl.driver.Driver {
 							if( currentTargetResources[r] == state.resources[i] )
 								throw "Texture bound in output is set in shader";
 					#end
-					Driver.psSetShaderResources(start, max - start + 1, state.resources.getRef().offset(start));
+					DX11Commands.psSetShaderResources(start, max - start + 1, state.resources.getRef().offset(start));
 				}
-				if( smax >= 0 ) Driver.psSetSamplers(sstart, smax - sstart + 1, state.samplers.getRef().offset(sstart));
+				if( smax >= 0 ) DX11Commands.psSetSamplers(sstart, smax - sstart + 1, state.samplers.getRef().offset(sstart));
 			}
 		}
 	}
@@ -1428,13 +1435,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
-			Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
+			DX11Commands.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
 		}
-		Driver.drawIndexed(ntriangles * 3, startIndex, 0);
+		DX11Commands.drawIndexed(ntriangles * 3, startIndex, 0);
 	}
 
 	override function allocInstanceBuffer(b:InstanceBuffer, buf : haxe.io.Bytes) {
-		b.data = Driver.createBuffer(b.commandCount * 5 * 4, Default, UnorderedAccess, None, DrawIndirectArgs, 4, buf);
+		b.data = DX11Resources.createBuffer(b.commandCount * 5 * 4, Default, UnorderedAccess, None, DrawIndirectArgs, 4, buf);
 	}
 
 	override function uploadInstanceBufferBytes(b : InstanceBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
@@ -1453,13 +1460,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			return;
 		if( currentIndex != ibuf ) {
 			currentIndex = ibuf;
-			Driver.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
+			DX11Commands.iaSetIndexBuffer(ibuf.vbuf,ibuf.format.strideBytes == 4,0);
 		}
 		if( commands.data == null ) {
-			Driver.drawIndexedInstanced(commands.indexCount, commands.commandCount, commands.startIndex, 0, 0);
+			DX11Commands.drawIndexedInstanced(commands.indexCount, commands.commandCount, commands.startIndex, 0, 0);
 		} else {
 			for( i in 0...commands.commandCount )
-				Driver.drawIndexedInstancedIndirect(commands.data,i * 20);
+				DX11Commands.drawIndexedInstancedIndirect(commands.data,i * 20);
 		}
 	}
 

@@ -3,10 +3,10 @@ package h3d.impl.driver.vulkan.attachment;
 #if (limen && gfx_vulkan)
 import h3d.Engine.DepthBinding;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
-import limen.graphics.vulkan.format.Formats.VkFormat;
-import limen.graphics.vulkan.memory.Memory.VkImage;
-import limen.graphics.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.vulkan.memory.Memory.VkImageView;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
 
 enum abstract VulkanAttachmentLoad(Int) {
 	var Preserve;

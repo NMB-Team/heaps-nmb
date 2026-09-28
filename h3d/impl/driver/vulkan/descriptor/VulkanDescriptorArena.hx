@@ -1,16 +1,16 @@
 package h3d.impl.driver.vulkan.descriptor;
 
 #if (limen && gfx_vulkan)
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPool;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.vulkan.internal.VulkanBindings;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPool;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
 
 private class VulkanDescriptorPoolPage {
 	public final pool:VkDescriptorPool;
@@ -46,7 +46,7 @@ class VulkanDescriptorArena {
 		for (page in pools) {
 			final result = context.resetDescriptorPool(page.pool);
 			if (result != 0)
-				throw Runtime.error('Failed to reset frame descriptor pool (VkResult $result)');
+				throw VulkanRuntime.error('Failed to reset frame descriptor pool (VkResult $result)');
 			page.usedSets = 0;
 			page.usedDescriptors = 0;
 		}
@@ -66,7 +66,7 @@ class VulkanDescriptorArena {
 			result = allocateFrom(page, layout);
 		}
 		if (result.set == null)
-			throw Runtime.error('Failed to allocate frame descriptor set after pool growth (VkResult ${result.code})');
+			throw VulkanRuntime.error('Failed to allocate frame descriptor set after pool growth (VkResult ${result.code})');
 		page.usedSets++;
 		page.usedDescriptors += descriptorCount;
 		allocationCount++;
@@ -123,7 +123,7 @@ class VulkanDescriptorArena {
 		info.pPoolSizes = VulkanBindings.makeArray(sizes);
 		final pool = context.createDescriptorPool(info);
 		if (pool == null)
-			throw Runtime.error('Failed to create frame descriptor pool ($maxSets sets, $maxDescriptors descriptors)');
+			throw VulkanRuntime.error('Failed to create frame descriptor pool ($maxSets sets, $maxDescriptors descriptors)');
 		poolCreationCount++;
 		return new VulkanDescriptorPoolPage(pool, maxSets, maxDescriptors);
 	}

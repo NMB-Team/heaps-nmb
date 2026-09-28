@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.shader;
 
 #if (limen && gfx_dx12)
-import limen.graphics.d3d12.DX12Core.Address;
+import limen.graphics.renderer.d3d12.DX12Core.Address;
 
 import h3d.impl.driver.Texture;
 

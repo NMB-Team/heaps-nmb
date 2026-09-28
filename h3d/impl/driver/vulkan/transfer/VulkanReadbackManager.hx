@@ -9,15 +9,15 @@ import h3d.impl.driver.vulkan.resource.VulkanBuffer.VulkanReadbackBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImage;
 import h3d.impl.driver.vulkan.resource.VulkanResourceState;
 import hxd.PixelFormat;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.vulkan.format.Formats.VkFormat;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.memory.Memory.VkBufferImageCopy;
-import limen.graphics.vulkan.memory.Memory.VkImage;
-import limen.graphics.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.vulkan.memory.Memory.VkMemoryRequirementsInfo;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 
 class VulkanImageReadbackRequest {
 	public final source:VkImage;
@@ -155,7 +155,7 @@ class VulkanReadbackManager {
 		region.imageHeight = request.height;
 		region.imageDepth = 1;
 		command.copyImageToBuffer2(request.source, TRANSFER_SRC_OPTIMAL, readback.buffer, 1,
-			limen.graphics.vulkan.internal.VulkanBindings.makeRef(region));
+			limen.graphics.renderer.vulkan.internal.VulkanBindings.makeRef(region));
 		VulkanResourceState.transitionBuffer(command, readback, HostRead, Int64.ofInt(0), Int64.ofInt(size));
 		pending[frameIndex].push(new VulkanPendingReadback(readback, request.destination, request.destinationOffset, size,
 			request.sourceRowStride, request.destinationRowStride, request.rowCount(), request.callback));
@@ -189,11 +189,11 @@ class VulkanReadbackManager {
 	}
 
 	function createBuffer(size:Int):VulkanReadbackBuffer {
-		var usage = new haxe.EnumFlags<limen.graphics.vulkan.memory.Memory.VkBufferUsageFlag>();
+		var usage = new haxe.EnumFlags<limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag>();
 		usage.set(TRANSFER_DST);
 		final handle = context.createBuffer64((Int64.ofInt(size) : hl.I64), usage);
 		if (handle == null)
-			throw Runtime.error('Failed to create Vulkan readback buffer ($size bytes)');
+			throw VulkanRuntime.error('Failed to create Vulkan readback buffer ($size bytes)');
 		final requirements = new VkMemoryRequirementsInfo();
 		context.getBufferMemoryRequirements2(handle, requirements);
 		final name = 'readback-${nextId++}';
@@ -205,7 +205,7 @@ class VulkanReadbackManager {
 		if (!context.bindBufferMemory64(handle, allocation.memory, (allocation.offset : hl.I64))) {
 			allocation.dispose();
 			context.destroyBuffer(handle);
-			throw Runtime.error('Failed to bind Vulkan readback buffer $name');
+			throw VulkanRuntime.error('Failed to bind Vulkan readback buffer $name');
 		}
 		bufferCreationCount++;
 		return new VulkanReadbackBuffer(handle, allocation, Int64.ofInt(size), usage, 1, Undefined, -1, name);

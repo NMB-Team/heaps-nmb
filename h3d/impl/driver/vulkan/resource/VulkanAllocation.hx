@@ -3,7 +3,7 @@ package h3d.impl.driver.vulkan.resource;
 #if (limen && gfx_vulkan)
 import haxe.Int64;
 import h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator;
-import limen.graphics.vulkan.memory.Memory.VkDeviceMemory;
+import limen.graphics.renderer.vulkan.memory.Memory.VkDeviceMemory;
 
 enum abstract VulkanMemoryClass(Int) {
 	var DeviceBuffer;

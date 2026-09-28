@@ -3,11 +3,11 @@ package h3d.impl.driver.vulkan.resource;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.resource.VulkanBuffer.VulkanBufferState;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImageState;
-import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.vulkan.command.Commands.VkPipelineStage2;
-import limen.graphics.vulkan.memory.Memory.VkAccess2;
-import limen.graphics.vulkan.memory.Memory.VkImageLayout;
-import limen.graphics.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.renderer.vulkan.command.Commands.VkPipelineStage2;
+import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
 
 class VulkanResourceState {
 	@:noCompletion public static var barrierCount(default, null) = 0;

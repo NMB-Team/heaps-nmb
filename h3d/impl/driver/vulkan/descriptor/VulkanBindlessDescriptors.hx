@@ -2,26 +2,26 @@ package h3d.impl.driver.vulkan.descriptor;
 
 #if (limen && gfx_vulkan)
 import haxe.Int64;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorBindingFlag;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPool;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBindingFlagsCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.vulkan.device.Capabilities;
-import limen.graphics.vulkan.internal.VulkanBindings;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.vulkan.memory.Memory.VkImageLayout;
-import limen.graphics.vulkan.memory.Memory.VkImageView;
-import limen.graphics.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorBindingFlag;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPool;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBindingFlagsCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.graphics.renderer.vulkan.device.Capabilities;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
+import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 private class VulkanBindlessImageSlot {
 	public var view:VkImageView;
@@ -191,7 +191,7 @@ class VulkanBindlessDescriptors {
 		@:privateAccess info.next = cast VulkanBindings.makeRef(bindingFlags);
 		final result = context.createDescriptorSetLayout(info);
 		if (result == null)
-			throw Runtime.error("Failed to create Vulkan bindless descriptor-set layout");
+			throw VulkanRuntime.error("Failed to create Vulkan bindless descriptor-set layout");
 		return result;
 	}
 
@@ -214,7 +214,7 @@ class VulkanBindlessDescriptors {
 		info.pPoolSizes = VulkanBindings.makeArray(sizes);
 		final result = context.createDescriptorPool(info);
 		if (result == null)
-			throw Runtime.error("Failed to create Vulkan bindless descriptor pool");
+			throw VulkanRuntime.error("Failed to create Vulkan bindless descriptor pool");
 		return result;
 	}
 
@@ -228,7 +228,7 @@ class VulkanBindlessDescriptors {
 		info.pSetLayouts = VulkanBindings.makeArray(layouts);
 		final result = context.allocateDescriptorSets(info, sets);
 		if (result != 0)
-			throw Runtime.error('Failed to allocate Vulkan bindless descriptor generation (VkResult $result)');
+			throw VulkanRuntime.error('Failed to allocate Vulkan bindless descriptor generation (VkResult $result)');
 		return new VulkanBindlessGeneration(sets[0], imageCapacity, samplerCapacity, bufferCapacity);
 	}
 

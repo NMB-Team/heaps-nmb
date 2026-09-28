@@ -25,16 +25,15 @@ private typedef Program = js.html.webgl.Program;
 private typedef GLShader = js.html.webgl.Shader;
 private typedef Framebuffer = js.html.webgl.Framebuffer;
 #elseif limen
-import limen.graphics.opengl.internal.OpenGLBindings as GL;
-import limen.graphics.opengl.Context;
-private typedef Uniform = limen.graphics.opengl.OpenGLTypes.Uniform;
-private typedef Program = limen.graphics.opengl.OpenGLTypes.Program;
-private typedef GLShader = limen.graphics.opengl.OpenGLTypes.Shader;
-private typedef Framebuffer = limen.graphics.opengl.OpenGLTypes.Framebuffer;
-private typedef Texture = { t : limen.graphics.opengl.OpenGLTypes.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
+import limen.graphics.renderer.opengl.OpenGL;
+private typedef Uniform = limen.graphics.renderer.opengl.shader.Shaders.Uniform;
+private typedef Program = limen.graphics.renderer.opengl.shader.Shaders.Program;
+private typedef GLShader = limen.graphics.renderer.opengl.shader.Shaders.Shader;
+private typedef Framebuffer = limen.graphics.renderer.opengl.render.Framebuffers.Framebuffer;
+private typedef Texture = { t : limen.graphics.renderer.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 private typedef Query = h3d.impl.driver.Query;
-private typedef GlQuery = { q : limen.graphics.opengl.OpenGLTypes.Query, kind : QueryKind };
-private typedef VertexArray = limen.graphics.opengl.OpenGLTypes.VertexArray;
+private typedef GlQuery = { q : limen.graphics.renderer.opengl.query.Queries.Query, kind : QueryKind };
+private typedef VertexArray = limen.graphics.renderer.opengl.vertex.VertexArrays.VertexArray;
 #elseif usegl
 import haxe.GLTypes;
 private typedef Uniform = haxe.GLTypes.Uniform;
@@ -59,7 +58,7 @@ private typedef ShaderCompiler = hxsl.GlslOut;
 class OpenGLDriver extends Driver {
 
 	#if limen
-	var context : Context;
+	var context : OpenGL;
 	#end
 
 	#if js
@@ -133,7 +132,7 @@ class OpenGLDriver extends Driver {
 	public function new(antiAlias=0) {
 		#if limen
 		var nativeWindow = hxd.Window.getInstance().platformWindow;
-		context = Context.create(nativeWindow, {
+		context = OpenGL.create(nativeWindow, {
 			minimumMajor: computeEnabled ? 4 : 2,
 			minimumMinor: computeEnabled ? 3 : 1,
 			samples: antiAlias > 0 ? antiAlias : 1,
@@ -163,7 +162,7 @@ class OpenGLDriver extends Driver {
 		defStencil = new Stencil();
 		frame = hxd.Timer.frameCount;
 
-		var version : String = gl.getParameter(GL.VERSION);
+		var version : String = #if limen gl.getString(GL.VERSION) #else gl.getParameter(GL.VERSION) #end;
 		var esVersion = ~/ES ([0-9]+\.[0-9]+)/;
 		if( esVersion.match(version) )
 			glES = Std.parseFloat(esVersion.matched(1));
@@ -198,9 +197,9 @@ class OpenGLDriver extends Driver {
 		#end
 
 		try {
-			maxFragmentTexture = gl.getParameter(GL.MAX_TEXTURE_IMAGE_UNITS);
-			maxVertexTexture   = gl.getParameter(GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
-			maxCombinedTexture = gl.getParameter(GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+			maxFragmentTexture = #if limen gl.getConfigParameter(GL.MAX_TEXTURE_IMAGE_UNITS) #else gl.getParameter(GL.MAX_TEXTURE_IMAGE_UNITS) #end;
+			maxVertexTexture   = #if limen gl.getConfigParameter(GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS) #else gl.getParameter(GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS) #end;
+			maxCombinedTexture = #if limen gl.getConfigParameter(GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS) #else gl.getParameter(GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS) #end;
 			textureCheckEnabled = true;
 		} catch(e) {
 			textureCheckEnabled = false;
@@ -214,7 +213,7 @@ class OpenGLDriver extends Driver {
 		#end
 
 		var reg = ~/[0-9]+\.[0-9]+/;
-		var shadingLanguageVersion : String = gl.getParameter(GL.SHADING_LANGUAGE_VERSION);
+		var shadingLanguageVersion : String = #if limen gl.getString(GL.SHADING_LANGUAGE_VERSION) #else gl.getParameter(GL.SHADING_LANGUAGE_VERSION) #end;
 		if( reg.match(shadingLanguageVersion) ) {
 			#if js
 			glES = Std.parseFloat(reg.matched(0));
@@ -310,7 +309,7 @@ class OpenGLDriver extends Driver {
 	}
 
 	override public function getDriverName(details:Bool) {
-		var render = gl.getParameter(GL.RENDERER);
+		var render = #if limen gl.getString(GL.RENDERER) #else gl.getParameter(GL.RENDERER) #end;
 		if( details )
 			render = getRendererName() + " " + render;
 		else
@@ -322,7 +321,7 @@ class OpenGLDriver extends Driver {
 	}
 
 	override public function getRendererName() {
-		var version : String = gl.getParameter(GL.VERSION);
+		var version : String = #if limen gl.getString(GL.VERSION) #else gl.getParameter(GL.VERSION) #end;
 		var versionPattern = ~/[0-9]+\.[0-9]+/;
 		var renderer = version.indexOf("WebGL") >= 0 ? "WebGL" : version.indexOf("ES") >= 0 ? "OpenGL ES" : "OpenGL";
 		return versionPattern.match(version)

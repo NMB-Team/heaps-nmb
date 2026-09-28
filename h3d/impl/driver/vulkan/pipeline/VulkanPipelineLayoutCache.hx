@@ -3,16 +3,16 @@ package h3d.impl.driver.vulkan.pipeline;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
-import limen.graphics.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.vulkan.internal.VulkanBindings;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineLayout;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineLayoutCreateInfo;
-import limen.graphics.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
+import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayout;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayoutCreateInfo;
+import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 class VulkanPipelineLayoutResource {
 	public final signature:String;
@@ -90,7 +90,7 @@ class VulkanPipelineLayoutCache {
 				info.bindings = bindings.length == 0 ? null : VulkanBindings.makeArray(nativeBindings);
 				final setLayout = context.createDescriptorSetLayout(info);
 				if (setLayout == null)
-					throw Runtime.error('Failed to create Vulkan descriptor-set layout $setIndex');
+					throw VulkanRuntime.error('Failed to create Vulkan descriptor-set layout $setIndex');
 				setLayouts.push(setLayout);
 				ownedSetLayouts.push(true);
 			}
@@ -101,7 +101,7 @@ class VulkanPipelineLayoutCache {
 			info.setLayouts = setLayouts.length == 0 ? null : VulkanBindings.makeArray(nativeSetLayouts);
 			pipelineLayout = context.createPipelineLayout(info);
 			if (pipelineLayout == null)
-				throw Runtime.error("Failed to create Vulkan pipeline layout");
+				throw VulkanRuntime.error("Failed to create Vulkan pipeline layout");
 			return new VulkanPipelineLayoutResource(signature, setLayouts, ownedSetLayouts, pipelineLayout);
 		} catch (error:Dynamic) {
 			if (pipelineLayout != null) context.destroyPipelineLayout(pipelineLayout);

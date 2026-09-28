@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.descriptor;
 
 #if (limen && gfx_dx12)
-import limen.graphics.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
+import limen.graphics.renderer.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
 
 class ScratchHeap extends DescriptorHeapBase {
 	var cursor : Int;

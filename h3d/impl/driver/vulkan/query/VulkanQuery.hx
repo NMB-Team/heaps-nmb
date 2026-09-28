@@ -4,13 +4,13 @@ package h3d.impl.driver.vulkan.query;
 import haxe.Int64;
 import hxd.Math;
 import h3d.impl.driver.QueryKind;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.query.Queries.VkQueryPool;
-import limen.graphics.vulkan.query.Queries.VkQueryPoolCreateInfo;
-import limen.graphics.vulkan.query.Queries.VkQueryResultFlag;
-import limen.graphics.vulkan.query.Queries.VkQueryType;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.query.Queries.VkQueryPool;
+import limen.graphics.renderer.vulkan.query.Queries.VkQueryPoolCreateInfo;
+import limen.graphics.renderer.vulkan.query.Queries.VkQueryResultFlag;
+import limen.graphics.renderer.vulkan.query.Queries.VkQueryType;
 
 enum abstract VulkanQueryState(Int) {
 	final Idle;
@@ -250,7 +250,7 @@ class VulkanQueryManager {
 		info.queryCount = PAGE_CAPACITY;
 		final pool = context.createQueryPool(info);
 		if (pool == null)
-			throw Runtime.error('Failed to create Vulkan $type query pool');
+			throw VulkanRuntime.error('Failed to create Vulkan $type query pool');
 		return new VulkanQueryPage(pool, type, PAGE_CAPACITY);
 	}
 
@@ -264,7 +264,7 @@ class VulkanQueryManager {
 		if (status == VK_NOT_READY)
 			throw "Vulkan query page remained unavailable after its submission fence completed";
 		if (status != VK_SUCCESS)
-			throw Runtime.error("Failed to retrieve Vulkan query page results");
+			throw VulkanRuntime.error("Failed to retrieve Vulkan query page results");
 		final values:hl.BytesAccess<Int64> = data;
 		for (generation in frame.generations)
 			if (generation.page == page)

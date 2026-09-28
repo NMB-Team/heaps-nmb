@@ -3,10 +3,10 @@ package h3d.impl.driver.vulkan.texture;
 #if (limen && gfx_vulkan)
 import h3d.mat.Data.TextureFlags;
 import hxd.PixelFormat;
-import limen.graphics.vulkan.format.Formats.VkFormat;
-import limen.graphics.vulkan.format.Formats.VkFormatFeature;
-import limen.graphics.vulkan.format.Formats.VkFormatProperties;
-import limen.graphics.vulkan.memory.Memory.VkImageUsageFlag;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormatFeature;
+import limen.graphics.renderer.vulkan.format.Formats.VkFormatProperties;
+import limen.graphics.renderer.vulkan.memory.Memory.VkImageUsageFlag;
 
 class VulkanTextureFormatInfo {
 	public final heapsFormat:PixelFormat;

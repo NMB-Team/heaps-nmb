@@ -125,22 +125,23 @@ class CacheFileBuilder {
 		case DirectX:
 			#if (limen && gfx_dx11 && !gfx_dx12)
 			if( !dxInitDone ) {
-				var win = new limen.platform.Window("", 800, 600, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOW_HIDDEN);
-				limen.graphics.d3d11.internal.D3D11Bindings.create(
+				limen.platform.Platform.init(D3D11, [D3D11]);
+				var win = limen.platform.window.Window.create({ title: "", width: 800, height: 600, visible: false });
+				limen.graphics.renderer.d3d11.internal.D3D11Bindings.create(
 					win,
-					limen.graphics.d3d11.DX11Core.Format.R8G8B8A8_UNORM,
-					limen.graphics.d3d11.internal.D3D11Bindings.Dx11DriverInitFlags.None
+					limen.graphics.renderer.d3d11.DX11Core.Format.R8G8B8A8_UNORM,
+					limen.graphics.renderer.d3d11.DX11Core.Dx11DriverInitFlags.None
 				);
 				dxInitDone = true;
 			}
 			var out = new HlslOut();
 			var code = out.run(rd.data);
-			var bytes = limen.graphics.d3d11.internal.D3D11Bindings.compileShader(
+			var bytes = limen.graphics.renderer.d3d11.shader.ShaderCompiler.compile(
 				code,
 				"",
 				"main",
 				((rd.kind == Vertex) ? "vs_" : "ps_") + dxShaderVersion,
-				limen.graphics.d3d11.DX11Shaders.ShaderFlags.OptimizationLevel3
+				limen.graphics.renderer.d3d11.shader.ShaderCompiler.ShaderFlags.OptimizationLevel3
 			);
 			return { code : code, bytes : bytes, profile : dxShaderVersion };
 			#else
@@ -196,7 +197,8 @@ class CacheFileBuilder {
 		case XBoxSeries, XBoxOneGDK:
 			#if (limen && gfx_dx12)
 			if( !dxInitDone ) {
-				var win = new limen.platform.Window("", 800, 600, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOWPOS_CENTERED, limen.platform.Window.SDL_WINDOW_HIDDEN);
+				limen.platform.Platform.init(D3D12, [D3D12]);
+				var win = limen.platform.window.Window.create({ title: "", width: 800, height: 600, visible: false });
 				dxInitDone = true;
 				dx12Driver = new h3d.impl.driver.dx12.DX12Driver();
 			}

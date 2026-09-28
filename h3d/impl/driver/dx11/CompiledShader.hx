@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx11;
 
 #if (limen && gfx_dx11)
-import limen.graphics.d3d11.DX11Shaders.Layout;
+import limen.graphics.renderer.d3d11.pipeline.InputLayout.Layout;
 
 @:noCompletion
 class CompiledShader {

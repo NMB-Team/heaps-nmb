@@ -3,11 +3,11 @@ package h3d.impl.driver.vulkan.shader;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage;
-import limen.graphics.vulkan.internal.VulkanBindings.ShaderKind;
-import limen.graphics.vulkan.shader.ShaderCompiler;
-import limen.graphics.vulkan.shader.ShaderCompiler.ShaderCompileRequest;
-import limen.graphics.vulkan.shader.ShaderCompiler.ShaderOptimizationMode;
-import limen.graphics.vulkan.shader.SpirvReflection;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.ShaderKind;
+import limen.graphics.renderer.vulkan.shader.ShaderCompiler;
+import limen.graphics.renderer.vulkan.shader.ShaderCompiler.ShaderCompileRequest;
+import limen.graphics.renderer.vulkan.shader.ShaderCompiler.ShaderOptimizationMode;
+import limen.graphics.renderer.vulkan.shader.SpirvReflection;
 
 class VulkanCompiledStageSource {
 	public final stage:VulkanShaderStage;

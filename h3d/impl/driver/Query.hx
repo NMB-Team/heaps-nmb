@@ -13,7 +13,7 @@ typedef Query = h3d.impl.driver.dx12.query.QueryData;
 #elseif (limen && gfx_dx11)
 typedef Query = {};
 #elseif limen
-typedef Query = { q : limen.graphics.opengl.OpenGLTypes.Query, kind : QueryKind };
+typedef Query = { q : limen.graphics.renderer.opengl.query.Queries.Query, kind : QueryKind };
 #elseif usegl
 typedef Query = { q : haxe.GLTypes.Query, kind : QueryKind };
 #elseif usesys

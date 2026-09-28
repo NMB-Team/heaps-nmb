@@ -1,9 +1,9 @@
 package h3d.impl.driver.dx11;
 
 #if (limen && gfx_dx11)
-import limen.graphics.d3d11.DX11Core.Resource;
-import limen.graphics.d3d11.DX11Resources.ShaderResourceView;
-import limen.graphics.d3d11.DX11States.SamplerState;
+import limen.graphics.renderer.d3d11.resource.Resources.Resource;
+import limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceView;
+import limen.graphics.renderer.d3d11.pipeline.Pipeline.SamplerState;
 
 class PipelineState {
 	public var kind : PipelineKind;

@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.readback;
 
 #if (limen && gfx_dx12)
-import limen.graphics.d3d12.resource.Resources.ResourceBarrier;
+import limen.graphics.renderer.d3d12.resource.Resources.ResourceBarrier;
 
 import h3d.Buffer;
 

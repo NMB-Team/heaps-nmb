@@ -1,12 +1,12 @@
 package h3d.impl.driver.dx12.frame;
 
 #if (limen && gfx_dx12)
-import limen.graphics.d3d12.DX12Core.Address;
-import limen.graphics.d3d12.command.Commands.CommandAllocator;
-import limen.graphics.d3d12.command.Commands.CommandList;
-import limen.graphics.d3d12.query.Queries.QueryHeap;
-import limen.graphics.d3d12.resource.Resources.Dx12Resource;
-import limen.graphics.d3d12.resource.Resources.GpuResource;
+import limen.graphics.renderer.d3d12.DX12Core.Address;
+import limen.graphics.renderer.d3d12.command.Commands.CommandAllocator;
+import limen.graphics.renderer.d3d12.command.Commands.CommandList;
+import limen.graphics.renderer.d3d12.query.Queries.QueryHeap;
+import limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource;
+import limen.graphics.renderer.d3d12.resource.Resources.GpuResource;
 
 import haxe.Int64;
 import h3d.impl.allocator.BlockAllocator;
@@ -16,7 +16,7 @@ import h3d.impl.driver.dx12.descriptor.ScratchHeap;
 import h3d.impl.driver.dx12.descriptor.ScratchHeapArray;
 import h3d.impl.driver.dx12.resource.ResourceData;
 #if dlss_allowed
-import limen.graphics.d3d12.dlss.DLSS.DLSSFrameToken;
+import limen.graphics.postprocess.dlss.frame.DLSSFrameToken;
 #end
 
 class DX12Frame {

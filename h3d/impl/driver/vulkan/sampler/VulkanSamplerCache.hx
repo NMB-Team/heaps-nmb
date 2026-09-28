@@ -5,16 +5,16 @@ import h3d.mat.Texture;
 import h3d.mat.Data.Filter;
 import h3d.mat.Data.MipMap;
 import h3d.mat.Data.Wrap;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.pipeline.Pipeline.VkCompareOp;
-import limen.graphics.vulkan.pipeline.Pipeline.VkFilter;
-import limen.graphics.vulkan.sampler.Samplers.VkBorderColor;
-import limen.graphics.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.vulkan.sampler.Samplers.VkSamplerAddressMode;
-import limen.graphics.vulkan.sampler.Samplers.VkSamplerCreateInfo;
-import limen.graphics.vulkan.sampler.Samplers.VkSamplerMipmapMode;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkFilter;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkBorderColor;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerAddressMode;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerCreateInfo;
+import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerMipmapMode;
 
 class VulkanSamplerHandle {
 	public final sampler:VkSampler;
@@ -86,7 +86,7 @@ class VulkanSamplerCache {
 		info.unnormalizedCoordinates = false;
 		sampler = context.createSampler(info);
 		if (sampler == null)
-			throw Runtime.error('Failed to create Vulkan sampler for state $key');
+			throw VulkanRuntime.error('Failed to create Vulkan sampler for state $key');
 		samplers.set(key, sampler);
 		creationCount++;
 		return new VulkanSamplerHandle(sampler, key);

@@ -2,16 +2,16 @@ package h3d.impl.driver.vulkan.pipeline;
 
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
-import limen.graphics.vulkan.Runtime;
-import limen.graphics.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.vulkan.pipeline.Pipeline.VkComputePipeline;
-import limen.graphics.vulkan.pipeline.Pipeline.VkComputePipelineCreateInfo;
-import limen.graphics.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
-import limen.graphics.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkComputePipeline;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkComputePipelineCreateInfo;
+import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
+import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 class VulkanComputePipeline {
 	public final program:VulkanCompiledShader;
-	public final layout:limen.graphics.vulkan.pipeline.Pipeline.VkPipelineLayout;
+	public final layout:limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayout;
 	public final handle:VkComputePipeline;
 	public final cacheKey:String;
 	public final debugName:String;
@@ -56,7 +56,7 @@ class VulkanComputePipelineManager {
 		info.layout = program.layout;
 		final handle = context.createComputePipeline(info);
 		if (handle == null)
-			throw Runtime.error('Failed to create Vulkan compute pipeline for ${program.cacheKey}');
+			throw VulkanRuntime.error('Failed to create Vulkan compute pipeline for ${program.cacheKey}');
 		final pipeline = new VulkanComputePipeline(program, handle, key, 'hxsl-compute-${program.cacheKey.substr(0, 16)}');
 		pipelines.set(key, pipeline);
 		createdCount++;

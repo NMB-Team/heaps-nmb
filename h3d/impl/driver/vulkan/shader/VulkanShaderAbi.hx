@@ -13,7 +13,7 @@ import hxsl.VulkanGlslLayout.VulkanGlslBinding;
 import hxsl.VulkanGlslLayout.VulkanGlslBindlessLayout;
 import hxsl.VulkanGlslLayout.VulkanGlslConstantBlock;
 import hxsl.VulkanGlslLayout.VulkanGlslConstantMember;
-import limen.graphics.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
 
 enum abstract VulkanShaderStage(Int) from Int to Int {
 	final Vertex = 0x00000001;
@@ -193,15 +193,13 @@ class VulkanProgramLayout {
 	}
 }
 
-private class Std140Layout {
-	public final alignment:Int;
+private class PackedConstantLayout {
 	public final size:Int;
 	public final arrayStride:Int;
 	public final matrixStride:Int;
 	public final arrayCount:Int;
 
-	public function new(alignment:Int, size:Int, arrayStride:Int = 0, matrixStride:Int = 0, arrayCount:Int = 0) {
-		this.alignment = alignment;
+	public function new(size:Int, arrayStride:Int = 0, matrixStride:Int = 0, arrayCount:Int = 0) {
 		this.size = size;
 		this.arrayStride = arrayStride;
 		this.matrixStride = matrixStride;
@@ -481,7 +479,7 @@ class VulkanShaderAbi {
 	}
 
 	static function addLogicalConstantMember(members:Array<VulkanConstantMember>, name:String, variableId:Int, type:Type, offset:Int, blockSize:Int) {
-		final layout = std140(type);
+		final layout = packedConstantLayout(type);
 		if (offset + layout.size > blockSize)
 			throw 'HxSL constant "$name" range [${offset}, ${offset + layout.size}) exceeds its $blockSize-byte block';
 		members.push(new VulkanConstantMember(name, variableId, VulkanShaderType.fromHxsl(type), offset, offset,
@@ -589,39 +587,26 @@ class VulkanShaderAbi {
 			: 'global:${allocation.perObjectGlobal.path}';
 	}
 
-	static function std140(type:Type):Std140Layout {
+	// HxSL has already flattened logical constants into tightly packed vec4 storage.
+	static function packedConstantLayout(type:Type):PackedConstantLayout {
 		return switch (type) {
-		case TInt, TBool, TFloat, TBufferHandle: new Std140Layout(4, 4);
-		case TTextureHandle: new Std140Layout(8, 8);
-		case TVec(2, _): new Std140Layout(8, 8);
-		case TVec(3, _): new Std140Layout(16, 12);
-		case TVec(4, _): new Std140Layout(16, 16);
-		case TMat2: new Std140Layout(16, 32, 0, 16);
-		case TMat3: new Std140Layout(16, 48, 0, 16);
-		case TMat3x4: new Std140Layout(16, 48, 0, 16);
-		case TMat4: new Std140Layout(16, 64, 0, 16);
+		case TInt, TBool, TFloat, TBufferHandle: new PackedConstantLayout(4);
+		case TTextureHandle: new PackedConstantLayout(8);
+		case TVec(size, _), TBytes(size): new PackedConstantLayout(size * 4);
+		case TMat2: new PackedConstantLayout(16, 0, 8);
+		case TMat3, TMat3x4: new PackedConstantLayout(48, 0, 16);
+		case TMat4: new PackedConstantLayout(64, 0, 16);
 		case TArray(element, SConst(count)):
-			final elementLayout = std140(element);
-			final stride = align(elementLayout.size, 16);
-			new Std140Layout(align(elementLayout.alignment, 16), stride * count, stride, elementLayout.matrixStride, count);
+			final elementLayout = packedConstantLayout(element);
+			new PackedConstantLayout(elementLayout.size * count, elementLayout.size, elementLayout.matrixStride, count);
 		case TStruct(fields):
 			var size = 0;
-			var maxAlignment = 16;
-			for (field in fields) {
-				final fieldLayout = std140(field.type);
-				size = align(size, fieldLayout.alignment) + fieldLayout.size;
-				if (fieldLayout.alignment > maxAlignment)
-					maxAlignment = fieldLayout.alignment;
-			}
-			final alignment = align(maxAlignment, 16);
-			new Std140Layout(alignment, align(size, alignment));
+			for (field in fields)
+				size += packedConstantLayout(field.type).size;
+			new PackedConstantLayout(size);
 		default:
-			throw 'HxSL constant type $type is not supported by Vulkan std140 ABI version $VERSION';
+			throw 'HxSL constant type $type is not supported by Vulkan packed ABI version $VERSION';
 		}
-	}
-
-	static inline function align(value:Int, alignment:Int):Int {
-		return Std.int((value + alignment - 1) / alignment) * alignment;
 	}
 
 	static function constantBinding(stage:VulkanShaderStage, globals:Bool):Int {
