@@ -558,7 +558,8 @@ class VulkanShaderAbi {
 			final allocations = [];
 			var allocation = data.textures;
 			while (allocation != null) {
-				if (Std.string(allocation.type) == Std.string(textureElement))
+				if (Std.string(allocation.type) == Std.string(textureElement)
+					|| (allocation.type.match(TChannel(_)) && textureElement.match(TSampler(T2D, false))))
 					allocations.push(allocation);
 				allocation = allocation.next;
 			}

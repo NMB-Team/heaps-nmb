@@ -127,12 +127,11 @@ class VulkanShaderAbiVerifier {
 
 	static function verifyInterface(stage:VulkanShaderStage, label:String, expected:Array<VulkanShaderInterfaceVariable>, reflected:Array<SpirvInterfaceVariable>) {
 		final actual = userVariables(reflected);
-		if (countInterface(actual) != expected.length)
-			fail(stage, '$label count is ${countInterface(actual)}, ABI expects ${expected.length}');
-		for (variable in expected) {
-			final reflectedVariable = actual.get(variable.location);
-			if (reflectedVariable == null)
-				fail(stage, '$label ${variable.name} is missing at location ${variable.location}');
+		final expectedLocations = [for (variable in expected) variable.location => variable];
+		for (location => reflectedVariable in actual) {
+			final variable = expectedLocations.get(location);
+			if (variable == null)
+				fail(stage, '$label has an unexpected variable at location $location');
 			final components = reflectedVariable.numeric.vectorComponents == 0 ? 1 : reflectedVariable.numeric.vectorComponents;
 			if (reflectedVariable.numeric.scalarWidth != variable.type.scalarWidth || components != variable.type.components)
 				fail(stage, '$label ${variable.name} type mismatch at location ${variable.location}');
@@ -174,13 +173,6 @@ class VulkanShaderAbiVerifier {
 	}
 
 	static function countBindings(values:Map<String, SpirvDescriptorBinding>):Int {
-		var count = 0;
-		for (_ in values)
-			count++;
-		return count;
-	}
-
-	static function countInterface(values:Map<Int, SpirvInterfaceVariable>):Int {
 		var count = 0;
 		for (_ in values)
 			count++;

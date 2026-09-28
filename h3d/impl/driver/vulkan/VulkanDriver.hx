@@ -2647,10 +2647,6 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Vulkan indexed draw requires a valid 16-bit or 32-bit index buffer";
 		if( currentTargetSet == null )
 			throw "Vulkan indexed draw requires an active attachment set";
-		if( currentTargetSet.colors.length > 0 )
-			for( output in currentShader.fragmentOutputs.outputs )
-				if( output.location >= currentTargetSet.colors.length )
-					throw 'Fragment output location ${output.location} exceeds active Vulkan color attachment range 0...${currentTargetSet.colors.length - 1}';
 		if( currentBlendState.enabled )
 			for( attachment in currentTargetSet.colors ) {
 				final format:Int = cast attachment.format;

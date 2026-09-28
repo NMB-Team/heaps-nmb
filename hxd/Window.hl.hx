@@ -23,7 +23,7 @@ typedef Monitor = {
 typedef DisplaySetting = {
 	width : Int,
 	height : Int,
-	framerate : Float
+	refreshRate : Float
 }
 
 private class NativeDroppedFile extends hxd.DropFileEvent.DroppedFile {
@@ -63,7 +63,13 @@ class Window {
 	**/
 	public var mouseMode(default, set): MouseMode = Absolute;
 	public var monitor : Null<Int> = null;
-	public var framerate : Null<Float> = null;
+	public var refreshRate : Null<Float> = null;
+	/**
+		Deprecated alias for `refreshRate`.
+		@see `hxd.Window.refreshRate`
+	**/
+	@:deprecated("Use refreshRate instead")
+	public var framerate(get, set) : Null<Float>;
 	public var presentMode(default, set) : PresentMode = PresentMode.VSync;
 	@:deprecated("Use presentMode = Immediate")
 	public var vsync(get, set) : Bool;
@@ -84,6 +90,7 @@ class Window {
 
 	#if limen
 	var window : LWindow;
+	var touches : Array<{ deviceId : Int64, fingerId : Int64 }> = [];
 
 	public var platformWindow(get, never) : LWindow;
 
@@ -106,8 +113,6 @@ class Window {
 	static var MIN_HEIGHT = 720;
 	static var MIN_FRAMERATE = 60; // 30 and 60 are always allowed
 	#if limen
-	static inline var TOUCH_SCALE = #if (hl_ver >= version("1.12.0")) 10000 #else 100 #end;
-
 	@:noCompletion
 	static var suppressWindowEventWatch = false;
 	#end
@@ -203,9 +208,9 @@ class Window {
 		#if limen
 		if( window.displayMode == ExclusiveFullscreen ) {
 			#if (limen && hl_ver >= version("1.12.0") )
-			var mode = getBestDisplayMode(width, height, framerate);
+			var mode = getBestDisplayMode(width, height, refreshRate);
 			if(mode != null) {
-				window.setDisplayMode(mode.mode.width, mode.mode.height, mode.mode.framerate);
+				window.setDisplayMode(mode.mode.width, mode.mode.height, mode.mode.refreshRate);
 				width = mode.mode.width;
 				height = mode.mode.height;
 			}
@@ -262,6 +267,10 @@ class Window {
 		window.captureMouseEvents(enable);
 		#end
 	}
+
+	inline function get_framerate() : Null<Float> return refreshRate;
+
+	inline function set_framerate( value : Null<Float> ) : Null<Float> return refreshRate = value;
 
 	function get_x() : Int {
 		#if limen
@@ -540,21 +549,30 @@ class Window {
 				((c & 0x1F) << 12) | (((e.keyCode >> 8) & 0x7F) << 6) | ((e.keyCode >> 16) & 0x7F);
 			else
 				((c & 0x0F) << 18) | (((e.keyCode >> 8) & 0x7F) << 12) | (((e.keyCode >> 16) & 0x7F) << 6) | ((e.keyCode >> 24) & 0x7F);
-		case TouchDown if (HSystem.getValue(IsTouch)):
-			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			eh = new Event(EPush, e.mouseX, e.mouseY);
-			eh.touchId = e.fingerId;
-		case TouchMove if (HSystem.getValue(IsTouch)):
-			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			eh = new Event(EMove, e.mouseX, e.mouseY);
-			eh.touchId = e.fingerId;
-		case TouchUp if (HSystem.getValue(IsTouch)):
-			e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
-			e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
-			eh = new Event(ERelease, e.mouseX, e.mouseY);
-			eh.touchId = e.fingerId;
+		case TouchDown, TouchMove, TouchUp, TouchCanceled if (HSystem.getValue(IsTouch)):
+			var touchIndex = -1;
+			var freeIndex = -1;
+			for( i => touch in touches ) {
+				if( touch == null ) {
+					if( freeIndex == -1 ) freeIndex = i;
+				} else if( touch.deviceId == e.touchId && touch.fingerId == e.fingerId ) {
+					touchIndex = i;
+					break;
+				}
+			}
+			if( touchIndex == -1 ) {
+				if( e.type != TouchDown ) return true;
+				touchIndex = freeIndex == -1 ? touches.length : freeIndex;
+				touches[touchIndex] = { deviceId: e.touchId, fingerId: e.fingerId };
+			}
+			var kind : hxd.Event.EventKind = switch( e.type ) {
+			case TouchDown: EPush;
+			case TouchMove: EMove;
+			default: ERelease;
+			}
+			eh = new Event(kind, windowWidth * e.touchX, windowHeight * e.touchY);
+			eh.touchId = touchIndex + 1;
+			if( e.type == TouchUp || e.type == TouchCanceled ) touches[touchIndex] = null;
 		case DropStart:
 			dropFiles = [];
 		#end
@@ -785,9 +803,9 @@ class Window {
 				}
 			}
 			if( m == ExclusiveFullscreen ) {
-				var dm = getBestDisplayMode(windowWidth, windowHeight, framerate);
+				var dm = getBestDisplayMode(windowWidth, windowHeight, refreshRate);
 				if(dm != null)
-					window.displaySetting = { width: dm.mode.width, height: dm.mode.height, refreshRate: dm.mode.framerate };
+					window.displaySetting = { width: dm.mode.width, height: dm.mode.height, refreshRate: dm.mode.refreshRate };
 				window.displayMode = m;
 			}
 			else {
@@ -854,7 +872,7 @@ class Window {
 		#if limen
 		var mon = LPlatform.getDisplays()[monitorId == null ? 0 : monitorId];
 		var mode = LPlatform.getCurrentDisplayMode(mon.id, registry);
-		return mode == null ? null : { width: mode.width, height: mode.height, framerate: mode.refreshRate };
+		return mode == null ? null : { width: mode.width, height: mode.height, refreshRate: mode.refreshRate };
 		#else
 		return null;
 		#end
@@ -867,12 +885,12 @@ class Window {
 			monitorId = monitor;
 		#if limen
 		var m = LPlatform.getDisplays()[monitorId == null ? currentMonitorIndex : monitorId];
-		var l : Array<DisplaySetting> = [for( mode in LPlatform.getDisplayModes(m.id) ) { width: mode.width, height: mode.height, framerate: mode.refreshRate }];
+		var l : Array<DisplaySetting> = [for( mode in LPlatform.getDisplayModes(m.id) ) { width: mode.width, height: mode.height, refreshRate: mode.refreshRate }];
 		#else
 		var l = [];
 		#end
 		for(d in l) {
-			var nominalFramerate = Math.round(d.framerate);
+			var nominalFramerate = Math.round(d.refreshRate);
 			if(d.height >= MIN_HEIGHT && (nominalFramerate >= MIN_FRAMERATE || nominalFramerate == 30 || nominalFramerate == 60)) {
 				f.push(d);
 			}
@@ -892,7 +910,7 @@ class Window {
 		#end
 	}
 
-	function getBestDisplayMode(width:Int, height:Int, framerate:Null<Float>) {
+	function getBestDisplayMode(width:Int, height:Int, refreshRate:Null<Float>) {
 		var m : {idx: Int, mode: DisplaySetting } = {
 			idx: -1,
 			mode: null
@@ -900,9 +918,9 @@ class Window {
 		var settings = getDisplaySettings(currentMonitorIndex);
 		for( i => s in settings ) {
 			if(s.width == width && s.height == height) {
-				if(s.framerate == framerate)
+				if(s.refreshRate == refreshRate)
 					return { idx: i, mode: s };
-				else if(framerate == null || s.framerate == framerate)
+				else if(refreshRate == null || s.refreshRate == refreshRate)
 					m = {idx : i, mode : s };
 				else if(m.idx == -1)
 					m = {idx: i, mode : s };
@@ -912,7 +930,7 @@ class Window {
 			return m;
 		for( i => s in settings ) {
 			if(s.width >= width && s.height >= height) {
-				if(framerate == null || s.framerate == framerate)
+				if(refreshRate == null || s.refreshRate == refreshRate)
 					return { idx: i, mode: s };
 				else if(m.idx == -1)
 					m = {idx: i, mode : s };
