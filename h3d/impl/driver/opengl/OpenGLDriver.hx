@@ -115,6 +115,8 @@ class OpenGLDriver extends Driver {
 	var hasMultiIndirect = false;
 	var maxCompressedTexturesSupport = 0;
 	var hasRGTCSupport = false;
+	var hasDepthClamp = #if js false #else true #end;
+	static inline var DEPTH_CLAMP = #if js 0x864F #else GL.DEPTH_CLAMP #end;
 
 	public static var hasMultiIndirectCount = false;
 
@@ -963,14 +965,12 @@ class OpenGLDriver extends Driver {
 			}
 		}
 
-		#if !js
-		if ( (!useDepthClamp && diff & Pass.depthClamp_mask != 0) ) {
+		if ( hasDepthClamp && !useDepthClamp && diff & Pass.depthClamp_mask != 0 ) {
 			if ( Pass.getDepthClamp(bits) != 0 )
-				gl.enable(GL.DEPTH_CLAMP);
+				gl.enable(DEPTH_CLAMP);
 			else
-				gl.disable(GL.DEPTH_CLAMP);
+				gl.disable(DEPTH_CLAMP);
 		}
-		#end
 
 		curMatBits = bits;
 	}
@@ -1293,15 +1293,19 @@ class OpenGLDriver extends Driver {
 
 	override function allocDepthBuffer( t : h3d.mat.Texture ) : Texture {
 		var isArray = t.flags.has(IsArray);
-		if( isArray && !hasFeature(DepthTextureArray) )
+		var isCube = t.flags.has(Cube);
+		if( (isArray || isCube) && !hasFeature(DepthTextureArray) )
 			throw "Depth texture arrays require GLES3";
 		var tt = gl.createTexture();
-		var tt : Texture = { t : tt, width : t.width, height : t.height, internalFmt : GL.RGBA, pixelFmt : GL.UNSIGNED_BYTE, bits : -1, bind : isArray ? GL.TEXTURE_2D_ARRAY : GL.TEXTURE_2D #if multidriver, driver : this #end };
+		var tt : Texture = { t : tt, width : t.width, height : t.height, internalFmt : GL.RGBA, pixelFmt : GL.UNSIGNED_BYTE, bits : -1, bind : isCube ? GL.TEXTURE_CUBE_MAP : isArray ? GL.TEXTURE_2D_ARRAY : GL.TEXTURE_2D #if multidriver, driver : this #end };
 		var fmt = GL.DEPTH_COMPONENT;
 		switch( t.format ) {
 		case Depth16:
 			tt.internalFmt = GL.DEPTH_COMPONENT16;
-		case Depth24 #if js if( glES >= 3 ) #end: tt.internalFmt = GL.DEPTH_COMPONENT;
+			tt.pixelFmt = GL.UNSIGNED_SHORT;
+		case Depth24 #if js if( glES >= 3 ) #end:
+			tt.internalFmt = GL.DEPTH_COMPONENT24;
+			tt.pixelFmt = GL.UNSIGNED_INT;
 		case Depth24Stencil8:
 			tt.internalFmt = GL.DEPTH24_STENCIL8;
 			tt.pixelFmt = GL.UNSIGNED_INT_24_8;
@@ -1322,7 +1326,10 @@ class OpenGLDriver extends Driver {
 		gl.texParameteri(tt.bind, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
 		gl.texParameteri(tt.bind, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
 		#end
-		if( isArray )
+		if( isCube ) {
+			for( face in CUBE_FACES )
+				gl.texImage2D(face, 0, tt.internalFmt, tt.width, tt.height, 0, fmt, tt.pixelFmt, null);
+		} else if( isArray )
 			gl.texImage3D(tt.bind, 0, tt.internalFmt, tt.width, tt.height, t.layerCount, 0, fmt, tt.pixelFmt, null);
 		else
 			gl.texImage2D(tt.bind, 0, tt.internalFmt, tt.width, tt.height, 0, fmt, tt.pixelFmt, null);
@@ -1980,8 +1987,11 @@ class OpenGLDriver extends Driver {
 
 		var tex = @:privateAccess depthBuffer.t.t;
 		var isArray = depthBuffer.flags.has(IsArray);
+		var isCube = depthBuffer.flags.has(Cube);
 		inline function attach( slot : Int, t ) {
-			if( isArray ) {
+			if( isCube )
+				gl.framebufferTexture2D(GL.FRAMEBUFFER, slot, t == null ? GL.TEXTURE_2D : CUBE_FACES[layer], t, 0);
+			else if( isArray ) {
 				if( t == null )
 					gl.framebufferTexture2D(GL.FRAMEBUFFER, slot, GL.TEXTURE_2D, null, 0);
 				else
@@ -2014,13 +2024,13 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function setDepthClamp( enabled : Bool ) {
-		#if !js
+		if( !hasDepthClamp )
+			return;
 		useDepthClamp = enabled;
 		if ( useDepthClamp )
-			gl.enable(GL.DEPTH_CLAMP);
+			gl.enable(DEPTH_CLAMP);
 		else
-			gl.disable(GL.DEPTH_CLAMP);
-		#end
+			gl.disable(DEPTH_CLAMP);
 	}
 
 	override function setDepthBias( depthBias : Float, slopeScaledBias : Float ) {
@@ -2060,6 +2070,8 @@ class OpenGLDriver extends Driver {
 			true;
 		case DepthTextureArray:
 			glES >= 3;
+		case DepthClamp:
+			hasDepthClamp;
 		case ComputeShaders:
 			#if (limen && hl_ver >= version("1.15.0"))
 			computeEnabled;
@@ -2119,6 +2131,9 @@ class OpenGLDriver extends Driver {
 			gl.getExtension("WEBGL_depth_texture");
 		has16Bits = gl.getExtension("EXT_texture_norm16") != null; // 16 bit textures
 		hasAnisotropicFiltering = gl.getExtension("EXT_texture_filter_anisotropic") != null;
+		#if js
+		hasDepthClamp = gl.getExtension("EXT_depth_clamp") != null;
+		#end
 	}
 	function checkFeature( f : Feature ) {
 		return switch( f ) {
