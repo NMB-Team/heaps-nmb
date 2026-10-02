@@ -1360,10 +1360,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		#if heaps_mt_hxsl_cache
 		shaderBinaryMutex.acquire();
 		#end
+		var tracing = hxd.NMBTrace.enabled();
 		var bytes = try {
 			var bytes = getBinaryPayload(sh.code, key);
 			if( bytes == null ) {
-				var tracing = hxd.NMBTrace.enabled();
 				if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
 				bytes = compiler.compile(sh.code, profile, SHADER_ARGS);
 				if( shaderCache != null )
