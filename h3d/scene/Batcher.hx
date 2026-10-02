@@ -1291,6 +1291,7 @@ private class EmitData {
 	var bufferHandles : Array<h3d.BufferHandle> = [];
 	var textureHandles : Array<h3d.mat.TextureHandle> = [];
 	var capacity : Int = 0;
+	var tmpInverse = new h3d.Matrix();
 
 	public function new(bp : BatchPass) {
 		batchPass = bp;
@@ -1310,6 +1311,25 @@ private class EmitData {
 
 	public inline function reserve( count : Int ) {
 		capacity += count;
+	}
+
+	inline function writeMatrix( pos : Int, m : h3d.Matrix ) {
+		instancesData[pos++] = m._11;
+		instancesData[pos++] = m._21;
+		instancesData[pos++] = m._31;
+		instancesData[pos++] = m._41;
+		instancesData[pos++] = m._12;
+		instancesData[pos++] = m._22;
+		instancesData[pos++] = m._32;
+		instancesData[pos++] = m._42;
+		instancesData[pos++] = m._13;
+		instancesData[pos++] = m._23;
+		instancesData[pos++] = m._33;
+		instancesData[pos++] = m._43;
+		instancesData[pos++] = m._14;
+		instancesData[pos++] = m._24;
+		instancesData[pos++] = m._34;
+		instancesData[pos++] = m._44;
 	}
 
 	public function emitInstance( subMeshID : Int, subPartID : Int, shaderData : ShaderData, worldPosition : h3d.Matrix, syncID : Int ) {
@@ -1359,11 +1379,13 @@ private class EmitData {
 
 		var bp = batchPass;
 		if ( bp.modelViewPos >= 0 )
-			new hxd.FloatBufferLoader(instancesData, instanceDataStart + bp.modelViewPos).loadMatrix(worldPosition);
+			writeMatrix(instanceDataStart + bp.modelViewPos, worldPosition);
 		if ( bp.previousModelViewPos >= 0 )
-			new hxd.FloatBufferLoader(instancesData, instanceDataStart + bp.previousModelViewPos).loadMatrix(worldPosition);
-		if ( bp.modelViewInversePos >= 0 )
-			new hxd.FloatBufferLoader(instancesData, instanceDataStart + bp.modelViewInversePos).loadMatrix(worldPosition.getInverse());
+			writeMatrix(instanceDataStart + bp.previousModelViewPos, worldPosition);
+		if ( bp.modelViewInversePos >= 0 ) {
+			tmpInverse.inverse3x4(worldPosition);
+			writeMatrix(instanceDataStart + bp.modelViewInversePos, tmpInverse);
+		}
 	}
 
 	public function dispose() {
