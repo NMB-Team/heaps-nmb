@@ -12,17 +12,19 @@ private class ParamVar {
 class BatchInstanceParams {
 
 	var forcedPerInstance : Array<{ shader : String, params : Array<String> }>;
+	var useInstanceIds : Bool;
 	var cachedSignature : String;
 
-	public function new( forcedPerInstance ) {
+	public function new( forcedPerInstance, useInstanceIds = false ) {
 		this.forcedPerInstance = forcedPerInstance;
+		this.useInstanceIds = useInstanceIds;
 	}
 
 	public function getSignature() {
 		if( cachedSignature == null ) {
 			for( fp in forcedPerInstance )
 				fp.params.sort(Reflect.compare);
-			cachedSignature = haxe.crypto.Md5.encode([for( s in forcedPerInstance ) s.shader+"="+s.params.join(",")].join(";")).substr(0,8);
+			cachedSignature = haxe.crypto.Md5.encode([for( s in forcedPerInstance ) s.shader+"="+s.params.join(",")].join(";") + (useInstanceIds ? ";instanceIds" : "")).substr(0,8);
 		}
 		return cachedSignature;
 	}
@@ -682,6 +684,8 @@ class Cache {
 		inputOffset.qualifiers = [PerInstance(1)];
 
 		var useStorage = declVar("Batch_UseStorage",TBool,Param);
+		var useInstanceIds = params != null && @:privateAccess params.useInstanceIds;
+		var instanceIds = declVar("Batch_InstanceIds",TBuffer(TInt,SConst(0),Storage),Param);
 		var vcount = declVar("Batch_Count",TInt,Param);
 		var vuniformBuffer = declVar("Batch_Buffer",TBuffer(TVec(4,VFloat),SVar(vcount),Uniform),Param);
 		var vstorageBuffer = declVar("Batch_StorageBuffer",TBuffer(TVec(4,VFloat),SConst(0),RW),Param);
@@ -696,7 +700,7 @@ class Cache {
 
 		s.data = {
 			name : "batchShader_"+id,
-			vars : [vcount,hasOffset,useStorage,vuniformBuffer,vstorageBuffer,voffset,inputOffset],
+			vars : [vcount,hasOffset,useStorage,vuniformBuffer,vstorageBuffer,instanceIds,voffset,inputOffset],
 			funs : [],
 		};
 
@@ -957,6 +961,13 @@ class Cache {
 			}, null),
 			t : TVoid,
 		});
+
+		if( useInstanceIds )
+			inits.push({
+				p : pos,
+				t : TInt,
+				e : TBinop(OpAssign, eoffset, { e : TArray({ e : TVar(instanceIds), t : instanceIds.type, p : pos }, eoffset), t : TInt, p : pos }),
+			});
 
 		inits.push({
 			p : pos,

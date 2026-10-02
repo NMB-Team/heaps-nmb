@@ -2123,6 +2123,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( b.flags.has(UniformBuffer) )
 			usage.set(UNIFORM_BUFFER);
 		usage.set(STORAGE_BUFFER);
+		if( b.flags.has(ReadWriteBuffer) )
+			usage.set(INDIRECT_BUFFER);
 		var deviceLocal = 1 << Type.enumIndex(VkMemoryPropertyFlag.DEVICE_LOCAL);
 		final byteSize = haxe.Int64.ofInt(b.vertices) * haxe.Int64.ofInt(b.format.strideBytes);
 		return createBufferResource(usage, byteSize, b.format.strideBytes, DeviceBuffer, deviceLocal, deviceLocal, Undefined, b.id, 'buffer-${b.id}');
@@ -3638,21 +3640,22 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final indirectBuffer:VulkanBuffer = cast @:privateAccess commands.data;
 		if( indirectBuffer == null || indirectBuffer.disposed || !indirectBuffer.usage.has(INDIRECT_BUFFER) )
 			throw "Vulkan indirect draw requires a buffer created with INDIRECT_BUFFER usage";
-		final indirect:VulkanInstanceBuffer = cast indirectBuffer;
 		final firstCommand = @:privateAccess commands.offset;
 		final drawCount = commands.commandCount;
-		if( firstCommand < 0 || firstCommand + drawCount > indirect.capacity )
-			throw 'Vulkan indirect command range [$firstCommand, ${firstCommand + drawCount}) exceeds ${indirect.capacity} commands';
+		final capacity = haxe.Int64.toInt(indirectBuffer.size / haxe.Int64.ofInt(VulkanInstanceBuffer.COMMAND_STRIDE));
+		if( firstCommand < 0 || firstCommand + drawCount > capacity )
+			throw 'Vulkan indirect command range [$firstCommand, ${firstCommand + drawCount}) exceeds $capacity commands';
 		if( limits.maxDrawIndirectCount >= 0 && drawCount > limits.maxDrawIndirectCount )
 			throw 'Vulkan indirect draw count $drawCount exceeds device limit ${limits.maxDrawIndirectCount}';
-		if( !capabilities.drawIndirectFirstInstance && indirect.hasNonZeroFirstInstance(firstCommand, drawCount) )
+		final indirect:VulkanInstanceBuffer = Std.downcast(indirectBuffer, VulkanInstanceBuffer);
+		if( !capabilities.drawIndirectFirstInstance && (indirect == null || indirect.hasNonZeroFirstInstance(firstCommand, drawCount)) )
 			throw "Vulkan indirect commands with non-zero firstInstance require drawIndirectFirstInstance";
 		if( drawCount == 0 )
 			return;
 		final indirectOffset = firstCommand * VulkanInstanceBuffer.COMMAND_STRIDE;
 		final indirectEnd = indirectOffset + drawCount * VulkanInstanceBuffer.COMMAND_STRIDE;
-		if( indirectEnd > haxe.Int64.toInt(indirect.size) )
-			throw 'Vulkan indirect byte range [$indirectOffset, $indirectEnd) exceeds ${indirect.size} bytes';
+		if( indirectEnd > haxe.Int64.toInt(indirectBuffer.size) )
+			throw 'Vulkan indirect byte range [$indirectOffset, $indirectEnd) exceeds ${indirectBuffer.size} bytes';
 
 		final count:VulkanBuffer = cast @:privateAccess commands.countBuffer;
 		if( count != null ) {
@@ -3664,16 +3667,16 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( countOffset < 0 || countOffset + 4 > haxe.Int64.toInt(count.size) )
 				throw 'Vulkan indirect count range [$countOffset, ${countOffset + 4}) exceeds ${count.size} bytes';
 		}
-		prepareIndexedDraw(ibuf, indirect, count);
+		prepareIndexedDraw(ibuf, indirectBuffer, count);
 		if( count != null ) {
 			final countOffset = @:privateAccess commands.countOffset * 4;
-			command.drawIndexedIndirectCount(indirect.buffer, (haxe.Int64.ofInt(indirectOffset) : hl.I64), count.buffer,
+			command.drawIndexedIndirectCount(indirectBuffer.buffer, (haxe.Int64.ofInt(indirectOffset) : hl.I64), count.buffer,
 				(haxe.Int64.ofInt(countOffset) : hl.I64), drawCount, VulkanInstanceBuffer.COMMAND_STRIDE);
 		} else if( drawCount == 1 || capabilities.multiDrawIndirect )
-			command.drawIndexedIndirect(indirect.buffer, (haxe.Int64.ofInt(indirectOffset) : hl.I64), drawCount, VulkanInstanceBuffer.COMMAND_STRIDE);
+			command.drawIndexedIndirect(indirectBuffer.buffer, (haxe.Int64.ofInt(indirectOffset) : hl.I64), drawCount, VulkanInstanceBuffer.COMMAND_STRIDE);
 		else
 			for( index in 0...drawCount )
-				command.drawIndexedIndirect(indirect.buffer,
+				command.drawIndexedIndirect(indirectBuffer.buffer,
 					(haxe.Int64.ofInt(indirectOffset + index * VulkanInstanceBuffer.COMMAND_STRIDE) : hl.I64), 1, VulkanInstanceBuffer.COMMAND_STRIDE);
 	}
 

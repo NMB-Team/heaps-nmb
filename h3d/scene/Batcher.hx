@@ -673,6 +673,69 @@ private class GroupData {
 	}
 }
 
+private class BatchBucketClear extends hxsl.Shader {
+	static var SRC = {
+		@param var buckets : RWBuffer<Int>; // count, firstInstance
+		@param var bucketCount : Int;
+
+		function main() {
+			setLayout(64, 1, 1);
+			var bucket = computeVar.globalInvocation.x;
+			if ( bucket < bucketCount )
+				buckets[bucket * 2] = 0;
+		}
+	};
+}
+
+private class BatchBucketCommands extends hxsl.Shader {
+	static var SRC = {
+		@param var buckets : RWBuffer<Int>;
+		@param var bucketCount : Int;
+		@param var subPartInfos : StorageBuffer<Int>;
+		@param var countBuffer : RWBuffer<Int>; // command count, visible instance count
+		@param var commandBuffer : RWBuffer<Int>;
+
+		function main() {
+			setLayout(64, 1, 1);
+			var bucket = computeVar.globalInvocation.x;
+			if ( bucket >= bucketCount )
+				return;
+			var count = buckets[bucket * 2];
+			if ( count == 0 )
+				return;
+			var firstInstance = atomicAdd(countBuffer, 1, count);
+			buckets[bucket * 2 + 1] = firstInstance;
+			var command = atomicAdd(countBuffer, 0, 1) * 5;
+			commandBuffer[command + 0] = subPartInfos[bucket * 2];
+			commandBuffer[command + 1] = count;
+			commandBuffer[command + 2] = subPartInfos[bucket * 2 + 1];
+			commandBuffer[command + 3] = 0;
+			commandBuffer[command + 4] = firstInstance;
+		}
+	};
+}
+
+private class BatchInstanceScatter extends hxsl.Shader {
+	static var SRC = {
+		@param var buckets : StorageBuffer<Int>;
+		@param var instanceSlots : StorageBuffer<Int>; // selected bucket, local slot
+		@param var visibleInstanceIds : RWBuffer<Int>;
+		@param var instanceCount : Int;
+
+		function main() {
+			setLayout(64, 1, 1);
+			var instanceID = computeVar.globalInvocation.x;
+			if ( instanceID >= instanceCount )
+				return;
+			var bucket = instanceSlots[instanceID * 2];
+			if ( bucket < 0 )
+				return;
+			var slot = buckets[bucket * 2 + 1] + instanceSlots[instanceID * 2 + 1];
+			visibleInstanceIds[slot] = instanceID;
+		}
+	};
+}
+
 private class BatchCommandBuilder extends hxsl.Shader {
 	static var SRC = {
 		@const var ENABLE_FRUSTUM_CULLING : Bool;
@@ -694,9 +757,8 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@param var instancesInfos : StorageBuffer<Int>; // 1 elements => 0 : flags = subPartID(16 bits) + subMeshID(16 bits)
 		@param var subMeshInfos : StorageBuffer<Float>; // 3 elements => 0 : lodStart, 1 : lodCount, 2 : boundingSphere
 		@param var lodInfos : StorageBuffer<Float>; // x : screenRatio
-		@param var subPartInfos : StorageBuffer<Int>; // 2 elements => 0 : indexCount, 1 : indexStart
-		@param var countBuffer : RWBuffer<Int>;
-		@param var commandBuffer : RWBuffer<Int>;
+		@param var buckets : RWBuffer<Int>;
+		@param var instanceSlots : RWBuffer<Int>;
 		@param var instanceCount : Int;
 
 		@const var IS_RELATIVE : Bool;
@@ -708,7 +770,6 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@param var meshLodScale : Float = 1.0;
 
 		final subMeshInfosStride : Int = 3;
-		final subPartInfosStride : Int = 2;
 
 		@param var lightMatrix : Mat3;
 		@param var lightOBBMin : Vec3;
@@ -723,15 +784,6 @@ private class BatchCommandBuilder extends hxsl.Shader {
 					(pos.z + radius) > min.z && (pos.z - radius) < max.z;
 		}
 
-		function emitInstance(instanceID : Int, indexCount : Int, instanceCount : Int, startIndex : Int, startVertex : Int, baseInstance : Int ) {
-			var instancePos = instanceID * 5;
-			commandBuffer[instancePos + 0] = indexCount;
-			commandBuffer[instancePos + 1] = instanceCount;
-			commandBuffer[instancePos + 2] = startIndex;
-			commandBuffer[instancePos + 3] = startVertex;
-			commandBuffer[instancePos + 4] = baseInstance;
-		}
-
 		function computeScreenRatio( distToCam : Float, radius : Float ) : Float {
 			var screenMultiple = max(0.5 * camera.proj[0][0], 0.5 * camera.proj[1][1]);
 			var screenRadius = screenMultiple * radius / max(1.0, distToCam);
@@ -743,6 +795,8 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			var instanceID = computeVar.workGroup.x * 64 + computeVar.localInvocationIndex;
 			if ( instanceID >= instanceCount )
 				return;
+
+			instanceSlots[instanceID * 2] = -1;
 
 			var modelViewPos = instanceID * instanceStride + modelViewOffset;
 			var modelView = mat4(
@@ -863,12 +917,9 @@ private class BatchCommandBuilder extends hxsl.Shader {
 				return;
 
 			var subPartID : Int = flags & 0xFFFF;
-			var subPartPos = (subPartID + lodSelected) * subPartInfosStride;
-			var indexCount : Int = subPartInfos[subPartPos + 0];
-			var indexStart : Int = subPartInfos[subPartPos + 1];
-
-			var id = atomicAdd( countBuffer, 0, 1 );
-			emitInstance( id, indexCount, 1, indexStart, 0, instanceID );
+			var bucket = subPartID + lodSelected;
+			instanceSlots[instanceID * 2] = bucket;
+			instanceSlots[instanceID * 2 + 1] = atomicAdd(buckets, bucket * 2, 1);
 		}
 	}
 }
@@ -909,6 +960,12 @@ private class BatchPass {
 	var commandBuffer : h3d.Buffer;
 	var countBuffer : h3d.GPUCounter;
 	var builderShader = new BatchCommandBuilder();
+	var bucketClearShader = new BatchBucketClear();
+	var bucketCommandsShader = new BatchBucketCommands();
+	var instanceScatterShader = new BatchInstanceScatter();
+	var buckets : h3d.Buffer;
+	var instanceSlots : h3d.Buffer;
+	var visibleInstanceIds : h3d.Buffer;
 
 	var bufferHandles : Array<h3d.BufferHandle>;
 	var textureHandles : Array<h3d.mat.TextureHandle>;
@@ -952,7 +1009,7 @@ private class BatchPass {
 		}
 		// perInstance needs to be in reverse order ?
 		forcedPerInstance.reverse();
-		batchShader = shaderLinker.shaderCache.makeBatchShader(rt, sl, new hxsl.Cache.BatchInstanceParams(forcedPerInstance));
+		batchShader = shaderLinker.shaderCache.makeBatchShader(rt, sl, new hxsl.Cache.BatchInstanceParams(forcedPerInstance, true));
 		batchShader.Batch_UseStorage = true;
 		batchShader.Batch_HasOffset = true;
 		batchShader.constBits = 1 << 1 | 1 << 0;
@@ -1080,6 +1137,8 @@ private class BatchPass {
 	}
 
 	public function uploadInstances() {
+		if ( buckets != null && buckets.vertices < primitive.gpuSubPartInfos.vertices * 2 )
+			instancesDirty = true;
 		if ( !instancesDirty )
 			return;
 		instancesDirty = false;
@@ -1138,17 +1197,36 @@ private class BatchPass {
 			instanceCursor += ed.instanceCount;
 		}
 
-		if ( commandBuffer == null || commandBuffer.vertices < totalInstanceCount )  {
+		var bucketCount = primitive.gpuSubPartInfos.vertices;
+		if ( buckets == null || buckets.vertices < bucketCount * 2 ) {
+			if ( buckets != null )
+				alloc.disposeBuffer(buckets);
+			buckets = allocBuffer(bucketCount * 2, hxd.BufferFormat.INDEX32, UniformReadWrite);
+		}
+		if ( instanceSlots == null || instanceSlots.vertices < totalInstanceCount * 2 ) {
+			if ( instanceSlots != null )
+				alloc.disposeBuffer(instanceSlots);
+			instanceSlots = allocBuffer(totalInstanceCount * 2, hxd.BufferFormat.INDEX32, UniformReadWrite);
+		}
+		if ( visibleInstanceIds == null || visibleInstanceIds.vertices < totalInstanceCount ) {
+			if ( visibleInstanceIds != null )
+				alloc.disposeBuffer(visibleInstanceIds);
+			visibleInstanceIds = allocBuffer(totalInstanceCount, hxd.BufferFormat.INDEX32, UniformReadWrite);
+		}
+		batchShader.Batch_InstanceIds = visibleInstanceIds;
+
+		var maxCommandCount = hxd.Math.imin(totalInstanceCount, bucketCount);
+		if ( commandBuffer == null || commandBuffer.vertices < maxCommandCount )  {
 			if ( commandBuffer != null )
 				alloc.disposeBuffer(commandBuffer);
-			commandBuffer = allocBuffer( totalInstanceCount, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
+			commandBuffer = allocBuffer( maxCommandCount, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
 			if ( command == null )
 				command = new h3d.impl.InstanceBuffer();
 			@:privateAccess command.data = commandBuffer.vbuf;
 		}
 
 		if ( countBuffer == null ) {
-			countBuffer = new GPUCounter();
+			countBuffer = new GPUCounter(2);
 			@:privateAccess command.countBuffer = countBuffer.buffer.vbuf;
 		}
 	}
@@ -1174,10 +1252,9 @@ private class BatchPass {
 		builderShader.instancesInfos = instancesInfos;
 		builderShader.subMeshInfos = primitive.gpuSubMeshInfos;
 		builderShader.lodInfos = primitive.gpuLodInfos;
-		builderShader.subPartInfos = primitive.gpuSubPartInfos;
 		builderShader.instanceCount = totalInstanceCount;
-		builderShader.commandBuffer = commandBuffer;
-		builderShader.countBuffer = countBuffer.buffer;
+		builderShader.buckets = buckets;
+		builderShader.instanceSlots = instanceSlots;
 		builderShader.IS_RELATIVE = batcher.isRelative;
 		builderShader.worldMatrix = batcher.getAbsPos();
 
@@ -1243,7 +1320,24 @@ private class BatchPass {
 
 		builderShader.meshLodScale = ctx.meshLodScale;
 		countBuffer.reset();
+		var bucketCount = primitive.gpuSubPartInfos.vertices;
+		var bucketGroups = hxd.Math.ceil(bucketCount/64.0);
+		bucketClearShader.buckets = buckets;
+		bucketClearShader.bucketCount = bucketCount;
+		ctx.computeDispatch(bucketClearShader, bucketGroups);
 		ctx.computeDispatch(builderShader, hxd.Math.ceil(totalInstanceCount/64.0), false);
+		ctx.memoryBarrier();
+		bucketCommandsShader.buckets = buckets;
+		bucketCommandsShader.bucketCount = bucketCount;
+		bucketCommandsShader.subPartInfos = primitive.gpuSubPartInfos;
+		bucketCommandsShader.countBuffer = countBuffer.buffer;
+		bucketCommandsShader.commandBuffer = commandBuffer;
+		ctx.computeDispatch(bucketCommandsShader, bucketGroups);
+		instanceScatterShader.buckets = buckets;
+		instanceScatterShader.instanceSlots = instanceSlots;
+		instanceScatterShader.visibleInstanceIds = visibleInstanceIds;
+		instanceScatterShader.instanceCount = totalInstanceCount;
+		ctx.computeDispatch(instanceScatterShader, hxd.Math.ceil(totalInstanceCount/64.0), false);
 	}
 
 	public function draw( ctx : h3d.scene.RenderContext ) {
@@ -1253,12 +1347,24 @@ private class BatchPass {
 			ctx.selectBufferHandles( bufferHandles );
 		var engine = ctx.engine;
 		@:privateAccess engine.driver.selectMultiBuffers(primitive.formats, primitive.buffers);
-		@:privateAccess command.commandCount = totalInstanceCount;
+		@:privateAccess command.commandCount = hxd.Math.imin(totalInstanceCount, primitive.gpuSubPartInfos.vertices);
 		engine.renderInstanced(primitive.indexes, command);
 	}
 
 	public function dispose() {
 		var alloc = hxd.impl.Allocator.get();
+		if ( buckets != null ) {
+			alloc.disposeBuffer(buckets);
+			buckets = null;
+		}
+		if ( instanceSlots != null ) {
+			alloc.disposeBuffer(instanceSlots);
+			instanceSlots = null;
+		}
+		if ( visibleInstanceIds != null ) {
+			alloc.disposeBuffer(visibleInstanceIds);
+			visibleInstanceIds = null;
+		}
 		if ( instancesData != null ) {
 			alloc.disposeBuffer(instancesData);
 			instancesData = null;

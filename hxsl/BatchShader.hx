@@ -8,6 +8,7 @@ class BatchShader extends hxsl.Shader {
 		@const(4096) var Batch_Count : Int;
 		@param var Batch_Buffer : Buffer<Vec4,Batch_Count>;
 		@param var Batch_StorageBuffer : RWBuffer<Vec4>;
+		@param var Batch_InstanceIds : StorageBuffer<Int>;
 	};
 
 	public var params : RuntimeShader.AllocParam;
