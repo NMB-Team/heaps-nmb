@@ -1,14 +1,7 @@
 package h3d.impl.driver;
 
 import h3d.Buffer;
-import h3d.impl.driver.dlss.DLSSMode;
-import h3d.impl.driver.dlss.DLSSParams;
-import h3d.impl.driver.dlss.DLSSQuality;
-import h3d.impl.driver.dlss.DLSSSettings;
-import h3d.impl.driver.dlss.DLSSTag;
-import h3d.impl.driver.dlss.DLSSGMode;
-import h3d.impl.driver.dlss.DLSSGSettings;
-import h3d.impl.driver.dlss.ReflexMode;
+import h3d.impl.driver.upscaling.*;
 
 class Driver {
 
@@ -270,73 +263,82 @@ class Driver {
 		throw "Bindless is not implemented on this platform";
 	}
 
-	// --- DLSS
-
-	public function isDLSSSupported( framegen : Bool = false ) : Bool {
-		throw "DLSS not supported on this platform";
+	public function isUpscalingSupported() : Bool {
 		return false;
 	}
 
-	public function getDLSSOptimalSettings( mode : DLSSMode, targetWidth : Int, targetHeight : Int ) : DLSSSettings {
+	public function isFrameGenSupported() : Bool {
+		return false;
+	}
+
+	public function getUpscalerName() : String {
 		return null;
 	}
 
-	public function applyDLSS( resources : Map<DLSSTag, h3d.mat.Texture>, constants : DLSSParams, quality : DLSSQuality, mode : DLSSMode ) {
+	public function getUpscalingSettings( mode : UpscalingMode, targetWidth : Int, targetHeight : Int ) : UpscalingSettings {
+		return null;
 	}
 
-	public function tagDLSSResources( resources : Map<DLSSTag, h3d.mat.Texture> ) {
+	public function applyUpscaling( resources : Map<UpscalingTag, h3d.mat.Texture>, params : UpscalingParams, mode : UpscalingMode ) {
 	}
 
-	public function clearDLSSTags() {
+	public function setFrameGenResources( resources : Map<UpscalingTag, h3d.mat.Texture> ) {
 	}
 
-	public function setDLSSConstants( constants : DLSSParams ) {
+	public function clearFrameGenResources() {
 	}
 
-	public function setDLSSGMode( mode : DLSSGMode, numFramesToGenerate : Int = 1, releaseResources = false ) : Bool {
+	public function setFrameGenParams( params : UpscalingParams ) {
+	}
+
+	public function setFrameGenMode( mode : FrameGenMode, numFramesToGenerate : Int = 1, releaseResources = false ) : Bool {
 		return false;
 	}
 
-	public function getDLSSGMode() : DLSSGMode {
+	public function getFrameGenMode() : FrameGenMode {
 		return Off;
 	}
 
-	public function getDLSSGSettings() : DLSSGSettings {
+	public function getFrameGenSettings() : FrameGenSettings {
 		return null;
 	}
 
-	public function pclSimulationStart() {
+	public function latencyMarkerSimulationStart() {
 	}
 
-	public function pclSimulationEnd() {
+	public function latencyMarkerSimulationEnd() {
 	}
 
-	public function pclTriggerFlash() {
+	public function latencyMarkerTriggerFlash() {
 	}
 
-	public function reflexSleep() {
+	public function lowLatencySleep() {
 	}
 
-	public function setReflexOptions( mode : ReflexMode, frameLimitUs : Int = 0 ) {
+	public function setLowLatencyOptions( mode : LowLatencyMode, frameLimitUs : Int = 0 ) {
 		return false;
 	}
 
-	public function reflexLowLatencyAvailable() {
+	public function lowLatencyAvailable() {
 		return false;
 	}
 
-	public function reflexFlashIndicatorDriverControlled() {
+	public function lowLatencyFlashIndicatorDriverControlled() {
 		return false;
 	}
 
-	public function debugReflex() : String {
+	public function debugUpscaling() : String {
 		return "";
 	}
 
-	public function debugDLSSG() : String {
+	public function debugLowLatency() : String {
 		return "";
 	}
 
-	public function shutdownDLSS() {
+	public function debugFrameGen() : String {
+		return "";
+	}
+
+	public function shutdownUpscaling() {
 	}
 }

@@ -1,7 +1,7 @@
-package h3d.impl.driver.dlss;
+package h3d.impl.driver.upscaling;
 
 @:struct
-class DLSSParams {
+class UpscalingParams {
 	public var cameraViewToClip : h3d.Matrix;
 	public var clipToCameraView : h3d.Matrix;
 	public var clipToPrevClip : h3d.Matrix;

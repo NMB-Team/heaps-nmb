@@ -2108,7 +2108,7 @@ class OpenGLDriver extends Driver {
 			glES != null
 				? glES >= 3
 				: glVersion >= 3.3 || gl.hasExtension("GL_ARB_instanced_arrays") && gl.hasExtension("GL_ARB_draw_instanced");
-		case Bindless, DLSS:
+		case Bindless, Upscaling:
 			false;
 		};
 		#end

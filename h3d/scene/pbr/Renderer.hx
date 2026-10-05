@@ -1,9 +1,8 @@
 package h3d.scene.pbr;
 
-import h3d.impl.driver.dlss.DLSSMode;
-import h3d.impl.driver.dlss.DLSSParams;
-import h3d.impl.driver.dlss.DLSSQuality;
-import h3d.impl.driver.dlss.DLSSTag;
+import h3d.impl.driver.upscaling.UpscalingTag;
+import h3d.impl.driver.upscaling.UpscalingMode;
+import h3d.impl.driver.upscaling.UpscalingParams;
 
 enum abstract DisplayMode(String) {
 	/*
@@ -498,8 +497,8 @@ class Renderer extends h3d.scene.Renderer {
 		#end
 	}
 
-	static var resources : Map<DLSSTag, h3d.mat.Texture> = new Map();
-	static var constants = new DLSSParams();
+	static var resources : Map<UpscalingTag, h3d.mat.Texture> = new Map();
+	static var upscalingParams = new UpscalingParams();
 	static var viewToViewPrev = new h3d.Matrix();
 	static var tmp = new h3d.Matrix();
 	static var clipToPrevClip = new h3d.Matrix();
@@ -515,15 +514,16 @@ class Renderer extends h3d.scene.Renderer {
 		out._32 -= cam.jitterOffsetY;
 	}
 
-	function fillDLSSConstants(reset : Bool) {
-		constants.autoExposure = true;
-		constants.colorBufferHDR = false;
+	private function fillUpscalingParams(reset : Bool) {
+		var p = upscalingParams;
+		p.autoExposure = true;
+		p.colorBufferHDR = false;
 		unjitterProj(projNoJitter, ctx.camera);
 		unjitterProj(prevProjNoJitter, ctx.prevCamera);
 		clipToViewNoJitter.initInverse(projNoJitter);
 
-		constants.cameraViewToClip = projNoJitter;
-		constants.clipToCameraView = clipToViewNoJitter;
+		p.cameraViewToClip = projNoJitter;
+		p.clipToCameraView = clipToViewNoJitter;
 
 		var viewToWorld = ctx.camera.getInverseView();
 		var delta = ctx.prevWorldDelta;
@@ -537,38 +537,38 @@ class Renderer extends h3d.scene.Renderer {
 		viewToViewPrev.multiply(viewToWorld, ctx.prevCamera.mcam);
 		tmp.multiply(clipToViewNoJitter, viewToViewPrev);
 		clipToPrevClip.multiply(tmp, prevProjNoJitter);
-		constants.clipToPrevClip = clipToPrevClip;
+		p.clipToPrevClip = clipToPrevClip;
 
 		prevClipToClip.initInverse(clipToPrevClip);
-		constants.prevClipToClip = prevClipToClip;
+		p.prevClipToClip = prevClipToClip;
 
 		var jitter = @:privateAccess ctx.cameraJitterOffsets;
-		constants.jitterOffsetX = jitter.x * ctx.renderResolutionWidth * 0.5;
-		constants.jitterOffsetY = -jitter.y * ctx.renderResolutionHeight * 0.5;
-		constants.mvecScaleX = 1.0;
-		constants.mvecScaleY = 1.0;
-		constants.cameraPos = ctx.camera.pos;
-		constants.cameraUp = ctx.camera.getUp();
-		constants.cameraRight = ctx.camera.getRight();
-		constants.cameraFwd = ctx.camera.getForward();
-		constants.cameraNear = ctx.camera.zNear;
-		constants.cameraFar = ctx.camera.zFar;
-		constants.cameraFOV = ctx.camera.fovY;
-		constants.cameraAspectRatio = ctx.camera.screenRatio;
-		constants.depthInverted = ctx.useReverseDepth;
-		constants.cameraMotionIncluded = true;
-		constants.reset = reset;
-		constants.orthographicProjection = false;
-		constants.motionVectorsDilated = false;
-		constants.motionVectorsJittered = false;
+		p.jitterOffsetX = jitter.x * ctx.renderResolutionWidth * 0.5;
+		p.jitterOffsetY = -jitter.y * ctx.renderResolutionHeight * 0.5;
+		p.mvecScaleX = 1.0;
+		p.mvecScaleY = 1.0;
+		p.cameraPos = ctx.camera.pos;
+		p.cameraUp = ctx.camera.getUp();
+		p.cameraRight = ctx.camera.getRight();
+		p.cameraFwd = ctx.camera.getForward();
+		p.cameraNear = ctx.camera.zNear;
+		p.cameraFar = ctx.camera.zFar;
+		p.cameraFOV = ctx.camera.fovY;
+		p.cameraAspectRatio = ctx.camera.screenRatio;
+		p.depthInverted = ctx.useReverseDepth;
+		p.cameraMotionIncluded = true;
+		p.reset = reset;
+		p.orthographicProjection = false;
+		p.motionVectorsDilated = false;
+		p.motionVectorsJittered = false;
 	}
 
-	function applyDLSS(quality : DLSSQuality, mode : DLSSMode, reset : Bool = false) {
-		if (ctx.engine.driver.hasFeature(DLSS)) {
+	private function applyUpscaling(mode : UpscalingMode, reset : Bool = false) {
+		if (ctx.engine.driver.hasFeature(Upscaling)) {
 			var ldr = ctx.getGlobal("ldrMap");
 			var depthMap : h3d.mat.Texture = getPbrDepth();
 			var velocity = ctx.getGlobal("velocity");
-			var output = ctx.textures.allocTarget("dlssOutput", ctx.engine.width, ctx.engine.height, true, ldr.format, [ Writable ]);
+			var output = ctx.textures.allocTarget("upscalingOutput", ctx.engine.width, ctx.engine.height, true, ldr.format, [ Writable ]);
 
 			resources.clear();
 			resources.set(ColorIn, ldr);
@@ -576,23 +576,23 @@ class Renderer extends h3d.scene.Renderer {
 			resources.set(Depth, depthMap);
 			resources.set(ColorOut, output);
 
-			fillDLSSConstants(reset);
+			fillUpscalingParams(reset);
 
-			ctx.engine.driver.applyDLSS(resources, constants, quality, mode);
+			ctx.engine.driver.applyUpscaling(resources, upscalingParams, mode);
 			ctx.setGlobal("ldrMap", output);
 		}
 	}
 
-	function applyDLSSG(reset : Bool = false) {
-		if (ctx.engine.driver.hasFeature(DLSS)) {
+	private function applyFrameGen(reset : Bool = false) {
+		if (ctx.engine.driver.hasFeature(Upscaling)) {
 			resources.clear();
 			resources.set(MotionVectors, ctx.getGlobal("velocity"));
 			resources.set(Depth, getPbrDepth());
 
-			fillDLSSConstants(reset);
+			fillUpscalingParams(reset);
 
-			ctx.engine.driver.tagDLSSResources(resources);
-			ctx.engine.driver.setDLSSConstants(constants);
+			ctx.engine.driver.setFrameGenResources(resources);
+			ctx.engine.driver.setFrameGenParams(upscalingParams);
 		}
 	}
 

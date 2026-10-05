@@ -62,7 +62,7 @@ class Window {
 		@see `hxd.impl.MouseMode` for more details on each mode.
 	**/
 	public var mouseMode(default, set): MouseMode = Absolute;
-	public var monitor : Null<Int> = null;
+	public var monitor(default, set) : Null<Int> = null;
 	public var refreshRate : Null<Float> = null;
 	/**
 		Deprecated alias for `refreshRate`.
@@ -831,6 +831,16 @@ class Window {
 
 	public function applyDisplay() {
 		displayMode = displayMode;
+	}
+
+	@:noCompletion
+	private function set_monitor( m : Null<Int> ) {
+		if( monitor == m )
+			return m;
+		monitor = m;
+		if( m != null && displayMode != Windowed )
+			applyDisplay();
+		return m;
 	}
 
 	public function setIcon(icon: hxd.BitmapData) : Void {

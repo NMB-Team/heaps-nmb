@@ -312,7 +312,7 @@ class Engine {
 		haxe.System.beginFrame();
 		#end
 		mem.beginFrame();
-		#if dlss driver.pclSimulationEnd(); #end
+		driver.latencyMarkerSimulationEnd();
 		driver.begin(hxd.Timer.frameCount);
 		if( gpuTrace != null ) gpuTrace.poll(hxd.Timer.frameCount);
 		if( backgroundColor != null ) clear(backgroundColor, 1, 0);

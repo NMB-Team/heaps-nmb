@@ -1,6 +1,6 @@
-package h3d.impl.driver.dlss;
+package h3d.impl.driver.upscaling;
 
-enum DLSSTag {
+enum UpscalingTag {
 	Depth;
 	MotionVectors;
 	ColorIn;

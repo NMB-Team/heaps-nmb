@@ -1,6 +1,6 @@
-package h3d.impl.driver.dlss;
+package h3d.impl.driver.upscaling;
 
-class DLSSGSettings {
+class FrameGenSettings {
 	public var status : Int;
 	public var minWidthOrHeight : Int;
 	public var framesPresented : Int;
