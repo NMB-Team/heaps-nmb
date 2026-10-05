@@ -18,6 +18,7 @@ import h3d.impl.driver.upscaling.UpscalingTag;
 import h3d.impl.driver.upscaling.FrameGenMode;
 import h3d.impl.driver.upscaling.FrameGenSettings;
 import h3d.impl.driver.upscaling.LowLatencyMode;
+import h3d.impl.driver.upscaling.UpscalerSelection;
 
 import limen.graphics.renderer.d3d12.DX12Core.Address;
 import limen.graphics.renderer.d3d12.DX12Core.Box;
