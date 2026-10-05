@@ -163,7 +163,7 @@ class GlslOut {
 		switch( t ) {
 		case TVoid:
 			add("void");
-		case TInt:
+		case TInt, TEnum(_):
 			add("int");
 		case TBytes(n):
 			add("vec");
