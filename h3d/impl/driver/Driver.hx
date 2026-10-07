@@ -212,6 +212,15 @@ class Driver {
 		return false;
 	}
 
+	/**
+		Reallocates the allocated texture so its most detailed mip level is `mip`, keeping the content
+		of the mip levels common to both allocations. Returns false if not supported or out of memory,
+		in which case the texture is unchanged. Requires the ResidentMips feature.
+	**/
+	public function setResidentMip( t : h3d.mat.Texture, mip : Int ) : Bool {
+		return false;
+	}
+
 	// --- MARKING API
 
 	public function beginEvent( name : String ) {

@@ -1113,7 +1113,7 @@ private class BatchPass {
 					sd.textureHandles = [];
 				var h : h3d.mat.TextureHandle = curShader.getParamValue(p.index);
 				if ( sd.textureHandles.indexOf(h) < 0 )
-					textureHandles.push(h);
+					sd.textureHandles.push(h);
 				bufLoader.loadInt(h.handle.low);
 				bufLoader.loadInt(h.handle.high);
 			case TSampler(_):
@@ -1148,11 +1148,13 @@ private class BatchPass {
 			return alloc.allocBuffer(hxd.impl.Allocator.roundPOT(size), format, flags);
 		}
 
+		var realloc = false;
 		var instanceDataSize = totalInstanceCount * batchShader.paramsSize;
 		if ( instancesData == null || instancesData.vertices < instanceDataSize ) {
 			if ( instancesData != null )
 				alloc.disposeBuffer(instancesData);
 			instancesData = allocBuffer( instanceDataSize, hxd.BufferFormat.VEC4_DATA, UniformReadWrite );
+			realloc = true;
 		}
 		batchShader.Batch_StorageBuffer = instancesData;
 
@@ -1161,6 +1163,7 @@ private class BatchPass {
 				if ( syncIDs != null )
 					alloc.disposeBuffer(syncIDs);
 				syncIDs = allocBuffer( totalInstanceCount, hxd.BufferFormat.INDEX32, Uniform );
+				realloc = true;
 			}
 		}
 
@@ -1168,6 +1171,7 @@ private class BatchPass {
 			if ( instancesInfos != null )
 				alloc.disposeBuffer(instancesInfos);
 			instancesInfos = allocBuffer( totalInstanceCount, PASS_INSTANCES_INFOS_FMT, Uniform );
+			realloc = true;
 		}
 
 		var instanceCursor = 0;
@@ -1190,10 +1194,18 @@ private class BatchPass {
 					if ( textureHandles.indexOf(th) < 0 )
 						textureHandles.push(th);
 			}
-			instancesData.uploadFloats( ed.instancesData, 0, ed.instanceCount * batchShader.paramsSize, instanceCursor * batchShader.paramsSize );
-			instancesInfos.uploadBytes( ed.instancesInfos, 0, ed.instanceCount, instanceCursor );
-			if ( hasSyncIDs )
-				syncIDs.uploadBytes( ed.syncIDs, 0, ed.instanceCount, instanceCursor);
+
+			var first = ( realloc || ed.uploadCursor != instanceCursor ) ? 0 : ed.uploadedCount;
+			var count = ed.instanceCount - first;
+			if ( count > 0 ) {
+				var stride = batchShader.paramsSize;
+				instancesData.uploadFloats( ed.instancesData, first * stride * 4, count * stride, (instanceCursor + first) * stride );
+				instancesInfos.uploadBytes( ed.instancesInfos, first * PASS_INSTANCES_INFOS_FMT.strideBytes, count, instanceCursor + first );
+				if ( hasSyncIDs )
+					syncIDs.uploadBytes( ed.syncIDs, first * 4, count, instanceCursor + first );
+			}
+			ed.uploadCursor = instanceCursor;
+			ed.uploadedCount = ed.instanceCount;
 			instanceCursor += ed.instanceCount;
 		}
 
@@ -1398,6 +1410,8 @@ private class EmitData {
 	var textureHandles : Array<h3d.mat.TextureHandle> = [];
 	var capacity : Int = 0;
 	var tmpInverse = new h3d.Matrix();
+	var uploadCursor = -1;
+	var uploadedCount = 0;
 
 	public function new(bp : BatchPass) {
 		batchPass = bp;

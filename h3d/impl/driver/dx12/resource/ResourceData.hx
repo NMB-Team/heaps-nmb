@@ -6,6 +6,7 @@ import limen.graphics.renderer.d3d12.resource.Resources.ResourceState;
 
 class ResourceData {
 	public var res : GpuResource;
+	public var needsAliasingBarrier = false;
 	public var state : ResourceState;
 	public var targetState : ResourceState;
 

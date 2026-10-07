@@ -15,6 +15,7 @@ import h3d.impl.driver.Query;
 import h3d.impl.driver.dx12.descriptor.ScratchHeap;
 import h3d.impl.driver.dx12.descriptor.ScratchHeapArray;
 import h3d.impl.driver.dx12.resource.ResourceData;
+import h3d.impl.driver.dx12.resource.TextureData;
 #if dlss_allowed
 import limen.graphics.postprocess.dlss.frame.DLSSFrameToken;
 #end
@@ -29,6 +30,7 @@ class DX12Frame {
 	public var copyCommandList : CommandList;
 	public var fenceValue : Int64;
 	public var toRelease : Array<Dx12Resource> = [];
+	public var placedToFree : Array<TextureData> = [];
 	public var texHandlesToRelease : Array<h3d.mat.TextureHandle> = [];
 	public var bufHandlesToRelease : Array<h3d.BufferHandle> = [];
 	public var srvHeap : ScratchHeap;

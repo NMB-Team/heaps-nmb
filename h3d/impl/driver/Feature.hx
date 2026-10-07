@@ -69,4 +69,8 @@ enum Feature {
 		Supports depth clamping instead of clipping against the near and far planes.
 	*/
 	DepthClamp;
+	/*
+		Textures can allocate only their less detailed mip levels (see Texture.setResidentMip).
+	*/
+	ResidentMips;
 }

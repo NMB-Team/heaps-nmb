@@ -3,10 +3,12 @@ package h3d.impl.driver.dx12.resource;
 #if (limen && gfx_dx12)
 import limen.graphics.renderer.d3d12.DX12Core.DxgiFormat;
 
+import h3d.impl.allocator.MemoryBlock;
 import h3d.impl.driver.dx12.descriptor.BlockHeap;
 
 class TextureData extends ResourceData {
 	public var format : DxgiFormat;
+	public var memory : MemoryBlock;
 	public var color : h3d.Vector4;
 	var clearColorChanges : Int;
 	var cpuViewBits : Int = -1;
