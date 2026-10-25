@@ -35,6 +35,8 @@ class App implements h3d.IDrawable {
 
 	var isDisposed : Bool;
 
+	static var UI_CLEAR_COLOR = new h3d.Vector4(0, 0, 0, 0);
+
 	public function new() {
 		var engine = h3d.Engine.getCurrent();
 		if( engine != null ) {
@@ -136,7 +138,20 @@ class App implements h3d.IDrawable {
 		if( trace ) NMBTrace.end("heaps");
 		if( trace ) NMBTrace.begin("heaps", "Scene 2D");
 		try {
-			s2d.render(e);
+			var upscaling = e.driver.upscaling;
+			switch( upscaling.getFrameGenUIMode() ) {
+			case HudLess:
+				upscaling.markFrameGenHudless();
+				s2d.render(e);
+			case UITexture if( upscaling.getFrameGenUITarget() != null ):
+				e.pushTarget(upscaling.getFrameGenUITarget());
+				e.clearF(UI_CLEAR_COLOR);
+				s2d.render(e);
+				e.popTarget();
+				upscaling.compositeFrameGenUI();
+			default:
+				s2d.render(e);
+			}
 		} catch(e:Dynamic) {
 			if( trace ) NMBTrace.end("heaps");
 			throw e;

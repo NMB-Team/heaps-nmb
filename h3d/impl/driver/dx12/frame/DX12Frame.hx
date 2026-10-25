@@ -16,9 +16,6 @@ import h3d.impl.driver.dx12.descriptor.ScratchHeap;
 import h3d.impl.driver.dx12.descriptor.ScratchHeapArray;
 import h3d.impl.driver.dx12.resource.ResourceData;
 import h3d.impl.driver.dx12.resource.TextureData;
-#if dlss_allowed
-import limen.graphics.postprocess.dlss.frame.DLSSFrameToken;
-#end
 
 class DX12Frame {
 	public var backBuffer : ResourceData;
@@ -44,9 +41,6 @@ class DX12Frame {
 	public var queryBuffer : GpuResource;
 	public var dynamicBufferAlloc : BlockAllocator;
 	public var pendingCopyBuffers : Array<MemoryBlock> = [];
-	#if dlss_allowed
-	public var dlssFrameToken : DLSSFrameToken;
-	#end
 
 	public function new() {
 	}

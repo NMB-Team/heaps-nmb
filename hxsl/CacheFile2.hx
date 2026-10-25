@@ -85,16 +85,22 @@ class CacheFile2Loader {
 		}
 
 		#if heaps_mt_hxsl_cache
-		workThread = sys.thread.Thread.create(threadLoop, { onAbort : (e) -> {
-			Sys.println("[CacheFile2] Preload aborted: " + e.toString());
-			bcListsReady = true;
-			linkDone = true;
-			rtMapReady = true;
-		} });
+		workThread = sys.thread.Thread.create(function() {
+			try {
+				threadLoop();
+			} catch( e ) {
+				Sys.println("[CacheFile2] Preload aborted: " + e.toString());
+				bcListsReady = true;
+				linkDone = true;
+				rtMapReady = true;
+			}
+		});
 		workThread.name = "CacheFile2Loader";
 		event = haxe.MainLoop.add(update);
 		#else
+		cache.preloading = true;
 		threadLoop();
+		cache.preloading = false;
 		if( this.onDone != null )
 			this.onDone();
 		#end
@@ -102,18 +108,25 @@ class CacheFile2Loader {
 
 	function threadLoop() {
 		var driver = h3d.Engine.getCurrent()?.driver;
+		function link( sl : ShaderList, mode : RuntimeShader.LinkMode ) {
+			var rts = try cache.link(sl, mode) catch( e ) {
+				Sys.println("[CacheFile2] Failed to link " + [for( s in sl ) @:privateAccess s.shader.data.name].join(":") + ": " + e.toString());
+				return null;
+			}
+			driver?.warmupShader(rts);
+			return rts;
+		}
+
 		// Link ShaderList Default
 		for( l in slistsDefault ) {
-			var rts = cache.link(l.sl, Default);
-			driver?.warmupShader(rts);
-			rtMap.set(l.sign, { rt : rts, sl : l.sl });
+			var rts = link(l.sl, Default);
+			if( rts != null )
+				rtMap.set(l.sign, { rt : rts, sl : l.sl });
 		}
 
 		// Link ShaderList Compute
-		for( sl in slistsCompute ) {
-			var rts = cache.link(sl, Compute);
-			driver?.warmupShader(rts);
-		}
+		for( sl in slistsCompute )
+			link(sl, Compute);
 
 		#if heaps_mt_hxsl_cache
 		rtMapReady = true;
@@ -125,10 +138,8 @@ class CacheFile2Loader {
 		#end
 
 		// Link ShaderList Batch
-		for( sl in slistsBatch ) {
-			var rts = cache.link(sl, Batch);
-			driver?.warmupShader(rts);
-		}
+		for( sl in slistsBatch )
+			link(sl, Batch);
 
 		#if heaps_mt_hxsl_cache
 		linkDone = true;
@@ -181,7 +192,11 @@ class CacheFile2Loader {
 						sl = null;
 						break;
 					}
-					var b = cache.makeBatchShader(rts.rt, rts.sl.next, bcinfo.params);
+					var b = try cache.makeBatchShader(rts.rt, rts.sl.next, bcinfo.params) catch( e ) {
+						Sys.println('[CacheFile2] Can\'t make batch shader $name: ' + e.toString());
+						sl = null;
+						break;
+					}
 					ssd = @:privateAccess b.shader;
 				}
 			}
@@ -270,8 +285,9 @@ class CacheFile2 extends Cache {
 
 	var isLoading : Bool = false;
 	var isDirty(default, set) : Bool = false;
-	#if heaps_mt_hxsl_cache
 	var compiledWhileLoading : Bool = false;
+	#if !heaps_mt_hxsl_cache
+	var preloading : Bool = false;
 	#end
 	var runtimesDefault : Array<RuntimeShader> = [];
 	var runtimesBatch : Array<RuntimeShader> = [];
@@ -332,6 +348,9 @@ class CacheFile2 extends Cache {
 			if( sys.thread.Thread.current() == sys.thread.Thread.main() )
 				compiledWhileLoading = true;
 		}
+		#else
+		if( isLoading && !preloading )
+			compiledWhileLoading = true;
 		#end
 		switch( mode ) {
 		case Default: runtimesDefault.push(rt);
@@ -372,10 +391,8 @@ class CacheFile2 extends Cache {
 			CacheFile2.LOAD_TIME = dt;
 			log('${runtimesDefault.length + runtimesBatch.length} shaders loaded in ${hxd.Math.fmt(dt)}s');
 			isLoading = false;
-			#if heaps_mt_hxsl_cache
 			if( compiledWhileLoading )
 				isDirty = true;
-			#end
 		});
 	}
 
@@ -565,12 +582,12 @@ class CacheFile2 extends Cache {
 						codedump.push("  " + @:privateAccess inst.shader.data.name + "(bits=" + inst.bits + ")");
 					if( rt.vertex != null && rt.vertex.data != null ) {
 						codedump.push("// --- vertex ---");
-						codedump.push(printer.shaderString(rt.vertex.data));
+						codedump.push(rt.vertex.code ?? printer.shaderString(rt.vertex.data));
 						codedump.push("\n");
 					}
 					if( rt.fragment != null && rt.fragment.data != null ) {
 						codedump.push("// --- fragment ---");
-						codedump.push(printer.shaderString(rt.fragment.data));
+						codedump.push(rt.fragment.code ?? printer.shaderString(rt.fragment.data));
 						codedump.push("\n");
 					}
 					codedump.push("\n\n");

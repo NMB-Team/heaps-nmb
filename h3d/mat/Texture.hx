@@ -52,6 +52,10 @@ class Texture {
 		and the texture is sampled starting at this level.
 	**/
 	public var residentMip(default,null) : Int = 0;
+	/**
+		For a Streamed texture, the last frame (hxd.Timer.frameCount) in which the texture was visible, see `markVisible`.
+	**/
+	public var visibleFrame(default,null) : Int = -1;
 	var customMipLevels : Int;
 	/**
 		A 1x1 texture is allocated while the texture is loading (see hxd.res.Image)
@@ -207,6 +211,14 @@ class Texture {
 	}
 
 	/**
+		Records that the texture is used by something visible during the current frame.
+		Streamed textures that are not visible lose mip levels when the streaming budget is exceeded (see hxd.res.TextureStream).
+	**/
+	public inline function markVisible() {
+		visibleFrame = hxd.Timer.frameCount;
+	}
+
+	/**
 		Some textures might take some time to load. You can check flags.has(Loading)
 		or add a waitLoad callback which will get called either immediately if the texture is already loaded
 		or when loading is complete.
@@ -288,7 +300,7 @@ class Texture {
 	public function clear( color : Int, alpha = 1., layer = -1 ) {
 		alloc();
 		if( width == 0 || height == 0 ) return;
-		if( #if (usegl || limen || js) true #else flags.has(Target) #end && (width != 1 || height != 1) ) {
+		if( #if ((usegl || limen || js) && !dx12) true #else flags.has(Target) #end && (width != 1 || height != 1) ) {
 			var engine = h3d.Engine.getCurrent();
 			color |= Std.int(hxd.Math.clamp(alpha)*255) << 24;
 			if( layer < 0 ) {
@@ -509,6 +521,23 @@ class Texture {
 		t.realloc = function() t.clear(0x202020);
 		@:privateAccess engine.resCache.set(Texture,t);
 		return t;
+	}
+
+	static var cubeFaceMatrices = [
+		h3d.Matrix.L([0,0,-1,0, 0,-1,0,0, 1,0,0,0]),
+		h3d.Matrix.L([0,0,1,0, 0,-1,0,0, -1,0,0,0]),
+		h3d.Matrix.L([1,0,0,0, 0,0,1,0, 0,1,0,0]),
+		h3d.Matrix.L([1,0,0,0, 0,0,-1,0, 0,-1,0,0]),
+		h3d.Matrix.L([1,0,0,0, 0,-1,0,0, 0,0,1,0]),
+		h3d.Matrix.L([-1,0,0,0, 0,-1,0,0, 0,0,-1,0]),
+	];
+
+	/**
+		Returns the matrix transforming `vec3(uv * 2 - 1, 1)` into the direction of the given cube face.
+		The matrix is shared and must not be modified.
+	**/
+	public static function getCubeFaceMatrix( face : Int ) {
+		return cubeFaceMatrices[face];
 	}
 
 	/**

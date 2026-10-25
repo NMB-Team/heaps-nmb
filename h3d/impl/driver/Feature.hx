@@ -50,10 +50,6 @@ enum Feature {
 	*/
 	Bindless;
 	/*
-		Supports Upscalling like DLSS, FSR.
-	*/
-	Upscaling;
-	/*
 		Can render into a single layer of a depth texture array.
 	*/
 	DepthTextureArray;

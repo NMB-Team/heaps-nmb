@@ -2,6 +2,8 @@ package h3d.impl.driver;
 
 #if macro
 typedef Texture = {};
+#elseif (js && dx12)
+typedef Texture = h3d.impl.driver.dx12.js.JSDriver.TextureData;
 #elseif js
 typedef Texture = { t : js.html.webgl.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
 #elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))

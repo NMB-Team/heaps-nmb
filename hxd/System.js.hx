@@ -81,7 +81,20 @@ class System {
 			#end
 		}
 		if( loopFunc != null ) loopFunc();
+		#if dx12
+		// unlike WebGL, the DX12 driver presents explicitly (see System.hl) : only when a frame was rendered,
+		// the loop can skip rendering (editor views not refreshed) and the back buffers would show older frames
+		var cur = h3d.Engine.getCurrent();
+		if( cur != null && cur.ready && @:privateAccess cur.lastTime != lastPresentTime ) {
+			lastPresentTime = @:privateAccess cur.lastTime;
+			cur.driver.present();
+		}
+		#end
 	}
+
+	#if dx12
+	static var lastPresentTime = -1.;
+	#end
 
 	public static function start( callb : Void -> Void ) : Void {
 		callb();
@@ -187,23 +200,14 @@ class System {
 		}
 	}
 
-	public static function getClipboardText() : String {
-		#if (hide && editor)
-		return nw.Clipboard.get().get(Text);
-		#else
+	public static dynamic function getClipboardText() : String {
 		return CLIPBOARD_TEXT;
-		#end
 	}
 
-	public static function setClipboardText(text:String) : Bool {
-		#if (hide && editor)
-		nw.Clipboard.get().set({ data: text, type: nw.Clipboard.ClipboardType.Text });
-		return true;
-		#else
+	public static dynamic function setClipboardText(text:String) : Bool {
 		js.Browser.navigator.clipboard.writeText(text);
 		CLIPBOARD_TEXT = text;
 		return true;
-		#end
 	}
 
 	public static function getLocale() : String {

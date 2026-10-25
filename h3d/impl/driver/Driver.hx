@@ -1,12 +1,14 @@
 package h3d.impl.driver;
 
 import h3d.Buffer;
-import h3d.impl.driver.upscaling.*;
+import h3d.impl.Upscaling;
 
 class Driver {
 
 	static var SHADER_CACHE : h3d.impl.ShaderCache;
 	var shaderCache = SHADER_CACHE;
+
+	public var upscaling(default, null) = new h3d.impl.Upscaling(null, []);
 
 	public static function setShaderCache( cache : h3d.impl.ShaderCache ) {
 		SHADER_CACHE = cache;
@@ -16,6 +18,20 @@ class Driver {
 
 
 	public function hasFeature( f : Feature ) {
+		return false;
+	}
+
+	public static var requestedFeatures(default, null) = new haxe.EnumFlags<Feature>();
+	public static function requestFeature( f : Feature ) : Bool {
+		if( h3d.Engine.getCurrent() != null )
+			throw "Driver.requestFeature(" + f + ") must be called before the engine is created";
+		var accepted = DriverFactory.requestFeature(f);
+		if( accepted )
+			requestedFeatures.set(f);
+		return accepted;
+	}
+
+	static function onFeatureRequested( f : Feature ) : Bool {
 		return false;
 	}
 
@@ -35,6 +51,9 @@ class Driver {
 	}
 
 	public function dispose() {
+	}
+
+	public function removeEngine( engine : h3d.Engine ) {
 	}
 
 	public function begin( frame : Int ) {
@@ -272,82 +291,7 @@ class Driver {
 		throw "Bindless is not implemented on this platform";
 	}
 
-	public function isUpscalingSupported() : Bool {
+	public function copyBackBuffer( to : h3d.mat.Texture ) : Bool {
 		return false;
-	}
-
-	public function isFrameGenSupported() : Bool {
-		return false;
-	}
-
-	public function getUpscalerName() : String {
-		return null;
-	}
-
-	public function getUpscalingSettings( mode : UpscalingMode, targetWidth : Int, targetHeight : Int ) : UpscalingSettings {
-		return null;
-	}
-
-	public function applyUpscaling( resources : Map<UpscalingTag, h3d.mat.Texture>, params : UpscalingParams, mode : UpscalingMode ) {
-	}
-
-	public function setFrameGenResources( resources : Map<UpscalingTag, h3d.mat.Texture> ) {
-	}
-
-	public function clearFrameGenResources() {
-	}
-
-	public function setFrameGenParams( params : UpscalingParams ) {
-	}
-
-	public function setFrameGenMode( mode : FrameGenMode, numFramesToGenerate : Int = 1, releaseResources = false ) : Bool {
-		return false;
-	}
-
-	public function getFrameGenMode() : FrameGenMode {
-		return Off;
-	}
-
-	public function getFrameGenSettings() : FrameGenSettings {
-		return null;
-	}
-
-	public function latencyMarkerSimulationStart() {
-	}
-
-	public function latencyMarkerSimulationEnd() {
-	}
-
-	public function latencyMarkerTriggerFlash() {
-	}
-
-	public function lowLatencySleep() {
-	}
-
-	public function setLowLatencyOptions( mode : LowLatencyMode, frameLimitUs : Int = 0 ) {
-		return false;
-	}
-
-	public function lowLatencyAvailable() {
-		return false;
-	}
-
-	public function lowLatencyFlashIndicatorDriverControlled() {
-		return false;
-	}
-
-	public function debugUpscaling() : String {
-		return "";
-	}
-
-	public function debugLowLatency() : String {
-		return "";
-	}
-
-	public function debugFrameGen() : String {
-		return "";
-	}
-
-	public function shutdownUpscaling() {
 	}
 }

@@ -2,6 +2,8 @@ package h3d.impl.driver;
 
 #if macro
 typedef Query = {};
+#elseif (js && dx12)
+typedef Query = h3d.impl.driver.dx12.js.JSDriver.QueryData;
 #elseif js
 typedef Query = {};
 #elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))

@@ -869,9 +869,6 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		var h = new hxsl.HlslOut();
 		if( shader.code == null ){
 			shader.code = h.run(shader.data);
-			#if !heaps_compact_mem
-			shader.data.funs = null;
-			#end
 		}
 		var bytes = getBinaryPayload(shader.kind == Vertex, shader.code);
 		if( bytes == null ) {
@@ -939,7 +936,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 
 	override function getNativeShaderCode( shader : hxsl.RuntimeShader ) {
 		function dumpShader(s:hxsl.RuntimeShader.RuntimeShaderData) {
-			var code = new hxsl.HlslOut().run(s.data);
+			var code = s.code ?? new hxsl.HlslOut().run(s.data);
 			try {
 				var scomp = compileShader(s, true).bytes;
 				code += "\n// ASM=\n" + DX11ShaderCompiler.disassemble(scomp, None, null) + "\n\n";
@@ -1202,6 +1199,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			s.format = hxd.BufferFormat.make(format);
 			s.semanticNames = semanticNames;
 			shaders.set(shader.id, s);
+			shader.releaseData();
 		}
 		if( s == currentShader )
 			return false;

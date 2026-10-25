@@ -3,9 +3,32 @@ package h3d.impl.driver;
 import hxd.GraphicsDriverApi;
 
 final class DriverFactory {
+	public static function requestFeature(f:Feature):Bool {
+		#if macro
+		return false;
+		#elseif (js && dx12)
+		return @:privateAccess h3d.impl.driver.dx12.js.JSDriver.onFeatureRequested(f);
+		#else
+		return switch (hxd.GraphicsDriverConfig.getCurrentOrDefault()) {
+			#if (limen && gfx_dx12)
+			case Dx12: @:privateAccess h3d.impl.driver.dx12.DX12Driver.onFeatureRequested(f);
+			#end
+			#if (limen && gfx_vulkan)
+			case Vulkan: switch (f) { case BottomLeftCoords: false; default: true; };
+			#end
+			#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
+			case OpenGL | Auto: @:privateAccess h3d.impl.driver.opengl.OpenGLDriver.onFeatureRequested(f);
+			#end
+			default: false;
+		};
+		#end
+	}
+
 	public static function create(api:GraphicsDriverApi, antiAlias:Int):Driver {
 		#if macro
 		return new h3d.impl.driver.nulls.NullDriver();
+		#elseif (js && dx12)
+		return h3d.impl.driver.dx12.js.JSDriver.inst ?? new h3d.impl.driver.dx12.js.JSDriver();
 		#elseif limen
 		return switch (api) {
 			case Dx12:

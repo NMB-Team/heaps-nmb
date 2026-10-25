@@ -1,0 +1,3818 @@
+package h3d.impl.driver.dx12.js;
+
+#if (js && dx12)
+
+import h3d.impl.driver.Driver;
+import h3d.impl.driver.Feature;
+import h3d.impl.driver.QueryKind;
+import h3d.impl.driver.RenderFlag;
+import h3d.impl.driver.GPUBuffer;
+import h3d.impl.driver.Query;
+import h3d.impl.driver.Texture;
+import h3d.impl.PipelineCache;
+import h3d.impl.Upscaling;
+import dx.Dx12;
+import haxe.Int64;
+import h3d.mat.Pass;
+import h3d.mat.Stencil;
+
+private typedef Driver = Dx12;
+
+typedef PSOConfigCache = PipelineCache.PipelineConfigCache;
+
+class ScratchHeapArray {
+	var heaps : Array<ScratchHeap>;
+	var type : DescriptorHeapType;
+	var size : Int;
+	var cursor : Int;
+
+	public function new(type,size) {
+		this.type = type;
+		this.size = size;
+		heaps = [];
+	}
+
+	public function reset() {
+		cursor = 0;
+	}
+
+	public function checkSize( minSize : Int, toRelease : Array<Resource> ) {
+		if( minSize <= size )
+			return;
+		size = minSize;
+		for( h in heaps )
+			toRelease.push(@:privateAccess h.heap);
+		heaps = [];
+		cursor = 0;
+	}
+
+	public function next() {
+		var h = heaps[cursor++];
+		if( h == null ) {
+			h = new ScratchHeap(type, size);
+			heaps.push(h);
+		} else
+			h.clear();
+		return h;
+	}
+
+	public function getSize() {
+		var size : Float = 0;
+		for( h in heaps )
+			size += h.getSize();
+		return size;
+	}
+
+}
+
+@:struct class BufferAllocation {
+	public var resource : GpuResource = null;
+	public var cpuAddress : hl.Bytes = null;
+	public var offset : Int = 0;
+	public var byteSize : Int = 0;
+	public function new() {
+	}
+}
+
+/**
+	Per-frame allocator in UPLOAD or READBACK committed buffers, see LinearAllocator.
+**/
+class BufferAllocator {
+	var allocator : LinearAllocator<GpuResource>;
+	var heap : HeapProperties;
+	var desc : ResourceDesc;
+	var flags : haxe.EnumFlags<HeapFlag>;
+	var state : ResourceState;
+
+	public function new( size : Int, heapType : HeapType = UPLOAD, state : ResourceState = GENERIC_READ ) {
+		heap = new HeapProperties();
+		heap.type = heapType;
+		this.state = state;
+		desc = new ResourceDesc();
+		desc.dimension = BUFFER;
+		desc.height = 1;
+		desc.depthOrArraySize = 1;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.layout = ROW_MAJOR;
+		flags = new haxe.EnumFlags();
+		allocator = new LinearAllocator(size, createPage, (res) -> res.map(0, null), (res) -> res.release());
+	}
+
+	function createPage( size : Int ) {
+		desc.width = size;
+		var res = JSDriver.allocCheck(() -> Driver.createCommittedResource(heap, flags, desc, state, null));
+		res.setName("BufferAllocatorPage");
+		return res;
+	}
+
+	public function reset( forceDispose = false ) {
+		allocator.reset(forceDispose);
+	}
+
+	public function dispose() {
+		allocator.dispose();
+	}
+
+	public function alloc( size : Int, alignment = 256, allocation : BufferAllocation ) {
+		var sz = size & ~(alignment - 1);
+		if( sz != size ) sz += alignment;
+		allocator.alloc(sz, alignment);
+		allocation.resource = allocator.resource;
+		allocation.offset = allocator.offset;
+		allocation.cpuAddress = allocator.ptr;
+		allocation.byteSize = sz;
+		return allocation;
+	}
+
+	public function getSize() {
+		return allocator.getSize();
+	}
+
+}
+
+class DxFrame {
+	public var backBuffer : ResourceData;
+	public var backBufferView : Address;
+	public var depthBuffer : GpuResource;
+	public var allocator : CommandAllocator;
+	public var commandList : CommandList;
+	public var copyAllocator : CommandAllocator;
+	public var copyCommandList : CommandList;
+	public var copyBuffer : GpuResource;
+	public var copyBufferCursor : Int = 0;
+	public var fenceValue : Int64;
+	public var toRelease : Array<Resource> = [];
+	#if (hldx >= version("2.0.0"))
+	public var placedToFree : Array<TextureData> = [];
+	#end
+	public var texHandlesToRelease : Array<h3d.mat.TextureHandle> = [];
+	public var bufHandlesToRelease : Array<h3d.BufferHandle> = [];
+	public var srvHeap : ScratchHeap;
+	public var samplerHeap : ScratchHeap;
+	public var srvHeapCache : ScratchHeapArray;
+	public var samplerHeapCache : ScratchHeapArray;
+	public var queryHeaps : Array<QueryHeap> = [];
+	public var queriesPending : Array<Query> = [];
+	public var queryCurrentHeap : Int;
+	public var queryHeapOffset : Int;
+	public var queryBuffer : GpuResource;
+	public var bufferAllocator : BufferAllocator;
+	public var readbackAllocator : BufferAllocator;
+	public var readbacks : Array<ReadbackRequest> = [];
+	public function new() {
+	}
+	public function getSize() {
+		var size : Float = 0;
+		// both srvHeap and samplerHeap are from cache
+		size += srvHeapCache.getSize();
+		size += samplerHeapCache.getSize();
+		// size += bufferAllocator.getSize(); // UPLOAD heap is in shared memory, not in GPU
+		size += JSDriver.COPY_BUFFER_SIZE;
+		return size;
+	}
+}
+
+class ShaderRegisters {
+	public var globals : Int;
+	public var params : Int;
+	public var buffers : Int;
+	public var cbvCount : Int;
+	public var storageCount : Int;
+	public var textures : Int;
+	public var samplers : Int;
+	public var texturesCount : Int;
+	public var texturesTypes : Array<hxsl.Ast.Type>;
+	public var bufferTypes : Array<hxsl.Ast.BufferKind>;
+	public var bufferStrides : Array<Int>;
+	public var srv : Address;
+	public var samplersView : Address;
+	public var lastHeapCount : Int;
+	public var lastTextures : Array<Texture> = [];
+	public var lastTexturesBits : Array<Int>= [];
+	public function new() {
+	}
+}
+
+class CompiledShader {
+	public var vertexRegisters : ShaderRegisters;
+	public var fragmentRegisters : ShaderRegisters;
+	public var format : hxd.BufferFormat;
+	public var pipeline : GraphicsPipelineStateDesc;
+	public var pipelines : PipelineCache<GraphicsPipelineState> = new PipelineCache();
+	public var rootSignature : RootSignature;
+	public var inputLayout : hl.CArray<InputElementDesc>;
+	public var inputCount : Int;
+	public var shader : hxsl.RuntimeShader;
+	public var isCompute : Bool;
+	public var computePipeline : ComputePipelineState;
+	public var usedPSOConfig : Bool;
+	#if heaps_mt_hxsl_cache
+	public var pipelineMutex = new sys.thread.Mutex();
+	#end
+	public function new() {
+	}
+}
+
+@:struct class TempObjects {
+
+	public var renderTargets : hl.BytesAccess<Address>;
+	public var depthStencils : hl.BytesAccess<Address>;
+	public var copyableInfosBytes : hl.Bytes;
+	public var vertexViews : hl.CArray<VertexBufferView>;
+	public var descriptors2 : hl.NativeArray<DescriptorHeap>;
+	public var barriers : hl.CArray<ResourceBarrier>;
+	public var resourcesToTransition : hl.NativeArray<ResourceData>;
+	public var maxBarriers : Int;
+	public var barrierCount : Int;
+	public var needUAVBarrier : Bool = false;
+	@:packed public var heap(default,null) : HeapProperties;
+	@:packed public var barrier(default,null) : ResourceBarrier;
+	@:packed public var clearColor(default,null) : ClearColor;
+	@:packed public var clearValue(default,null) : ClearValue;
+	@:packed public var viewport(default,null) : Viewport;
+	@:packed public var rect(default,null) : Rect;
+	@:packed public var bufferSRV(default,null) : BufferSRV;
+	@:packed public var texViewDesc(default,null) : Tex2DSRV;
+	@:packed public var samplerDesc(default,null) : SamplerDesc;
+	@:packed public var vertexGlobalDesc(default,null) : ConstantBufferViewDesc;
+	@:packed public var fragmentGlobalDesc(default,null) : ConstantBufferViewDesc;
+	@:packed public var cbvDesc(default,null) : ConstantBufferViewDesc;
+	@:packed public var rtvDesc(default,null) : RenderTargetViewDesc;
+	@:packed public var uavDesc(default,null) : UAVBufferViewDesc;
+	@:packed public var wtexDesc(default,null) : UAVTextureViewDesc;
+	@:packed public var subResourceData(default, null) : SubResourceData;
+	@:packed public var bufferAllocation(default,null) : BufferAllocation;
+	@:packed public var srcTextureLocation(default, null) : TextureCopyLocation;
+	@:packed public var dstTextureLocation(default, null) : TextureCopyLocation;
+	@:packed public var dstStencilViewDesc(default,null) : DepthStencilViewDesc;
+
+	public var pass : h3d.mat.Pass;
+
+	public function new() {
+		renderTargets = new hl.Bytes(8 * 8);
+		depthStencils = new hl.Bytes(8);
+		copyableInfosBytes = new hl.Bytes(8 * 3);
+		vertexViews = hl.CArray.alloc(VertexBufferView, 16);
+		maxBarriers = 100;
+		barriers = hl.CArray.alloc( ResourceBarrier, maxBarriers );
+		var allSubresource = Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		for ( i in 0...maxBarriers )
+			barriers[i].subResource = allSubresource;
+		resourcesToTransition = new hl.NativeArray(maxBarriers);
+		barrierCount = 0;
+		pass = new h3d.mat.Pass("default");
+		pass.stencil = new h3d.mat.Stencil();
+		bufferSRV.dimension = BUFFER;
+		bufferSRV.flags = RAW;
+		bufferSRV.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+		samplerDesc.comparisonFunc = NEVER;
+		samplerDesc.maxLod = 1e30;
+		descriptors2 = new hl.NativeArray(2);
+		uavDesc.viewDimension = BUFFER;
+		barrier.subResource = -1; // all
+	}
+
+}
+
+class BaseHeap {
+	public var stride(default,null) : Int;
+	public var size(default,null) : Int;
+	public var address(default,null) : Address;
+	var type : DescriptorHeapType;
+	var heap : DescriptorHeap;
+	var cpuToGpu : Int64;
+	var shaderVisible : Bool;
+
+	public function new(type,size=8,shaderVisible=true) {
+		this.type = type;
+		this.shaderVisible = shaderVisible && (type == CBV_SRV_UAV || type == SAMPLER);
+		this.stride = Driver.getDescriptorHandleIncrementSize(type);
+		allocHeap(size);
+	}
+
+	public function getSize() {
+		return size * stride;
+	}
+
+	function allocHeap( size : Int ) {
+		var desc = new DescriptorHeapDesc();
+		desc.type = type;
+		desc.numDescriptors = size;
+		if( shaderVisible )
+			desc.flags = SHADER_VISIBLE;
+		heap = JSDriver.allocCheck(() -> new DescriptorHeap(desc));
+		this.size = size;
+		address = heap.getHandle(false);
+		cpuToGpu = desc.flags == SHADER_VISIBLE ? ( heap.getHandle(true).value - address.value ) : 0;
+	}
+
+	public dynamic function onFree( prev : DescriptorHeap, prevSize : Int  ) {
+		throw "Too many buffers";
+	}
+
+	public inline function toGPU( address : Address ) : Address {
+		return new Address(address.value + cpuToGpu);
+	}
+
+	public inline function getIndex( cpuAddress : Address ) : Int {
+		return Std.int((cpuAddress.value - address.value).low / stride);
+	}
+
+	public inline function getCpuAddressAt( index : Int ) : Address {
+		return address.offset(index * stride);
+	}
+
+	inline function getNextHeapSize() : Int {
+		return (size * 3) >> 1;
+	}
+}
+
+class ScratchHeap extends BaseHeap {
+	var cursor : Int;
+	public var available(get,never) : Int;
+
+	override function allocHeap( size : Int ) {
+		cursor = 0;
+		if ( type == SAMPLER && size > 2048)
+			throw "Max heap size reached";
+		super.allocHeap(size);
+	}
+
+	public function alloc( count : Int ) {
+		if( cursor + count > size ) {
+			var prevCursor = cursor;
+			cursor = 0;
+			var prev = heap;
+			allocHeap(getNextHeapSize());
+			onFree(prev, prevCursor);
+		}
+		var pos = cursor;
+		cursor += count;
+		return address.offset(pos * stride);
+	}
+
+	inline function get_available() {
+		return size - cursor;
+	}
+
+	public function clear() {
+		cursor = 0;
+	}
+}
+
+class BlockHeap extends BaseHeap {
+	var freeList : Array<Int>;
+	public var available(get,never) : Int;
+
+	override public function new(type,size,shaderVisible) {
+		if ( shaderVisible )
+			throw "BlockHeap cannot be shader visible as its content is copied on resize";
+		super(type, size, false);
+		freeList = [for (i in 0...size) i];
+	}
+
+	function resize() {
+		var prevSize = size;
+		var prev = heap;
+		allocHeap(getNextHeapSize());
+		for ( i in prevSize + 1...size)
+			freeList.push(i);
+		onFree(prev, prevSize);
+	}
+
+	public function allocIndex() : Int {
+		var idx = freeList.pop();
+		if ( idx == null ) {
+			idx = size;
+			resize();
+		}
+		return idx;
+	}
+
+	public function disposeIndex( index : Int ) {
+		freeList.push(index);
+	}
+
+	inline function get_available() {
+		return freeList.length;
+	}
+
+	public inline function isEmpty() {
+		return available == size;
+	}
+}
+
+class ResourceData {
+	public var res : GpuResource;
+	public var state : ResourceState;
+	public var targetState : ResourceState;
+	public var generation = JSDriver.generation;
+	public function new() {
+	}
+}
+
+class BufferData extends ResourceData {
+	public var view : dx.Dx12.VertexBufferView;
+	public var iview : dx.Dx12.IndexBufferView;
+	public var handle : h3d.BufferHandle = null;
+	public var cViewIndex : Int = -1;
+	public var sViewIndex : Int = -1;
+	public var sViewStride : Int = -1;
+	public var sViewsMap : Map<Int, Int>;
+	public var uViewIndex : Int = -1;
+	public var uViewStride : Int = -1;
+	public var uViewsMap : Map<Int, Int>;
+	public var size : Int;
+
+	inline public function getSRV(stride:Int) {
+		if( sViewStride == stride )
+			return sViewIndex;
+		if( sViewsMap != null ) {
+			var idx = sViewsMap.get(stride);
+			return idx != null ? idx : -1;
+		}
+		return -1;
+	}
+
+	public function setSRV(stride:Int, idx:Int) {
+		if( sViewIndex < 0 ) {
+			sViewIndex = idx;
+			sViewStride = stride;
+			return;
+		}
+		if( sViewsMap == null )
+			sViewsMap = new Map();
+		sViewsMap.set(stride, idx);
+	}
+
+	inline public function getUAV(stride:Int) {
+		if( uViewStride == stride )
+			return uViewIndex;
+		if( uViewsMap != null ) {
+			var idx = uViewsMap.get(stride);
+			return idx != null ? idx : -1;
+		}
+		return -1;
+	}
+
+	public function setUAV(stride:Int, idx:Int) {
+		if( uViewIndex < 0 ) {
+			uViewIndex = idx;
+			uViewStride = stride;
+			return;
+		}
+		if( uViewsMap == null )
+			uViewsMap = new Map();
+		uViewsMap.set(stride, idx);
+	}
+
+	public function disposeViews(heap : BlockHeap) {
+		if ( cViewIndex != -1 ) {
+			heap.disposeIndex(cViewIndex);
+			cViewIndex = -1;
+		}
+		if(sViewIndex >= 0) {
+			heap.disposeIndex(sViewIndex);
+			sViewIndex = -1;
+			sViewStride = -1;
+		}
+		if( sViewsMap != null ) {
+			for( v in sViewsMap )
+				heap.disposeIndex(v);
+			sViewsMap = null;
+		}
+		if(uViewIndex >= 0) {
+			heap.disposeIndex(uViewIndex);
+			uViewIndex = -1;
+			uViewStride = -1;
+		}
+		if( uViewsMap != null ) {
+			for( v in uViewsMap )
+				heap.disposeIndex(v);
+			uViewsMap = null;
+		}
+	}
+}
+
+class TextureData extends ResourceData {
+	public var format : DxgiFormat;
+	public var color : h3d.Vector4;
+	public var lastUseFence : Int64;
+	var clearColorChanges : Int;
+	var cpuViewBits : Int = -1;
+	var cpuViewIndex : Int = -1;
+	var cpuViewsMap : Map<Int, Int>;
+	#if (hldx >= version("2.0.0"))
+	public var page : TextureHeapPage;
+	public var pagePos : Int;
+	public var pageSize : Int;
+	#end
+
+	inline public function getView(bits: Int) {
+		if( cpuViewBits == bits )
+			return cpuViewIndex;
+		if( cpuViewsMap != null ) {
+			var idx = cpuViewsMap.get(bits);
+			return idx != null ? idx : -1;
+		}
+		return -1;
+	}
+
+	public function setView(bits: Int, idx: Int) {
+		if( cpuViewIndex < 0 ) {
+			cpuViewIndex = idx;
+			cpuViewBits = bits;
+			return;
+		}
+		if( cpuViewsMap == null )
+			cpuViewsMap = new Map();
+		cpuViewsMap.set(bits, idx);
+	}
+
+	public function setClearColor( c : h3d.Vector4 ) {
+		var color = color;
+		if( clearColorChanges > 10 || (color.r == c.r && color.g == c.g && color.b == c.b && color.a == c.a) )
+			return false;
+		clearColorChanges++;
+		color.load(c);
+		return true;
+	}
+
+	public function disposeViews(heap: BlockHeap) {
+		if(cpuViewIndex >= 0) {
+			heap.disposeIndex(cpuViewIndex);
+			cpuViewIndex = -1;
+			cpuViewBits = -1;
+		}
+		if( cpuViewsMap != null ) {
+			for( v in cpuViewsMap )
+				heap.disposeIndex(v);
+			cpuViewsMap = null;
+		}
+	}
+}
+
+#if (hldx >= version("2.0.0"))
+class TextureHeapPage {
+	public var heap(default,null) : Heap;
+	public var size(default,null) : Int;
+	public var used(default,null) : Int = 0;
+	// sorted list of [pos,len] free ranges
+	var freeList : Array<Int>;
+
+	public function new( heap, size ) {
+		this.heap = heap;
+		this.size = size;
+		freeList = [0, size];
+	}
+
+	public function alloc( size : Int, align : Int ) {
+		var i = 0;
+		while( i < freeList.length ) {
+			var pos = freeList[i];
+			var len = freeList[i + 1];
+			var apos = (pos + align - 1) & ~(align - 1);
+			var end = apos + size;
+			var rest = pos + len - end;
+			if( rest >= 0 ) {
+				if( apos > pos ) {
+					freeList[i + 1] = apos - pos;
+					if( rest > 0 ) {
+						freeList.insert(i + 2, end);
+						freeList.insert(i + 3, rest);
+					}
+				} else if( rest > 0 ) {
+					freeList[i] = end;
+					freeList[i + 1] = rest;
+				} else
+					freeList.splice(i, 2);
+				used += size;
+				return apos;
+			}
+			i += 2;
+		}
+		return -1;
+	}
+
+	public function free( pos : Int, size : Int ) {
+		used -= size;
+		var i = 0;
+		while( i < freeList.length && freeList[i] < pos )
+			i += 2;
+		freeList.insert(i, pos);
+		freeList.insert(i + 1, size);
+		// merge with next
+		if( i + 2 < freeList.length && pos + size == freeList[i + 2] ) {
+			freeList[i + 1] += freeList[i + 3];
+			freeList.splice(i + 2, 2);
+		}
+		// merge with previous
+		if( i > 0 && freeList[i - 2] + freeList[i - 1] == pos ) {
+			freeList[i - 1] += freeList[i + 1];
+			freeList.splice(i, 2);
+		}
+	}
+}
+
+/**
+	Sub-allocates small sampled textures (not render targets / not writable) as placed resources
+	into heaps, instead of one committed resource per texture (min 64KB each).
+	Only textures accepting the 4KB placement alignment (most detailed mip <= 64KB) are placed,
+	bigger ones keep being committed resources so they can be released / evicted individually.
+**/
+class TextureHeapAllocator {
+
+	static inline var SMALL_ALIGN = 4096;
+	static inline var DEFAULT_ALIGN = 65536;
+
+	public var pageSize(default,null) : Int;
+	public var pages(default,null) : Array<TextureHeapPage> = [];
+	var heapDesc : HeapDesc;
+	var allocInfo : ResourceAllocationInfo;
+
+	public function new( pageSize ) {
+		this.pageSize = pageSize;
+		heapDesc = new HeapDesc();
+		heapDesc.sizeInBytes = pageSize;
+		heapDesc.properties.type = DEFAULT;
+		heapDesc.alignment = DEFAULT_ALIGN;
+		heapDesc.flags.set(DENY_BUFFERS);
+		heapDesc.flags.set(DENY_RT_DS_TEXTURES);
+		heapDesc.flags.set(CREATE_NOT_ZEROED);
+		allocInfo = new ResourceAllocationInfo();
+	}
+
+	/**
+		Returns the allocation size of the texture, or -1 if it should not be placed (too big).
+		Sets desc.alignment accordingly.
+	**/
+	public function getAllocSize( t : h3d.mat.Texture, desc : ResourceDesc ) {
+		// small alignment requires the most detailed mip to fit in 64KB
+		if( hxd.Pixels.calcDataSize(desc.width.low, desc.height, t.format) * t.layerCount > 65536 )
+			return -1;
+		desc.alignment = SMALL_ALIGN;
+		Dx12.getResourceAllocationInfo(desc, allocInfo);
+		if( allocInfo.alignment != SMALL_ALIGN ) {
+			desc.alignment = 0;
+			return -1;
+		}
+		return allocInfo.sizeInBytes.low;
+	}
+
+	public function alloc( td : TextureData, desc : ResourceDesc, size : Int ) : GpuResource {
+		var align = desc.alignment.low;
+		var page = null, pos = -1;
+		for( p in pages ) {
+			if( p.size - p.used < size ) continue;
+			pos = p.alloc(size, align);
+			if( pos >= 0 ) {
+				page = p;
+				break;
+			}
+		}
+		if( page == null ) {
+			var heap = Dx12.createHeap(heapDesc);
+			if( heap == null )
+				return null;
+			heap.setName("TextureHeap#" + pages.length);
+			page = new TextureHeapPage(heap, pageSize);
+			pages.push(page);
+			pos = page.alloc(size, align);
+		}
+		var res = Dx12.createPlacedResource(page.heap, pos, desc, td.state, null);
+		if( res == null ) {
+			freeBlock(page, pos, size);
+			return null;
+		}
+		td.page = page;
+		td.pagePos = pos;
+		td.pageSize = size;
+		return res;
+	}
+
+	public function free( td : TextureData ) {
+		if( td.page == null ) return;
+		freeBlock(td.page, td.pagePos, td.pageSize);
+		td.page = null;
+	}
+
+	function freeBlock( page : TextureHeapPage, pos : Int, size : Int ) {
+		page.free(pos, size);
+		// release empty pages, but keep one to prevent alloc/free churn
+		if( page.used == 0 && pages.length > 1 ) {
+			pages.remove(page);
+			page.heap.release();
+		}
+	}
+
+	public function getStats() {
+		var used = 0.;
+		for( p in pages ) used += p.used;
+		return { pages : pages.length, size : pages.length * (pageSize:Float), used : used };
+	}
+}
+#end
+
+class QueryData {
+	public var heap : Int;
+	public var offset : Int;
+	public var result : Float;
+	public function new() {
+	}
+}
+
+class ReadbackRequest {
+	public var cpuAddress : hl.Bytes;
+	public var size : Int;
+	public var buf : haxe.io.Bytes;
+	public var bufPos : Int;
+	public var callback : Void -> Void;
+	public function new() {
+	}
+}
+
+class JSDriver extends h3d.impl.driver.Driver {
+
+	var pipelineBuilder = new PipelineCache.PipelineBuilder();
+
+	var driver : DriverInstance;
+	var hasDeviceError = false;
+	var window : dx.Window;
+	var contextLost = new Map<h3d.Engine, Void -> Void>();
+	var frames : Array<DxFrame>;
+	#if (hldx >= version("2.0.0"))
+	var textureHeap : TextureHeapAllocator;
+	#end
+	var frame : DxFrame;
+	var frameFence : Fence;
+	var fenceEvent : WaitEvent;
+	var directFence : Fence;
+	var directFenceValue : Int64 = 0;
+	var directQueue : CommandQueue;
+
+	var renderTargetViews : ScratchHeap;
+	var depthStenciViews : ScratchHeap;
+	var cpuSrvHeap : BlockHeap;
+	var cpuSamplerHeap : ScratchHeap;
+	var cpuSamplersIndex : Map<Int, Int>;
+	var bindlessSrvHeap : BlockHeap;
+	var bindlessSamplerHeap : BlockHeap;
+	var indirectCommand : CommandSignature;
+
+	var currentFrame : Int;
+	var frameFenceValue : Int64 = 0;
+	var currentPass : h3d.mat.Pass;
+
+	var currentWidth : Int;
+	var currentHeight : Int;
+
+	var currentShader : CompiledShader;
+	var compiledShaders : Map<Int,CompiledShader>;
+	var compiler : ShaderCompiler;
+	var currentIndex : Buffer;
+	#if heaps_mt_hxsl_cache
+	var compileMutex  = new sys.thread.Mutex();
+	var shaderBinaryMutex  = new sys.thread.Mutex();
+	var compilingCount = 0;
+	var releaseQueue : Array<hxsl.RuntimeShader> = [];
+	#end
+	var psoConfigCache : PSOConfigCache;
+
+	var tmp : TempObjects;
+	var currentRenderTargets : Array<h3d.mat.Texture> = [];
+	var currentDepth : h3d.mat.Texture;
+	var defaultDepth : h3d.mat.Texture;
+	var depthEnabled = true;
+	var curStencilRef : Int = -1;
+	var lastRtvDesc : RenderTargetViewDesc;
+	var rtWidth : Int;
+	var rtHeight : Int;
+	var frameCount : Int;
+	var tsFreq : haxe.Int64;
+	var heapCount : Int;
+	var currentPipelineState : PipelineState;
+	var lastVertexGlobalBind : Int = -1;
+	var lastFragmentGlobalBind : Int = -1;
+	var lastGlobalsShader : CompiledShader;
+	var needUAVBarrier : Bool = false;
+	var useDepthClamp : Bool = false;
+	var useSM6_6 = false;
+	var errorTex : h3d.mat.Texture;
+	var textureHandles : Map<h3d.mat.Texture, Map<Int, h3d.mat.TextureHandle>> = [];
+	var samplerHandles : Map<Int, Int> = [];
+
+	var copyQueue : CommandQueue;
+	var copyFence : Fence;
+	var copyFenceValue : Int64;
+
+	var nativeDevice : Device;
+	var nativeFactory : Factory;
+	var nativeQueue : CommandQueue;
+	var swapChain : SwapChain;
+
+	public static var COPY_BUFFER_SIZE = 256 * 1024 * 1024; // 256 Mo per frame
+	public static var TEXTURE_HEAP_SIZE = 16 * 1024 * 1024;
+	public static var DEFAULT_DEPTH_FORMAT : h3d.mat.Data.TextureFormat = Depth24Stencil8;
+	public static var DEFAULT_DEPTH_VALUE = 1.0;
+	public static var INITIAL_RT_COUNT = 1024;
+	public static var INITIAL_BINDLESS_SRV_COUNT = 1024;
+	public static var INITIAL_SRV_COUNT = 1024;
+	public static var INITIAL_BINDLESS_SAMPLER_COUNT = 1024;
+	public static var INITIAL_SAMPLER_COUNT = 1024;
+	public static var INITIAL_BUFFER_ALLOCATOR_SIZE = 2 * 1024 * 1024;
+	public static var INITIAL_READBACK_ALLOCATOR_SIZE = 64 * 1024;
+	public static var BUFFER_COUNT = #if console 3 #else 2 #end;
+	public static var DEVICE_NAME = null;
+	public static var inst(default, null) : JSDriver;
+	public static var generation(default, null) = 0;
+	public static var DEBUG = false; // requires dxil.dll when set to true
+	public static var SUPPRESSED_MESSAGE_IDS : Array<Int> = [];
+
+	@:allow(h3d.impl) static function allocCheck<T>( f : Void -> T ) {
+		var ret = f();
+		if( ret == null ) {
+			var mem = Engine.getCurrent().mem;
+			mem.garbage();
+			ret = f();
+			if( ret == null ) mem.errorOutOfMemory();
+		}
+		return ret;
+	}
+
+	public function new() {
+		inst = this;
+		window = @:privateAccess dx.Window.windows[0];
+		upscaling = new Upscaling(this, []);
+		reset();
+		useSM6_6 = h3d.impl.driver.Driver.requestedFeatures.has(Bindless) && checkSM6_6();
+	}
+
+	override function getMemoryUsage() {
+		var mem = new QueryVideoMemoryInfo();
+		Dx12.queryVideoMemoryInfo(0, mem);
+		inline function toF( v : haxe.Int64 ) return (v / 1024).low * 1024.;
+		return { total : toF(mem.budget), allocated : toF(mem.currentUsage), free : toF(mem.budget - mem.currentUsage) };
+	}
+
+	override function hasFeature(f:Feature) {
+		return switch(f) {
+		case Queries, BottomLeftCoords:
+			false;
+		case Bindless:
+			useSM6_6;
+		default:
+			true;
+		};
+	}
+
+	@:allow(h3d.impl.driver.Driver)
+	static function onFeatureRequested( f : Feature ) : Bool {
+		return switch(f) {
+		case Queries, BottomLeftCoords:
+			false;
+		default:
+			true;
+		};
+	}
+
+	override function isSupportedFormat(fmt:h3d.mat.Data.TextureFormat):Bool {
+		return true;
+	}
+
+	function checkSM6_6() : Bool {
+		var hasSM6_6 = false;
+		var shaderModel = new hl.Bytes(4);
+		shaderModel.setI32(0, HIGHEST_SHADER_MODEL);
+		Driver.checkFeatureSupport(SHADER_MODEL, shaderModel, 4);
+		hasSM6_6 = cast(SHADER_MODEL_6_6, Int) <= shaderModel.getI32(0);
+		return hasSM6_6;
+	}
+
+	function suppressDebugMessages() {
+		var ids = SUPPRESSED_MESSAGE_IDS;
+		if( ids.length == 0 ) return;
+		var buf = new hl.Bytes(ids.length * 4);
+		for( i in 0...ids.length )
+			buf.setI32(i * 4, ids[i]);
+		var filter = new InfoQueueFilter();
+		filter.denyList.numIDs = ids.length;
+		filter.denyList.idList = buf;
+		Driver.suppressDebugMessages(filter);
+	}
+
+	function reset() {
+		generation++;
+		upscaling.beforeCreateDevice();
+
+		compiledShaders = [];
+		psoConfigCache = PSOConfigCache.get();
+		psoConfigCache?.load();
+
+		var flags = new DriverInitFlags();
+		if( DEBUG ) {
+			flags.set(DriverInitFlag.DEBUG);
+		}
+		driver = Driver.create(window, flags, DEVICE_NAME);
+		if( DEBUG ) suppressDebugMessages();
+		frames = [];
+		#if (hldx >= version("2.0.0"))
+		textureHeap = TEXTURE_HEAP_SIZE > 0 ? new TextureHeapAllocator(TEXTURE_HEAP_SIZE) : null;
+		#end
+
+		nativeDevice = Driver.getDevice();
+		nativeFactory = Driver.getFactory();
+		swapChain = null;
+		upscaling.afterCreateDevice();
+
+		directQueue = new CommandQueue(DIRECT);
+		nativeQueue = directQueue;
+
+		upscaling.afterCreateQueue();
+		upscaling.afterCreateSwapChain();
+
+		var flags = new haxe.EnumFlags();
+		var heap = new HeapProperties();
+		heap.type = UPLOAD;
+		var desc = new ResourceDesc();
+		desc.dimension = BUFFER;
+		desc.width = COPY_BUFFER_SIZE;
+		desc.height = 1;
+		desc.depthOrArraySize = 1;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.layout = ROW_MAJOR;
+
+		for(i in 0...BUFFER_COUNT) {
+			var f = new DxFrame();
+			f.backBuffer = new ResourceData();
+			f.allocator = new CommandAllocator(DIRECT);
+			f.commandList = new CommandList(DIRECT, f.allocator, null);
+			f.commandList.close();
+			f.copyAllocator = new CommandAllocator(COPY);
+			f.copyCommandList = new CommandList(COPY, f.copyAllocator, null);
+			f.copyCommandList.close();
+			f.srvHeapCache = new ScratchHeapArray(CBV_SRV_UAV, INITIAL_SRV_COUNT + INITIAL_BINDLESS_SRV_COUNT);
+			f.samplerHeapCache = new ScratchHeapArray(SAMPLER, INITIAL_SAMPLER_COUNT + INITIAL_BINDLESS_SAMPLER_COUNT);
+			if ( f.bufferAllocator != null )
+				f.bufferAllocator.dispose();
+			f.bufferAllocator = new BufferAllocator(INITIAL_BUFFER_ALLOCATOR_SIZE);
+			f.readbackAllocator = new BufferAllocator(INITIAL_READBACK_ALLOCATOR_SIZE, READBACK, COPY_DEST);
+			f.copyBuffer = Driver.createCommittedResource(heap, flags, desc, GENERIC_READ, null);
+			f.copyBuffer.setName('CopyBuffer$i');
+			frames.push(f);
+		}
+		frameFence = new Fence(0, NONE);
+		fenceEvent = new WaitEvent(false);
+		directFence = new Fence(0, NONE);
+		tmp = new TempObjects();
+
+		copyQueue = new CommandQueue(COPY);
+		copyFence = new Fence(0, NONE);
+		copyFenceValue = 0;
+
+		renderTargetViews = new ScratchHeap(RTV, INITIAL_RT_COUNT);
+		depthStenciViews = new ScratchHeap(DSV, INITIAL_RT_COUNT);
+		renderTargetViews.onFree = function(prev, prevSize) frame.toRelease.push(prev);
+		depthStenciViews.onFree = function(prev, prevSize) frame.toRelease.push(prev);
+
+		cpuSrvHeap = new BlockHeap(CBV_SRV_UAV, INITIAL_SRV_COUNT, false);
+		cpuSrvHeap.onFree = function(prev, prevSize) @:privateAccess {
+			Driver.copyDescriptorsSimple(prevSize, cpuSrvHeap.address.value, prev.getHandle(false).value, CBV_SRV_UAV);
+			(prev : Resource).release();
+		}
+
+		cpuSamplerHeap = new ScratchHeap(SAMPLER, INITIAL_SAMPLER_COUNT, false);
+		cpuSamplerHeap.onFree = function(prev, prevSize) @:privateAccess {
+			Driver.copyDescriptorsSimple(prevSize, cpuSamplerHeap.address.value, prev.getHandle(false).value, SAMPLER);
+			cpuSamplerHeap.cursor = prevSize;
+			(prev : Resource).release();
+		}
+		cpuSamplersIndex = [];
+
+		errorTex = new h3d.mat.Texture(1, 1, [NoAlloc], RGBA);
+		errorTex.t = new TextureData();
+		errorTex.t.state = errorTex.t.state = COMMON;
+		errorTex.name = "errorTex";
+
+		var desc = new ResourceDesc();
+		var flags = new haxe.EnumFlags();
+		desc.dimension = TEXTURE2D;
+		desc.width = 1;
+		desc.height = 1;
+		desc.depthOrArraySize = 1;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.format = R8G8B8A8_UNORM;
+		tmp.heap.type = DEFAULT;
+		errorTex.t.res = Driver.createCommittedResource(tmp.heap, flags, desc, COMMON, null);
+		errorTex.t.res.setName("errorTex");
+		errorTex.preventAutoDispose();
+
+		bindlessSrvHeap = new BlockHeap(CBV_SRV_UAV, INITIAL_BINDLESS_SRV_COUNT, false);
+		bindlessSrvHeap.onFree = function(prev, prevSize) @:privateAccess {
+			Driver.copyDescriptorsSimple(prevSize, bindlessSrvHeap.address.value, prev.getHandle(false).value, CBV_SRV_UAV);
+			(prev : Resource).release();
+			flushHeaps();
+		}
+		var errorTexView = getCpuTexView(errorTex);
+		for ( i in 0...bindlessSrvHeap.size)
+			Driver.copyDescriptorsSimple(1, bindlessSrvHeap.getCpuAddressAt(i), errorTexView, CBV_SRV_UAV);
+
+		bindlessSamplerHeap = new BlockHeap(SAMPLER, INITIAL_BINDLESS_SAMPLER_COUNT, false);
+		bindlessSamplerHeap.onFree = function(prev, prevSize) @:privateAccess {
+			Driver.copyDescriptorsSimple(prevSize, bindlessSamplerHeap.address.value, prev.getHandle(false).value, SAMPLER);
+			(prev : Resource).release();
+			flushHeaps();
+		}
+		var errorTexSampler = getCpuSampler(errorTex);
+		for ( i in 0...bindlessSamplerHeap.size)
+			Driver.copyDescriptorsSimple(1, bindlessSamplerHeap.getCpuAddressAt(i), errorTexSampler, SAMPLER);
+
+		if ( h3d.Engine.getCurrent() != null ) {
+			if( defaultDepth == null ) defaultDepth = new h3d.mat.Texture(0,0, DEFAULT_DEPTH_FORMAT);
+			defaultDepth.t = new TextureData();
+			currentDepth = defaultDepth;
+			defaultDepth.t.state = defaultDepth.t.targetState = DEPTH_WRITE;
+			defaultDepth.name = "defaultDepth";
+		}
+
+		var desc = new CommandSignatureDesc();
+		var adesc = hl.CArray.alloc(IndirectArgumentDesc, 1);
+		desc.byteStride = 5 * 4;
+		desc.numArgumentDescs = 1;
+		desc.argumentDescs = adesc;
+		adesc[0].type = DRAW_INDEXED;
+		indirectCommand = Driver.createCommandSignature(desc,null);
+
+		tsFreq = directQueue.getTimestampFrequency();
+
+		compiler = new ShaderCompiler();
+
+		frame = null;
+		currentWidth = currentHeight = 0;
+		resize(window.width, window.height);
+	}
+
+	function beginFrame() {
+		frameCount = hxd.Timer.frameCount;
+		currentFrame = Driver.getCurrentBackBufferIndex();
+		var prevFrame = frame;
+		frame = frames[currentFrame];
+		frame.allocator.reset();
+		frame.commandList.reset(frame.allocator, null);
+
+		// if too much memory was allocated from last frame, let's dispose immediately
+		var forceDispose = (frame.bufferAllocator.getSize()/(1024*1024)) >= 512;
+		frame.bufferAllocator.reset(forceDispose);
+
+		frame.copyAllocator.reset();
+		frame.copyCommandList.reset(frame.copyAllocator, null);
+		frame.copyBufferCursor = 0;
+		while( frame.toRelease.length > 0 )
+			frame.toRelease.pop().release();
+		#if (hldx >= version("2.0.0"))
+		while( frame.placedToFree.length > 0 )
+			textureHeap.free(frame.placedToFree.pop());
+		#end
+
+		var errorTexSampler = getCpuSampler(errorTex);
+		var errorTexView = getCpuTexView(errorTex);
+		while( frame.texHandlesToRelease.length > 0 ) {
+			var h = frame.texHandlesToRelease.pop();
+			if ( h.handle != -1 && h.texture.t == null ) {
+				Driver.copyDescriptorsSimple(1, bindlessSrvHeap.getCpuAddressAt(h.handle.low), errorTexView, CBV_SRV_UAV);
+				bindlessSrvHeap.disposeIndex(h.handle.low);
+				h.handle = -1;
+			}
+		}
+		while( frame.bufHandlesToRelease.length > 0 ) {
+			var h = frame.bufHandlesToRelease.pop();
+			if ( h.handle != -1 ) {
+				bindlessSrvHeap.disposeIndex(h.handle);
+				h.handle = -1;
+			}
+		}
+		beginQueries();
+
+		transition(frame.backBuffer, RENDER_TARGET);
+		frame.commandList.iaSetPrimitiveTopology(TRIANGLELIST);
+
+		renderTargetViews.clear();
+		depthStenciViews.clear();
+		curStencilRef = -1;
+		currentIndex = null;
+
+		frame.backBufferView = renderTargetViews.alloc(1);
+		Driver.createRenderTargetView(frame.backBuffer.res, null, frame.backBufferView);
+		setRenderTarget(null);
+
+		frame.srvHeapCache.reset();
+		frame.samplerHeapCache.reset();
+		flushHeaps();
+
+		upscaling.beginFrame();
+
+		resolveReadbacks();
+	}
+
+	function resolveReadbacks() {
+		var readbacks = frame.readbacks;
+		if( readbacks.length > 0 ) {
+			frame.readbacks = [];
+			for( rq in readbacks )
+				if( rq.size > 0 )
+					(rq.buf : hl.Bytes).blit(rq.bufPos, rq.cpuAddress, 0, rq.size);
+		}
+		frame.readbackAllocator.reset();
+		for( rq in readbacks )
+			rq.callback();
+	}
+
+	override function clear(?color:Vector4, ?depth:Float, ?stencil:Int) {
+		flushTransitions();
+		if( color != null ) {
+			var clear = tmp.clearColor;
+			clear.r = color.r;
+			clear.g = color.g;
+			clear.b = color.b;
+			clear.a = color.a;
+			var count = currentRenderTargets.length;
+			var needRebind = false;
+			for( i in 0...count ) {
+				var tex = currentRenderTargets[i];
+				if( tex != null && tex.t.setClearColor(color) ) {
+					needRebind = true;
+					// update texture to use another clear value
+					var prev = tex.t;
+					tex.t = allocCheck(() -> allocTexture(tex));
+					@:privateAccess tex.t.clearColorChanges = prev.clearColorChanges;
+					frame.toRelease.push(prev.res);
+					Driver.createRenderTargetView(tex.t.res, lastRtvDesc, tmp.renderTargets[i]);
+				}
+				tex.flags.set(WasCleared);
+				frame.commandList.clearRenderTargetView(tmp.renderTargets[i], clear);
+			}
+			if ( needRebind )
+				frame.commandList.omSetRenderTargets(count, tmp.renderTargets, true, depthEnabled ? getDepthViewFromTexture(currentRenderTargets[0], currentRenderTargets[0].depthBuffer.t.state & DEPTH_WRITE == COMMON ) : null);
+			// clear backbuffer
+			if( count == 0 )
+				frame.commandList.clearRenderTargetView(frame.backBufferView, clear);
+		}
+		if( depth != null || stencil != null )
+			frame.commandList.clearDepthStencilView(tmp.depthStencils[0], depth != null ? (stencil != null ? BOTH : DEPTH) : STENCIL, (depth:Float), stencil);
+	}
+
+	function waitCopy() {
+		copyQueue.signal(copyFence, ++copyFenceValue);
+		copyFence.setEvent(copyFenceValue, fenceEvent);
+		fenceEvent.wait(-1);
+	}
+
+	function waitGpu() {
+		directQueue.signal(directFence, ++directFenceValue);
+		directFence.setEvent(directFenceValue, fenceEvent);
+		fenceEvent.wait(-1);
+	}
+
+	inline function markUsed( t : h3d.mat.Texture ) {
+		t.lastFrame = frameCount;
+		if( t.t != null ) t.t.lastUseFence = frameFenceValue + 1;
+	}
+
+	override function resize(width:Int, height:Int)  {
+
+		if( width < 1 ) width = 1;
+		if( height < 1 ) height = 1;
+
+		if( defaultDepth == null || (currentWidth == width && currentHeight == height) )
+			return;
+
+		upscaling.beforeResize();
+
+		currentWidth = rtWidth = width;
+		currentHeight = rtHeight = height;
+		@:privateAccess defaultDepth.width = width;
+		@:privateAccess defaultDepth.height = height;
+
+		if( frame != null )
+			flushFrame(true);
+
+		waitCopy();
+		waitGpu();
+
+		upscaling.releaseResizeResources();
+
+		for( f in frames ) {
+			if( f.backBuffer.res != null ) {
+				if ( f.backBuffer.targetState != f.backBuffer.state )
+					cancelTransition(f.backBuffer);
+				f.backBuffer.res.release();
+			}
+		}
+
+		if ( defaultDepth.t.res != null ) {
+			defaultDepth.t.res.release();
+			disposeTextureViews(defaultDepth.t);
+		}
+
+		Driver.resize(directQueue, width, height, BUFFER_COUNT, R8G8B8A8_UNORM);
+
+		renderTargetViews.clear();
+		depthStenciViews.clear();
+
+		for( i => f in frames ) {
+			f.backBuffer.res = Driver.getBackBuffer(i);
+			f.backBuffer.res.setName("Backbuffer#"+i);
+			f.backBuffer.state = f.backBuffer.targetState = PRESENT;
+		}
+
+		var desc = new ResourceDesc();
+		var flags = new haxe.EnumFlags();
+		desc.dimension = TEXTURE2D;
+		desc.width = width;
+		desc.height = height;
+		desc.depthOrArraySize = 1;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.format = toDxgiDepthFormat(defaultDepth.format);
+		desc.flags.set(ALLOW_DEPTH_STENCIL);
+		tmp.heap.type = DEFAULT;
+		tmp.clearValue.format = desc.format;
+		tmp.clearValue.depth = DEFAULT_DEPTH_VALUE;
+		tmp.clearValue.stencil = 0;
+		defaultDepth.t.res = Driver.createCommittedResource(tmp.heap, flags, desc, DEPTH_WRITE, tmp.clearValue);
+		defaultDepth.t.res.setName("defaultDepth");
+		defaultDepth.t.state = defaultDepth.t.targetState = DEPTH_WRITE;
+
+		beginFrame();
+
+		upscaling.afterResize();
+	}
+
+	override function begin(frame:Int) {
+		upscaling.begin();
+	}
+
+	override function isDisposed() {
+		return hasDeviceError;
+	}
+
+	override function dispose() {
+		psoConfigCache?.save();
+		upscaling.dispose();
+	}
+
+	override function init( onCreate : Bool -> Void, forceSoftware = false ) {
+		contextLost.set(h3d.Engine.getCurrent(), onCreate.bind(true));
+		haxe.Timer.delay(onCreate.bind(false), 1);
+	}
+
+	override function removeEngine( engine : h3d.Engine ) {
+		contextLost.remove(engine);
+	}
+
+	override function getDriverName(details:Bool) {
+		var desc = "DX12";
+		if( details ) {
+			desc += " "+Driver.getDeviceName();
+			var driver = Driver.getDriverVersion();
+			desc += "("+(driver.high>>16)+"."+(driver.high & 0xFFFF)+"."+(driver.low>>16)+"."+(driver.low&0xFFFF)+")";
+		}
+		return desc;
+	}
+
+	public function forceDeviceError() {
+		hasDeviceError = true;
+	}
+
+	function cancelTransition( res : ResourceData ) {
+		var found = false;
+		for (i in 0...tmp.barrierCount) {
+			if (tmp.resourcesToTransition[i] == res) {
+				tmp.barrierCount -= 1;
+				for (j in i...tmp.barrierCount) {
+					tmp.resourcesToTransition[j] = tmp.resourcesToTransition[j + 1];
+				}
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			throw "Resource not found";
+		res.targetState = res.state;
+	}
+
+	function transition( res : ResourceData, to : ResourceState ) {
+		if( res.targetState == to )
+			return;
+
+		if ( res.state == to ) {
+			cancelTransition(res);
+			return;
+		}
+
+		// Need one barrier for UAV
+		if( tmp.maxBarriers - 1 == tmp.barrierCount) {
+			flushTransitions();
+			tmp.maxBarriers += 100;
+			tmp.barriers = hl.CArray.alloc(ResourceBarrier, tmp.maxBarriers);
+			var allSubresource = Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES);
+			for ( i in 0...tmp.maxBarriers )
+				tmp.barriers[i].subResource = allSubresource;
+			tmp.resourcesToTransition = new hl.NativeArray<ResourceData>(tmp.maxBarriers);
+		}
+
+		// If state is different from targetState, a barrier has already been requested so we just have to update the targetState
+		if (res.state == res.targetState)
+			tmp.resourcesToTransition[tmp.barrierCount++] = res;
+		res.targetState = to;
+	}
+
+	function flushTransitions() {
+		var totalBarrier = 0;
+		if (tmp.barrierCount > 0) {
+			for (i in 0...tmp.barrierCount) {
+				var res = tmp.resourcesToTransition[i];
+
+				// Resource has been disposed
+				if (res.res == null)
+					continue;
+
+				var b = tmp.barriers[totalBarrier++];
+				b.resource = res.res;
+				@:privateAccess b.type = TRANSITION;
+				b.stateBefore = res.state;
+				b.stateAfter = res.targetState;
+				res.state = res.targetState;
+			}
+			tmp.barrierCount = 0;
+		}
+
+		if ( needUAVBarrier ) {
+			var b = tmp.barriers[totalBarrier++];
+			b.resource = null;
+			@:privateAccess b.type = UAV;
+			needUAVBarrier = false;
+		}
+
+		if (totalBarrier > 0)
+			frame.commandList.resourceBarriers(tmp.barriers, totalBarrier);
+	}
+
+	function getDepthViewFromTexture( tex : h3d.mat.Texture, readOnly : Bool ) {
+		if ( tex != null && tex.depthBuffer == null ) {
+			depthEnabled = false;
+			return null;
+		}
+		if ( tex != null ) {
+			var w = tex.depthBuffer.width;
+			var h = tex.depthBuffer.height;
+			if( w != tex.width || h != tex.height )
+				throw "Depth size mismatch";
+		}
+		return getDepthView(tex == null ? null : tex.depthBuffer, readOnly);
+	}
+
+	function getDepthView( depthBuffer : h3d.mat.Texture, readOnly : Bool, layer = 0 ) {
+		if ( depthBuffer == null )
+			depthBuffer = getDefaultDepthBuffer();
+		if( depthBuffer.t == null ) depthBuffer.alloc();
+		var depthView = depthStenciViews.alloc(1);
+		var viewDesc = tmp.dstStencilViewDesc;
+		viewDesc.arraySize = 1;
+		viewDesc.mipSlice = 0;
+		viewDesc.firstArraySlice = layer;
+		viewDesc.format = toDxgiDepthFormat(depthBuffer.format);
+		viewDesc.viewDimension = depthBuffer.flags.has(IsArray) || depthBuffer.flags.has(Cube) ? TEXTURE2DARRAY : TEXTURE2D;
+		if ( readOnly ) {
+			viewDesc.flags.set(READ_ONLY_DEPTH);
+			viewDesc.flags.set(READ_ONLY_STENCIL);
+		} else {
+			viewDesc.flags = new haxe.EnumFlags();
+		}
+		Driver.createDepthStencilView(depthBuffer.t.res, viewDesc, depthView);
+		var depths = tmp.depthStencils;
+		depths[0] = depthView;
+		depthEnabled = true;
+		var acceptedState = readOnly ? DEPTH_READ | DEPTH_WRITE : DEPTH_WRITE;
+		if ( depthBuffer.t.state & acceptedState == COMMON )
+			transition(depthBuffer.t, readOnly ? DEPTH_READ : DEPTH_WRITE);
+		return depths;
+	}
+
+	override function getDefaultDepthBuffer():h3d.mat.Texture {
+		return defaultDepth;
+	}
+
+	function initViewport(w,h) {
+		rtWidth = w;
+		rtHeight = h;
+		tmp.viewport.width = w;
+		tmp.viewport.height = h;
+		tmp.viewport.maxDepth = 1;
+		tmp.rect.top = 0;
+		tmp.rect.left = 0;
+		tmp.rect.right = w;
+		tmp.rect.bottom = h;
+		frame.commandList.rsSetScissorRects(1, tmp.rect);
+		frame.commandList.rsSetViewports(1, tmp.viewport);
+	}
+
+	override function setRenderTarget(tex:Null<h3d.mat.Texture>, layer:Int = 0, mipLevel:Int = 0, depthBinding : h3d.Engine.DepthBinding = ReadWrite) {
+
+		if( tex != null ) {
+			if( tex.t == null ) tex.alloc();
+			markUsed(tex);
+			transition(tex.t, RENDER_TARGET);
+		}
+
+		depthEnabled = depthBinding != NotBound;
+
+		var isArr = tex != null && (tex.flags.has(IsArray) || tex.flags.has(Cube));
+		var is3D = tex != null && tex.flags.has(Is3D);
+		var desc = null;
+		if( layer != 0 || mipLevel != 0 || isArr || is3D ) {
+			desc = tmp.rtvDesc;
+			desc.format = tex.t.format;
+			if( isArr ) {
+				desc.viewDimension = TEXTURE2DARRAY;
+				desc.mipSlice = mipLevel;
+				desc.firstArraySlice = layer;
+				desc.arraySize = 1;
+				desc.planeSlice = 0;
+			} else if ( is3D ) {
+				desc.viewDimension = TEXTURE3D;
+				desc.mipSlice = mipLevel;
+				desc.firstArraySlice = layer;
+				desc.arraySize = 1;
+				desc.planeSlice = 0;
+			} else {
+				desc.viewDimension = TEXTURE2D;
+				desc.mipSlice = mipLevel;
+				desc.planeSlice = 0;
+			}
+		}
+		lastRtvDesc = desc;
+		if (tex != null) {
+			var texView = renderTargetViews.alloc(1);
+			Driver.createRenderTargetView(tex.t.res, desc, texView);
+			tmp.renderTargets[0] = texView;
+		}
+		else {
+			tmp.renderTargets[0] = frame.backBufferView;
+		}
+
+		if ( tex != null && !tex.flags.has(WasCleared) ) {
+			tex.flags.set(WasCleared);
+			var clear = tmp.clearColor;
+			clear.r = 0;
+			clear.g = 0;
+			clear.b = 0;
+			clear.a = 0;
+			flushTransitions();
+			frame.commandList.clearRenderTargetView(tmp.renderTargets[0], clear);
+		}
+		frame.commandList.omSetRenderTargets(1, tmp.renderTargets, true, depthEnabled ? getDepthViewFromTexture(tex, depthBinding == ReadOnly ) : null);
+
+		while( currentRenderTargets.length > 0 ) currentRenderTargets.pop();
+		if( tex != null ) currentRenderTargets.push(tex);
+
+		var w = tex == null ? currentWidth : tex.width >> mipLevel;
+		var h = tex == null ? currentHeight : tex.height >> mipLevel;
+		if( w == 0 ) w = 1;
+		if( h == 0 ) h = 1;
+		initViewport(w, h);
+		var depthBuffer = tex == null ? defaultDepth : tex.depthBuffer;
+		if(depthBuffer != null)
+			markUsed(depthBuffer);
+		pipelineBuilder.setRenderTarget(tex, depthEnabled ? depthBuffer : null);
+	}
+
+	static function toDxgiDepthFormat( format : hxd.PixelFormat ) {
+		switch( format ) {
+			case null:
+				return cast 0;
+			case Depth16:
+				return  D16_UNORM;
+			case Depth24Stencil8, Depth24:
+				return  D24_UNORM_S8_UINT;
+			case Depth32:
+				return  D32_FLOAT;
+			case Depth32Stencil8:
+				return  D32_FLOAT_S8X24_UINT;
+			default:
+				throw "Unsupported depth format "+ format;
+		}
+	}
+
+	override function setRenderTargets(textures:Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite) {
+		while( currentRenderTargets.length > textures.length )
+			currentRenderTargets.pop();
+
+		depthEnabled = depthBinding != NotBound;
+
+		lastRtvDesc = null;
+
+		var t0 = textures[0];
+		var texViews = renderTargetViews.alloc(textures.length);
+		for( i => t in textures ) {
+			if ( t.t == null ) {
+				t.alloc();
+				if ( hasDeviceError ) return;
+			}
+			markUsed(t);
+			var view = texViews.offset(renderTargetViews.stride * i);
+			Driver.createRenderTargetView(t.t.res, null, view);
+			tmp.renderTargets[i] = view;
+			currentRenderTargets[i] = t;
+			transition( t.t, RENDER_TARGET);
+			if ( !t.flags.has(WasCleared) ) {
+				t.flags.set(WasCleared);
+				var clear = tmp.clearColor;
+				clear.r = 0;
+				clear.g = 0;
+				clear.b = 0;
+				clear.a = 0;
+				flushTransitions();
+				frame.commandList.clearRenderTargetView(tmp.renderTargets[i], clear);
+			}
+		}
+		frame.commandList.omSetRenderTargets(textures.length, tmp.renderTargets, true, depthEnabled ? getDepthViewFromTexture(t0, depthBinding == ReadOnly) : null);
+		initViewport(t0.width, t0.height);
+
+		var depthBuffer = t0 == null ? defaultDepth : t0.depthBuffer;
+		if(depthBuffer != null)
+			markUsed(depthBuffer);
+		pipelineBuilder.setRenderTargets(textures, depthEnabled ? depthBuffer : null);
+		currentDepth = depthBuffer;
+	}
+
+	override function setDepth(depthBuffer : h3d.mat.Texture, layer = 0) {
+		var view = getDepthView(depthBuffer, false, layer);
+		depthEnabled = true;
+		frame.commandList.omSetRenderTargets(0, null, true, view);
+		markUsed(depthBuffer);
+		while( currentRenderTargets.length > 0 ) currentRenderTargets.pop();
+
+		initViewport(depthBuffer.width, depthBuffer.height);
+		pipelineBuilder.setDepth(depthBuffer);
+		currentDepth = depthBuffer;
+	}
+
+	override function setDepthClamp( enabled : Bool ) {
+		useDepthClamp = enabled;
+	}
+
+	override function setDepthBias( depthBias : Float, slopeScaledBias : Float ) {
+		// since depthBias is rounded to int in makePipeline, do not register different pipeline config for small float variation.
+		pipelineBuilder.setDepthBias(Std.int(depthBias), slopeScaledBias);
+	}
+
+	override function setRenderZone(x:Int, y:Int, width:Int, height:Int) {
+		if( width < 0 && height < 0 && x == 0 && y == 0 ) {
+			tmp.rect.left = 0;
+			tmp.rect.top = 0;
+			tmp.rect.right = rtWidth;
+			tmp.rect.bottom = rtHeight;
+		} else {
+			tmp.rect.left = x;
+			tmp.rect.top = y;
+			tmp.rect.right = x + width;
+			tmp.rect.bottom = y + height;
+		}
+		frame.commandList.rsSetScissorRects(1, tmp.rect);
+	}
+
+	override function captureRenderBuffer( pixels : hxd.Pixels ) {
+		var rt = currentRenderTargets[0];
+		if( rt == null )
+			throw "Can't capture main render buffer in DirectX";
+		captureTexPixels(pixels, rt, 0, 0);
+	}
+
+	override function capturePixels(tex:h3d.mat.Texture, layer:Int, mipLevel:Int, ?region:h2d.col.IBounds):hxd.Pixels {
+		var pixels : hxd.Pixels;
+		var oldRTs = [for ( rt in currentRenderTargets) rt];
+		if (region != null) {
+			if (region.xMax > tex.width) region.xMax = tex.width;
+			if (region.yMax > tex.height) region.yMax = tex.height;
+			if (region.xMin < 0) region.xMin = 0;
+			if (region.yMin < 0) region.yMin = 0;
+			var w = region.width >> mipLevel;
+			var h = region.height >> mipLevel;
+			if( w == 0 ) w = 1;
+			if( h == 0 ) h = 1;
+			pixels = hxd.Pixels.alloc(w, h, tex.format);
+			captureTexPixels(pixels, tex, layer, mipLevel, region.xMin, region.yMin);
+		} else {
+			var w = tex.width >> mipLevel;
+			var h = tex.height >> mipLevel;
+			if( w == 0 ) w = 1;
+			if( h == 0 ) h = 1;
+			pixels = hxd.Pixels.alloc(w, h, tex.format);
+			captureTexPixels(pixels, tex, layer, mipLevel);
+		}
+
+		// the command list has been reset : restore the render targets, unless one has been disposed
+		var restore = oldRTs.length > 0;
+		for( rt in oldRTs )
+			if( rt.t == null )
+				restore = false;
+		if( restore )
+			setRenderTargets(oldRTs);
+		else
+			setRenderTarget(null);
+
+		return pixels;
+	}
+
+	function captureTexPixels( pixels: hxd.Pixels, tex:h3d.mat.Texture, layer:Int, mipLevel:Int, x : Int = 0, y : Int = 0)  {
+
+		if( pixels.width == 0 || pixels.height == 0 )
+			return;
+
+		var totalSize : hl.BytesAccess<Int64> = tmp.copyableInfosBytes;
+		var src = tmp.srcTextureLocation;
+		src.res = tex.t.res;
+		src.type = SUBRESOURCE_INDEX;
+		if( mipLevel < tex.residentMip ) throw "Mip level " + mipLevel + " is not resident in " + tex;
+		src.subResourceIndex = (mipLevel - tex.residentMip) + layer * (tex.mipLevels - tex.residentMip);
+		var srcDesc = makeTextureDesc(tex);
+
+		var dst = tmp.dstTextureLocation;
+		dst.type = PLACED_FOOTPRINT;
+		Driver.getCopyableFootprints(srcDesc, src.subResourceIndex, 1, 0, dst.placedFootprint, null, null, totalSize);
+
+		var tmpBuf = allocGPU(totalSize[0].low, READBACK, COPY_DEST);
+		@:privateAccess tmpBuf.setName("Readback_" + (tex.name ?? 'Texture#${tex.id}'));
+
+		var box = new Box();
+		box.left = x;
+		box.right = x + pixels.width;
+		box.top = y;
+		box.bottom = y + pixels.height;
+		box.back = 1;
+
+		transition(tex.t, COPY_SOURCE);
+		flushTransitions();
+		dst.res = tmpBuf;
+		frame.commandList.copyTextureRegion(dst, 0, 0, 0, src, box);
+
+		flushFrame();
+		waitCopy();
+		waitGpu();
+
+		var output = tmpBuf.map(0, null);
+		var rows = tex.format.match(S3TC(_)) ? (pixels.height + 3) >> 2 : pixels.height;
+		var stride = Std.int(hxd.Pixels.calcDataSize(pixels.width, pixels.height, tex.format) / rows);
+		var rowStride = dst.placedFootprint.footprint.rowPitch;
+		if( rowStride == stride )
+			(pixels.bytes:hl.Bytes).blit(pixels.offset, output, 0, stride * rows);
+		else {
+			for( i in 0...rows )
+				(pixels.bytes:hl.Bytes).blit(pixels.offset + i * stride, output, i * rowStride, stride);
+		}
+
+		tmpBuf.unmap(0,null);
+		tmpBuf.release();
+
+		beginFrame();
+	}
+
+	// ---- SHADERS -----
+
+	static var VERTEX_FORMATS = [null,null,R32G32_FLOAT,R32G32B32_FLOAT,R32G32B32A32_FLOAT];
+
+	function getBinaryPayload( code : String, profile ) {
+		var bin = code.indexOf("//BIN=");
+		if( bin >= 0 ) {
+			var end = code.indexOf("#", bin);
+			if( end >= 0 )
+				return haxe.crypto.Base64.decode(code.substr(bin + 6, end - bin - 6));
+		}
+		if( shaderCache != null )
+			return shaderCache.resolveShaderBinary(code, profile);
+		return null;
+	}
+
+	static final SHADER_ARGS : Array<String>= [#if shader_debug_info "-Zi", "-Qembed_debug" #end];
+	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, rootStr = "" ) {
+		resolveShaderDataCode(sh, rootStr);
+		var key = profile;
+		for ( arg in SHADER_ARGS )
+			key += arg;
+		#if heaps_mt_hxsl_cache
+		shaderBinaryMutex.acquire();
+		#end
+		var bytes = try {
+			var bytes = getBinaryPayload(sh.code, key);
+			if( bytes == null ) {
+				bytes = compiler.compile(sh.code, profile, SHADER_ARGS);
+				if( shaderCache != null )
+					shaderCache.saveCompiledShader(sh.code, bytes, key);
+			}
+			bytes;
+		} catch( e : Dynamic ) {
+			#if heaps_mt_hxsl_cache
+			shaderBinaryMutex.release();
+			#end
+			throw e;
+		}
+		#if heaps_mt_hxsl_cache
+		shaderBinaryMutex.release();
+		#end
+		return bytes;
+	}
+
+	override function getNativeShaderCode( shader : hxsl.RuntimeShader ) {
+		inline function compile( sh : hxsl.RuntimeShader.RuntimeShaderData ) {
+			return sh.code ?? new hxsl.HlslOut().run(sh.data);
+		}
+		var vsSource = compile(shader.vertex);
+		if( shader.mode == Compute )
+			return vsSource;
+		var psSource = compile(shader.fragment);
+		return vsSource+"\n\n\n\n"+psSource;
+	}
+
+	function resolveShaderDataCode( sh : hxsl.RuntimeShader.RuntimeShaderData, rootStr : String ) {
+		if( sh.code == null ) {
+			var out = new hxsl.HlslOut();
+			sh.code = rootStr + out.run(sh.data);
+		}
+	}
+
+	function stringifyRootSignature( sign : RootSignatureDesc, name : String, params : hl.CArray<RootParameterDescriptorTable>, paramsCount : Int ) : String {
+		var s = '#define ${name} "RootFlags(';
+		if ( sign.flags.toInt() == 0 )
+			s += '0'; // no flags
+		else {
+			// RootFlags
+			for ( f in haxe.EnumTools.getConstructors(RootSignatureFlag) ) {
+				if ( !sign.flags.has(haxe.EnumTools.createByName(RootSignatureFlag, f)) )
+					continue;
+				s += Std.string(f) + '|';
+			}
+			s = s.substr(0, s.length - 1);
+		}
+		s += ')",';
+
+		for ( i in 0...paramsCount ) {
+			var param = params[i];
+			var vis = "SHADER_VISIBILITY_"+switch( param.shaderVisibility ) { case VERTEX: "VERTEX"; case PIXEL: "PIXEL"; default: "ALL"; };
+			if ( param.parameterType == CONSTANTS ) {
+				var p = unsafeCastTo(param, RootParameterConstants);
+				var shaderRegister = p.shaderRegister;
+				s += 'RootConstants(num32BitConstants=${p.num32BitValues},b${shaderRegister}, visibility=${vis}),';
+			} else {
+				try {
+					var p = param;
+					if( p.descriptorRanges == null ) continue;
+					s += 'DescriptorTable(';
+					for ( i in 0...p.numDescriptorRanges) {
+						var descRange = p.descriptorRanges[i];
+						var baseShaderRegister = descRange.baseShaderRegister;
+						switch ( descRange.rangeType) {
+							case CBV:
+								s += 'CBV(b${baseShaderRegister}, numDescriptors = ${descRange.numDescriptors}),';
+							case SRV:
+								s += 'SRV(t${baseShaderRegister}, numDescriptors = ${descRange.numDescriptors}),';
+							case SAMPLER:
+								var baseShaderRegister = descRange.baseShaderRegister;
+								s += 'Sampler(s${baseShaderRegister}, space=${descRange.registerSpace}, numDescriptors = ${descRange.numDescriptors}),';
+							case UAV:
+								var reg = descRange.baseShaderRegister;
+								s += 'UAV(u${reg}, numDescriptors = ${descRange.numDescriptors}),';
+						}
+					}
+					s += 'visibility = ${vis}),';
+				} catch ( e : Dynamic ) {
+					continue;
+				}
+			}
+		}
+
+		s += '\n';
+		return s;
+	}
+
+	inline function unsafeCastTo<T,R>( v : T, c : Class<R> ) : R {
+		#if (haxe_ver < 5)
+		var arr = new hl.NativeArray<T>(1);
+		arr[0] = v;
+		return (cast arr : hl.NativeArray<R>)[0];
+		#else
+		return hl.Api.unsafeCast(v);
+		#end
+	}
+
+	function computeRootSignature( shader : hxsl.RuntimeShader ) {
+		var allocatedParams = 16;
+		var params = hl.CArray.alloc(RootParameterDescriptorTable,allocatedParams);
+		var paramsCount = 0, regBufCount = 0, regTexCount = 0, regUAVCount = 0, regSamplerCount = 0;
+		var ranges = [];
+		var globalsParamsCBV = false;
+		var vertexParamsCBV = false;
+		var fragmentParamsCBV = false;
+
+		function allocDescTable(vis, rangeCount = 1) {
+			var p = params[paramsCount++];
+			p.parameterType = DESCRIPTOR_TABLE;
+			p.numDescriptorRanges = rangeCount;
+			var rangeArr = hl.CArray.alloc(DescriptorRange,rangeCount);
+			for ( i in 0...rangeCount) {
+				var range = rangeArr[i];
+				range.offsetInDescriptorsFromTableStart = Driver.getConstant(DESCRIPTOR_RANGE_OFFSET_APPEND);
+				ranges.push(range);
+			}
+			p.descriptorRanges = rangeArr;
+			p.shaderVisibility = vis;
+			return rangeArr;
+		}
+
+		function allocConsts(size,vis,type) {
+			var reg = regBufCount++;
+			if( size == 0 ) return -1;
+
+			if( type != null ) {
+				var pid = paramsCount;
+				var r = allocDescTable(vis)[0];
+				r.rangeType = type;
+				r.numDescriptors = 1;
+				r.baseShaderRegister = reg;
+				r.registerSpace = 0;
+				return pid | 0x100;
+			}
+
+			var pid = paramsCount++;
+			var p = unsafeCastTo(params[pid], RootParameterConstants);
+			p.parameterType = CONSTANTS;
+			p.shaderRegister = reg;
+			p.shaderVisibility = vis;
+			p.num32BitValues = size << 2;
+			return pid;
+		}
+
+
+		function allocParams( sh : hxsl.RuntimeShader.RuntimeShaderData ) {
+			var vis = switch( sh.kind ) {
+			case Vertex: VERTEX;
+			case Fragment: PIXEL;
+			default: ALL;
+			}
+			// Reset registers as they can overlap between shaders since we restrict their visibility
+			regBufCount = regTexCount = regUAVCount = regSamplerCount = 0;
+			var regs = new ShaderRegisters();
+			regs.globals = allocConsts(sh.globalsSize, vis, globalsParamsCBV ? CBV : null);
+			regs.params = allocConsts(sh.paramsSize, vis, (sh.kind == Fragment ? fragmentParamsCBV : vertexParamsCBV) ? CBV : null);
+			regs.buffers = paramsCount;
+			if( sh.bufferCount > 0 ) {
+				regs.bufferTypes = [];
+				regs.bufferStrides = [];
+				var uavCount = 0;
+				var p = sh.buffers;
+				while( p != null ) {
+					switch( p.type ) {
+						case TBuffer(type,_,kind):
+							regs.bufferTypes.push(kind);
+							var stride = switch ( kind ) {
+								case Uniform, Partial:
+									regs.cbvCount++;
+									hxsl.Ast.Tools.size(type) << 2;
+								case Storage, StoragePartial:
+									regs.storageCount++;
+									hxsl.Ast.Tools.size(type.match(TInt|TFloat) ? type : TVec(4, VFloat)) << 2;
+								case RW, RWPartial:
+									uavCount++;
+									hxsl.Ast.Tools.size(type.match(TInt|TFloat) ? type : TVec(4, VFloat)) << 2;
+								default:
+									throw "assert";
+							}
+							regs.bufferStrides.push(stride);
+						default:
+							throw "assert";
+					}
+					p = p.next;
+				}
+
+				var rangeCount = 0;
+				rangeCount += regs.cbvCount > 0 ? 1 : 0;
+				rangeCount += regs.storageCount > 0 ? 1 : 0;
+				rangeCount += uavCount > 0 ? 1 : 0;
+				var rangArr = allocDescTable(vis, rangeCount);
+				var i = 0;
+				if ( regs.cbvCount > 0 ) {
+					var r = rangArr[i];
+					r.rangeType = CBV;
+					r.baseShaderRegister = regBufCount;
+					r.registerSpace = 0;
+					r.numDescriptors = regs.cbvCount;
+					regBufCount += regs.cbvCount;
+					i++;
+				}
+				if ( regs.storageCount > 0 ) {
+					var r = rangArr[i];
+					r.rangeType = SRV;
+					r.baseShaderRegister = regTexCount;
+					r.registerSpace = 0;
+					r.numDescriptors = regs.storageCount;
+					regTexCount += regs.storageCount;
+					i++;
+				}
+				if ( uavCount > 0 ) {
+					var r = rangArr[i];
+					r.rangeType = UAV;
+					r.baseShaderRegister = regUAVCount;
+					r.registerSpace = 0;
+					r.numDescriptors = uavCount;
+					regUAVCount += uavCount;
+					i++;
+				}
+			}
+			if( sh.texturesCount > 0 ) {
+				regs.texturesTypes = [];
+				var uavCount = 0;
+
+				var p = sh.data.vars;
+				for( v in sh.data.vars ) {
+					switch( v.type ) {
+					case TArray(t = TSampler(_) | TRWTexture(_), SConst(n)):
+						for( i in 0...n )
+							regs.texturesTypes.push(t);
+						if( t.match(TSampler(_)) )
+							regs.texturesCount += n;
+						else {
+							uavCount += n;
+						}
+					default:
+					}
+				}
+
+				regs.textures = paramsCount;
+				var rangeCount = 0;
+				rangeCount += regs.texturesCount > 0 ? 1 : 0;
+				rangeCount += uavCount > 0 ? 1 : 0;
+				var rangeArr = allocDescTable(vis, rangeCount);
+				var i = 0;
+				if( regs.texturesCount > 0 ) {
+					var r = rangeArr[i];
+					r.rangeType = SRV;
+					r.baseShaderRegister = regTexCount;
+					r.registerSpace = 0;
+					r.numDescriptors = regs.texturesCount;
+					regTexCount += regs.texturesCount;
+					i++;
+
+					regs.samplers = paramsCount;
+					var r = allocDescTable(vis)[0];
+					r.rangeType = SAMPLER;
+					r.baseShaderRegister = regSamplerCount;
+					r.registerSpace = 0;
+					r.numDescriptors = regs.texturesCount;
+					regSamplerCount += regs.texturesCount;
+				}
+
+				if ( uavCount > 0 ) {
+					var r = rangeArr[i];
+					r.rangeType = UAV;
+					r.baseShaderRegister = regUAVCount;
+					r.registerSpace = 0;
+					r.numDescriptors = uavCount;
+					regUAVCount += uavCount;
+					i++;
+				}
+			}
+			return regs;
+		}
+
+		// Costs in units:
+		// Descriptor Tables cost 1 each
+		// Root CBVs cost 2 each
+		// Root SRVs cost 2 each
+		// Root UAVs cost 2 each
+		// Root Constants cost 1 per 32-bit value
+		function calcSize( sh : hxsl.RuntimeShader.RuntimeShaderData ) {
+			var s = (sh.globalsSize + sh.paramsSize) << 2;
+			// 1 descriptor table for all textures and 1 descriptor table for all samplers
+			s += ( sh.texturesCount > 0 ) ? 2 : 0;
+			// 1 descriptor table for all buffers
+			s += ( sh.bufferCount > 0 ) ? 1 : 0;
+			return s;
+		}
+
+		var totalVertex = calcSize(shader.vertex);
+		var isCompute = shader.mode == Compute;
+		var totalFragment = isCompute ? 0 : calcSize(shader.fragment);
+		var total = totalVertex + totalFragment;
+
+		if( total > 64 ) {
+			var vertexParamCostGain = 1 - (shader.vertex.paramsSize << 2);
+			var fragmentParamCostGain = isCompute ? 0 : 1 - (shader.fragment.paramsSize << 2);
+
+			// Remove the size cost of the root constant and add one descriptor table.
+			var withoutVP = total + vertexParamCostGain;
+			var withoutFP = total + fragmentParamCostGain;
+			if( withoutVP <= 64 || ( withoutFP > 64 && withoutVP > 64 ) ) {
+				vertexParamsCBV = true;
+				total = withoutVP;
+			}
+			if( total > 64 && !isCompute ) {
+				fragmentParamsCBV = true;
+				total = total + fragmentParamCostGain;
+			}
+			if( total > 64 ) {
+				globalsParamsCBV = true;
+				var vertexGlobalCostGain = 1 - (shader.vertex.globalsSize << 2);
+				var fragmentGlobalCostGain = isCompute ? 0 : 1 - (shader.fragment.globalsSize << 2);
+				var withoutGlobal = total + vertexGlobalCostGain + fragmentGlobalCostGain;
+				if ( withoutGlobal > 64 )
+					throw "Too many params. Should not be possible if every params fall into descriptor table.";
+			}
+		}
+
+		var regs = [];
+		for( s in shader.getShaders() )
+			regs.push(allocParams(s));
+		if( paramsCount > allocatedParams )
+			throw "ASSERT : Too many parameters";
+
+		var sign = new RootSignatureDesc();
+		if( shader.mode == Compute ) {
+			sign.flags.set(DENY_PIXEL_SHADER_ROOT_ACCESS);
+			sign.flags.set(DENY_VERTEX_SHADER_ROOT_ACCESS);
+		} else
+			sign.flags.set(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+		if ( shader.hasBindless() ) {
+			sign.flags.set(CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
+			sign.flags.set(SAMPLER_HEAP_DIRECTLY_INDEXED);
+		}
+		sign.flags.set(DENY_HULL_SHADER_ROOT_ACCESS);
+		sign.flags.set(DENY_DOMAIN_SHADER_ROOT_ACCESS);
+		sign.flags.set(DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+		#if !xbogdk
+		sign.flags.set(DENY_AMPLIFICATION_SHADER_ROOT_ACCESS);
+		sign.flags.set(DENY_MESH_SHADER_ROOT_ACCESS);
+		#end
+		sign.numParameters = paramsCount;
+		sign.parameters = cast params;
+
+		return { sign : sign, registers : regs, params : params, paramsCount : paramsCount, ranges : ranges };
+	}
+
+	function compileShader( shader : hxsl.RuntimeShader ) : CompiledShader {
+		#if heaps_mt_hxsl_cache
+		// data is only released once no thread is compiling, as another thread might be compiling the same shader
+		compileMutex.acquire();
+		var sh = compiledShaders.get(shader.id);
+		if( sh != null ) {
+			if( compilingCount == 0 )
+				releaseShaderData(shader, sh);
+			compileMutex.release();
+			return sh;
+		}
+		compilingCount++;
+		compileMutex.release();
+		var c = try doCompileShader(shader) catch( e : haxe.Exception ) {
+			endCompile(null, null);
+			throw e;
+		}
+		endCompile(shader, c);
+		return c;
+		#else
+		var c = doCompileShader(shader);
+		releaseShaderData(shader, c);
+		return c;
+		#end
+	}
+
+	function releaseShaderData( shader : hxsl.RuntimeShader, compiled : CompiledShader ) {
+		copyShaderCode(shader, compiled);
+		shader.releaseData();
+	}
+
+	function copyShaderCode( shader : hxsl.RuntimeShader, compiled : CompiledShader ) {
+		var src = compiled.shader;
+		if( src == shader )
+			return;
+		shader.vertex.code ??= src.vertex.code;
+		if( shader.fragment != null )
+			shader.fragment.code ??= src.fragment.code;
+	}
+
+	#if heaps_mt_hxsl_cache
+	function endCompile( shader : hxsl.RuntimeShader, compiled : CompiledShader ) {
+		compileMutex.acquire();
+		compilingCount--;
+		if( shader != null ) {
+			copyShaderCode(shader, compiled);
+			releaseQueue.push(shader);
+		}
+		if( compilingCount == 0 ) {
+			for( s in releaseQueue )
+				s.releaseData();
+			releaseQueue = [];
+		}
+		compileMutex.release();
+	}
+	#end
+
+	function doCompileShader( shader : hxsl.RuntimeShader ) : CompiledShader {
+		#if heaps_mt_hxsl_cache
+		compileMutex.acquire();
+		#end
+		var sh = compiledShaders.get(shader.id);
+		if( sh != null ) {
+			#if heaps_mt_hxsl_cache
+			compileMutex.release();
+			#end
+			return sh;
+		}
+
+		if ( shader.hasBindless() && !useSM6_6 ) {
+			#if heaps_mt_hxsl_cache
+			compileMutex.release();
+			#end
+			throw "Shader using bindless detected, but Shader Model 6.6 is not used: " + (h3d.impl.driver.Driver.requestedFeatures.has(Bindless) ? "SM6_6 unavailable on this device." : "call h3d.impl.driver.Driver.requestFeature(Bindless) before creating the engine.");
+		}
+		#if heaps_mt_hxsl_cache
+		compileMutex.release();
+		#end
+
+		var res = computeRootSignature(shader);
+
+		var c = new CompiledShader();
+
+		var rootStr = stringifyRootSignature(res.sign, "ROOT_SIGNATURE", res.params, res.paramsCount);
+		var vs = shader.mode == Compute ? null : compileSource(shader.vertex, useSM6_6 ? "vs_6_6" : "vs_6_1", rootStr);
+		var ps = shader.mode == Compute ? null : compileSource(shader.fragment, useSM6_6 ? "ps_6_6" : "ps_6_1", rootStr);
+		var cs = shader.mode == Compute ? compileSource(shader.compute, useSM6_6 ? "cs_6_6" : "cs_6_1", rootStr) : null;
+
+		var signSize = 0;
+		var signBytes = Driver.serializeRootSignature(res.sign, 1, signSize);
+		var sign = new RootSignature(signBytes,signSize);
+		c.rootSignature = sign;
+		c.shader = shader;
+
+		if( shader.mode == Compute ) {
+			c.isCompute = true;
+			var desc = new ComputePipelineStateDesc();
+			desc.rootSignature = sign;
+			desc.cs.shaderBytecode = cs;
+			desc.cs.bytecodeLength = cs.length;
+			c.computePipeline = Driver.createComputePipelineState(desc);
+			c.vertexRegisters = res.registers[0];
+			#if heaps_mt_hxsl_cache
+			compileMutex.acquire();
+			var prev = compiledShaders.get(shader.id);
+			if( prev != null ) {
+				compileMutex.release();
+				return prev;
+			}
+			#end
+			compiledShaders.set(shader.id, c);
+			#if heaps_mt_hxsl_cache
+			compileMutex.release();
+			#end
+			return c;
+		}
+
+		c.vertexRegisters = res.registers[0];
+		c.fragmentRegisters = res.registers[1];
+
+		var inputs = [];
+		for( v in shader.vertex.data.vars )
+			switch( v.kind ) {
+			case Input: inputs.push(v);
+			default:
+			}
+
+		var inputLayout = hl.CArray.alloc(InputElementDesc, inputs.length);
+		var format : Array<hxd.BufferFormat.BufferInput> = [];
+		var allNames = new Map();
+		var varNames = new Map();
+		for ( i => v in inputs)
+			hxsl.HlslOut.varName(v, varNames, allNames);
+		for( i => v in inputs ) {
+			var d = inputLayout[i];
+			var perInst = 0;
+			if( v.qualifiers != null )
+				for( q in v.qualifiers )
+					switch( q ) {
+					case PerInstance(k): perInst = k;
+					default:
+					}
+			d.semanticName = @:privateAccess hxsl.HlslOut.semanticName(varNames.get(v.id)).toUtf8();
+			d.inputSlot = i;
+			format.push({ name : v.name, type : hxd.BufferFormat.InputFormat.fromHXSL(v.type) });
+			if( perInst > 0 ) {
+				d.inputSlotClass = PER_INSTANCE_DATA;
+				d.instanceDataStepRate = perInst;
+			} else
+				d.inputSlotClass = PER_VERTEX_DATA;
+		}
+
+		var p = new GraphicsPipelineStateDesc();
+		p.rootSignature = sign;
+		p.vs.bytecodeLength = vs.length;
+		p.vs.shaderBytecode = vs;
+		p.ps.bytecodeLength = ps.length;
+		p.ps.shaderBytecode = ps;
+		p.rasterizerState.fillMode = SOLID;
+		p.rasterizerState.cullMode = NONE;
+		p.primitiveTopologyType = TRIANGLE;
+		p.numRenderTargets = 1;
+		p.rtvFormats[0] = R8G8B8A8_UNORM;
+		p.dsvFormat = UNKNOWN;
+		p.sampleDesc.count = 1;
+		p.sampleMask = -1;
+		p.inputLayout.inputElementDescs = inputLayout;
+		p.inputLayout.numElements = inputs.length;
+
+		//Driver.createGraphicsPipelineState(p);
+
+		#if heaps_mt_hxsl_cache
+		compileMutex.acquire();
+		var prev = compiledShaders.get(shader.id);
+		if( prev != null ) {
+			compileMutex.release();
+			return prev;
+		}
+		#end
+		c.format = hxd.BufferFormat.make(format);
+		c.pipeline = p;
+		c.inputLayout = inputLayout;
+		c.inputCount = inputs.length;
+
+		for( i in 0...inputs.length )
+			inputLayout[i].alignedByteOffset = 1; // will trigger error if not set in makePipeline()
+
+		compiledShaders.set(shader.id, c);
+		#if heaps_mt_hxsl_cache
+		compileMutex.release();
+		#end
+
+		psoConfigCache?.resolveConfig(c.shader, c.inputCount, function(builder) {
+			#if heaps_mt_hxsl_cache
+			c.pipelineMutex.acquire();
+			#end
+			var cache = builder.lookup(c.pipelines, c.inputCount);
+			if( cache.pipeline == null ) {
+				var p = try makePipeline(c, builder) catch( e : Dynamic ) {
+					trace('Skipping invalid PSO config for ${c.shader.signature}: $e');
+					null;
+				}
+				if( p != null ) {
+					cache.pipeline = p;
+					c.usedPSOConfig = true;
+					hxd.System.timeoutTick();
+				}
+			}
+			#if heaps_mt_hxsl_cache
+			c.pipelineMutex.release();
+			#end
+		});
+
+		return c;
+	}
+
+	function disposeResource( r : ResourceData ) {
+		frame.toRelease.push(r.res);
+		r.res = null;
+		r.state = r.targetState = PRESENT;
+	}
+
+	// ----- BUFFERS
+
+	function allocGPU( size : Int, heapType, state, uav=false ) {
+		var desc = new ResourceDesc();
+		var flags = new haxe.EnumFlags();
+		flags.set(CREATE_NOT_ZEROED);
+		desc.dimension = BUFFER;
+		desc.width = size;
+		desc.height = 1;
+		desc.depthOrArraySize = 1;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.layout = ROW_MAJOR;
+		if( uav ) desc.flags.set(ALLOW_UNORDERED_ACCESS);
+		tmp.heap.type = heapType;
+		return Driver.createCommittedResource(tmp.heap, flags, desc, state, null);
+	}
+
+	override function allocBuffer( m : h3d.Buffer ) : GPUBuffer {
+		var size = m.getMemSize();
+		var buf = new BufferData();
+		var bufSize = m.flags.has(UniformBuffer) || m.flags.has(ReadWriteBuffer) ? calcCBVSize(size) : size;
+		buf.state = buf.targetState = COPY_DEST;
+		buf.res = allocGPU(bufSize, DEFAULT, COMMON,  m.flags.has(ReadWriteBuffer));
+		if( buf.res == null )
+			return null;
+		@:privateAccess buf.res.setName('Buffer#${m.id}');
+		if( m.flags.has(UniformBuffer) ) {
+			// no view
+		} else if( m.flags.has(IndexBuffer) ) {
+			var view = new IndexBufferView();
+			view.bufferLocation = buf.res.getGpuVirtualAddress();
+			view.format = m.format.strideBytes == 4 ? R32_UINT : R16_UINT;
+			view.sizeInBytes = size;
+			buf.iview = view;
+		} else {
+			var view = new VertexBufferView();
+			view.bufferLocation = buf.res.getGpuVirtualAddress();
+			view.sizeInBytes = size;
+			view.strideInBytes = m.format.strideBytes;
+			buf.view = view;
+		}
+		buf.size = bufSize;
+		return buf;
+	}
+
+	override function allocInstanceBuffer(b:InstanceBuffer, bytes:haxe.io.Bytes) {
+		var dataSize = b.commandCount * 5 * 4;
+		var buf = new BufferData();
+		buf.state = buf.targetState = COPY_DEST;
+		buf.res = allocGPU(dataSize, DEFAULT, COMMON);
+		buf.res.setName("InstanceBuffer");
+		var alloc = allocDynamicBuffer(bytes, dataSize);
+		frame.commandList.copyBufferRegion(buf.res, 0, alloc.resource, alloc.offset, dataSize);
+		b.data = buf;
+	}
+
+	override function uploadInstanceBufferBytes(b : InstanceBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		var strideBytes = 5 * 4;
+		updateBuffer(b.data, (buf : hl.Bytes).offset(bufPos), startVertex * strideBytes, vertexCount * strideBytes);
+	}
+
+	function disposeBufferViews(b:BufferData) {
+		if( b.generation == generation ) b.disposeViews(cpuSrvHeap);
+	}
+
+	override function disposeBuffer(v:Buffer) {
+		disposeResource(v.vbuf);
+		disposeBufferViews(v.vbuf);
+		var handle = v.vbuf.handle;
+		if ( handle != null )
+			frame.bufHandlesToRelease.push(handle);
+	}
+
+	override function disposeInstanceBuffer(b:InstanceBuffer) {
+		frame.toRelease.push((b.data.res:GpuResource));
+		disposeBufferViews(b.data);
+		// disposeResource(b.data);
+		b.data = null;
+	}
+
+	function updateBuffer( b : ResourceData, bytes : hl.Bytes, startByte : Int, bytesCount : Int ) {
+		if( hasDeviceError ) return;
+		if( b == null ) throw "Updating buffer which was not allocated";
+		var alloc = allocDynamicBuffer(bytes, bytesCount);
+		transition(b, COPY_DEST);
+		flushTransitions();
+		frame.commandList.copyBufferRegion(b.res, startByte, alloc.resource, alloc.offset, bytesCount);
+	}
+
+	override function uploadIndexData(i:Buffer, startIndice:Int, indiceCount:Int, buf:hxd.IndexBuffer, bufPos:Int) {
+		var bits = i.format.strideBytes >> 1;
+		updateBuffer(i.vbuf, hl.Bytes.getArray(buf.getNative()).offset(bufPos << bits), startIndice << bits, indiceCount << bits);
+	}
+
+	override function uploadBufferData(b:Buffer, startVertex:Int, vertexCount:Int, buf:hxd.FloatBuffer, bufPos:Int) {
+		var data = hl.Bytes.getArray(buf.getNative()).offset(bufPos<<2);
+		updateBuffer(b.vbuf, data, startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+	}
+
+	override function uploadBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
+		updateBuffer(b.vbuf, (buf : hl.Bytes).offset(bufPos), startVertex * b.format.strideBytes, vertexCount * b.format.strideBytes);
+	}
+
+	override function readBufferBytes(b:Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
+		var stride = b.format.strideBytes;
+
+		var totalSize = vertexCount*stride;
+
+		var tmpBuf = allocGPU(totalSize, READBACK, COPY_DEST);
+		tmpBuf.setName("ReadbackBuffer");
+
+		transition(b.vbuf, COPY_SOURCE);
+		flushTransitions();
+
+		frame.commandList.copyBufferRegion(tmpBuf, 0, b.vbuf.res, startVertex*stride, totalSize);
+
+		flushFrame();
+		waitGpu();
+
+		var output = tmpBuf.map(0, null);
+		(buf : hl.Bytes).blit(bufPos, output, 0, totalSize);
+		tmpBuf.release();
+
+		beginFrame();
+	}
+
+	override function readBufferBytesAsync( b : Buffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int, callback : Void -> Void ) {
+		if( hasDeviceError ) return;
+		if( b.vbuf == null ) throw "Reading buffer which was not allocated";
+		var stride = b.format.strideBytes;
+		var rq = new ReadbackRequest();
+		rq.size = vertexCount * stride;
+		rq.buf = buf;
+		rq.bufPos = bufPos;
+		rq.callback = callback;
+		if( rq.size > 0 ) {
+			var alloc = frame.readbackAllocator.alloc(rq.size, 16, tmp.bufferAllocation);
+			rq.cpuAddress = alloc.cpuAddress;
+			transition(b.vbuf, COPY_SOURCE);
+			flushTransitions();
+			frame.commandList.copyBufferRegion(alloc.resource, alloc.offset, b.vbuf.res, startVertex * stride, rq.size);
+		}
+		frame.readbacks.push(rq);
+	}
+
+	// ------------ TEXTURES -------
+
+	inline function getTextureFormat( t : h3d.mat.Texture ) : DxgiFormat {
+		return toDxgiFormat(t.format);
+	}
+
+	static function toDxgiFormat( fmt : hxd.PixelFormat ) {
+		return switch( fmt ) {
+		case RGBA: R8G8B8A8_UNORM;
+		case RGBA16F: R16G16B16A16_FLOAT;
+		case RGBA32F: R32G32B32A32_FLOAT;
+		case R32F: R32_FLOAT;
+		case R16F: R16_FLOAT;
+		case R8: R8_UNORM;
+		case RG8: R8G8_UNORM;
+		case RG16F: R16G16_FLOAT;
+		case RG32F: R32G32_FLOAT;
+		case RGB32F: R32G32B32_FLOAT;
+		case RGB10A2: R10G10B10A2_UNORM;
+		case RG11B10UF: R11G11B10_FLOAT;
+		case SRGB_ALPHA: R8G8B8A8_UNORM_SRGB;
+		case R16U: R16_UNORM;
+		case RG16U: R16G16_UNORM;
+		case RGBA16U: R16G16B16A16_UNORM;
+		case S3TC(n):
+			switch( n ) {
+			case 1: BC1_UNORM;
+			case 2: BC2_UNORM;
+			case 3: BC3_UNORM;
+			case 4: BC4_UNORM;
+			case 5: BC5_UNORM;
+			case 6: BC6H_UF16;
+			case 7: BC7_UNORM;
+			default: throw "assert";
+			}
+		default: throw "Unsupported texture format " + fmt;
+		}
+	}
+
+	function makeTextureDesc(t:h3d.mat.Texture) {
+		var desc = new ResourceDesc();
+		desc.dimension = t.flags.has(Is3D) ? TEXTURE3D : TEXTURE2D;
+		var r = t.residentMip;
+		desc.width = r == 0 ? t.width : hxd.Math.imax(1, t.width >> r);
+		desc.height = r == 0 ? t.height : hxd.Math.imax(1, t.height >> r);
+		desc.depthOrArraySize = t.layerCount;
+		desc.mipLevels = t.mipLevels - r;
+		desc.sampleDesc.count = 1;
+		desc.format = getTextureFormat(t);
+		return desc;
+	}
+
+	override function allocTexture(t:h3d.mat.Texture):Texture {
+
+		if( t.format.match(S3TC(_)) && ((t.width >> t.residentMip) & 3 != 0 || (t.height >> t.residentMip) & 3 != 0) )
+			throw t+" is compressed "+t.width+"x"+t.height+" but should be a 4x4 multiple";
+
+		var isRT = t.flags.has(Target);
+
+		if( t.width < 1 ) t.width = 1;
+		if( t.height < 1 ) t.height = 1;
+		var desc = makeTextureDesc(t);
+		var td = new TextureData();
+		td.format = desc.format;
+		tmp.heap.type = DEFAULT;
+
+		var clear = null;
+		var flags = new haxe.EnumFlags();
+		if( isRT ) {
+			var color = t.t == null || t.t.color == null ? new h3d.Vector4(0,0,0,0) : t.t.color; // reuse prev color
+			desc.flags.set(ALLOW_RENDER_TARGET);
+			clear = tmp.clearValue;
+			clear.format = desc.format;
+			clear.color.r = color.r;
+			clear.color.g = color.g;
+			clear.color.b = color.b;
+			clear.color.a = color.a;
+			td.color = color;
+		} else {
+			flags.set(CREATE_NOT_ZEROED);
+		}
+		if( t.flags.has(Writable) )
+			desc.flags.set(ALLOW_UNORDERED_ACCESS);
+
+		td.state = td.targetState = isRT ? RENDER_TARGET : COMMON;
+		#if (hldx >= version("2.0.0"))
+		var placedSize = textureHeap == null || isRT || t.flags.has(Writable) ? -1 : textureHeap.getAllocSize(t, desc);
+		if( placedSize > 0 )
+			td.res = textureHeap.alloc(td, desc, placedSize);
+		else
+		#end
+		td.res = Driver.createCommittedResource(tmp.heap, flags, desc, td.state, clear);
+		if( td.res == null )
+			return null;
+
+		td.res.setName(t.name == null ? "Texture#"+t.id : t.name);
+		t.lastFrame = frameCount;
+		t.flags.unset(WasCleared);
+
+		var handles = textureHandles.get(t);
+		var prevBits = t.bits;
+		var prevTd = t.t;
+		t.t = td;
+		if ( handles != null ) {
+			for ( bits => h in handles ) {
+				t.loadBits(bits);
+				var srv = getCpuTexView(t);
+				var srvIndex = h.handle.low;
+				Driver.copyDescriptorsSimple(1, bindlessSrvHeap.getCpuAddressAt(srvIndex), srv, CBV_SRV_UAV);
+				var sampler = getCpuSampler(t);
+				var samplerIndex = h.handle.high;
+				Driver.copyDescriptorsSimple(1, bindlessSamplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
+			}
+		}
+		t.t = prevTd;
+		t.loadBits(prevBits);
+		if ( handles != null && frame != null )
+			flushHeaps();
+		return td;
+	}
+
+	override function allocDepthBuffer(b:h3d.mat.Texture):Texture {
+		var td = new TextureData();
+		var desc = new ResourceDesc();
+		var flags = new haxe.EnumFlags();
+		flags.set(CREATE_NOT_ZEROED);
+		desc.dimension = TEXTURE2D;
+		desc.width = b.width;
+		desc.height = b.height;
+		desc.depthOrArraySize = b.layerCount;
+		desc.mipLevels = 1;
+		desc.sampleDesc.count = 1;
+		desc.format = toDxgiDepthFormat(b.format);
+		desc.flags.set(ALLOW_DEPTH_STENCIL);
+		#if console
+		desc.flags = new haxe.EnumFlags<ResourceFlag>( desc.flags.toInt() | 0x00800000 ); // FORCE_TEXTURE_COMPATIBILITY
+		#end
+		tmp.heap.type = DEFAULT;
+
+		tmp.clearValue.format = desc.format;
+		tmp.clearValue.depth = DEFAULT_DEPTH_VALUE;
+		tmp.clearValue.stencil= 0;
+		td.state = td.targetState = DEPTH_WRITE;
+		td.res = Driver.createCommittedResource(tmp.heap, flags, desc, DEPTH_WRITE, tmp.clearValue);
+		return td;
+	}
+
+	function disposeTextureViews(t:TextureData) {
+		if( t.generation == generation ) t.disposeViews(cpuSrvHeap);
+	}
+
+	override function disposeTexture(t:h3d.mat.Texture) {
+		if( frameFence.getValue() >= t.t.lastUseFence ) {
+			t.t.res.release();
+			t.t.res = null;
+			#if (hldx >= version("2.0.0"))
+			textureHeap?.free(t.t);
+			#end
+		} else {
+			disposeResource(t.t);
+			#if (hldx >= version("2.0.0"))
+			if( t.t.page != null ) frame.placedToFree.push(t.t);
+			#end
+		}
+		disposeTextureViews(t.t);
+		var handles = textureHandles.get(t);
+		if ( handles != null ) {
+			for ( h in handles ){
+				if ( t.realloc == null ){
+					frame.texHandlesToRelease.push(h);
+					textureHandles.remove(t);
+				}
+			}
+		}
+		t.t = null;
+	}
+
+	override function disposeDepthBuffer(t:h3d.mat.Texture) {
+		disposeResource(t.t);
+		t.t = null;
+	}
+
+	override function uploadTextureBitmap(t:h3d.mat.Texture, bmp:hxd.BitmapData, mipLevel:Int, side:Int) {
+		var pixels = bmp.getPixels();
+		uploadTexturePixels(t, pixels, mipLevel, side);
+		pixels.dispose();
+	}
+
+	override function uploadTexturePixels(t:h3d.mat.Texture, pixels:hxd.Pixels, mipLevel:Int, side:Int) {
+		pixels.convert(t.format);
+		if( mipLevel >= t.mipLevels ) throw "Mip level outside texture range : " + mipLevel + " (max = " + (t.mipLevels - 1) + ")";
+		if( mipLevel < t.residentMip ) throw "Mip level " + mipLevel + " is not resident in " + t;
+
+		var is3d = t.flags.has(Is3D);
+		var mip = mipLevel - t.residentMip;
+		var subRes = is3d ? mip : mip + side * (t.mipLevels - t.residentMip);
+		var tmpSize = t.t.res.getRequiredIntermediateSize(subRes, 1).low;
+		if ( is3d )
+			tmpSize = Std.int(tmpSize / t.layerCount );
+
+		var textureAlignment = Driver.getConstant(TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+
+		var useCopy = t.t.state == COMMON && t.t.targetState == COMMON && tmpSize <= COPY_BUFFER_SIZE;
+		var allocation, cmd;
+		if( useCopy ) {
+			var offs = frame.copyBufferCursor % textureAlignment;
+			if( offs != 0 ) frame.copyBufferCursor += textureAlignment - offs;
+			if( frame.copyBufferCursor + tmpSize > COPY_BUFFER_SIZE ) {
+				frame.copyCommandList.close();
+				copyQueue.executeCommandList(frame.copyCommandList);
+				waitCopy();
+				frame.copyAllocator.reset();
+				frame.copyCommandList.reset(frame.copyAllocator, null);
+				frame.copyBufferCursor = 0;
+			}
+			allocation = tmp.bufferAllocation;
+			allocation.resource = frame.copyBuffer;
+			allocation.offset = frame.copyBufferCursor;
+			allocation.cpuAddress = frame.copyBuffer.map(0, null).offset(frame.copyBufferCursor);
+			frame.copyBufferCursor += tmpSize;
+			cmd = frame.copyCommandList;
+		} else {
+			transition(t.t, COPY_DEST);
+			flushTransitions();
+			allocation = frame.bufferAllocator.alloc(tmpSize, textureAlignment, tmp.bufferAllocation);
+			cmd = frame.commandList;
+		}
+
+		var dst = tmp.dstTextureLocation;
+		dst.res = t.t.res;
+		dst.subResourceIndex = subRes;
+		dst.type = SUBRESOURCE_INDEX;
+		var dstDesc = makeTextureDesc(t);
+
+		var src = tmp.srcTextureLocation;
+		src.res = allocation.resource;
+		src.type = PLACED_FOOTPRINT;
+
+		var numRow : hl.BytesAccess<Int64> = tmp.copyableInfosBytes;
+		var rowSizeInBytes : hl.BytesAccess<Int64> = tmp.copyableInfosBytes.offset(8);
+		Driver.getCopyableFootprints(dstDesc, subRes, 1, allocation.offset, src.placedFootprint, numRow, rowSizeInBytes, null);
+
+		var rowPitch = src.placedFootprint.footprint.rowPitch;
+		var data = (pixels.bytes:hl.Bytes).offset(pixels.offset);
+		var numRow = numRow[0].low;
+		var rowSizeInBytes = rowSizeInBytes[0].low;
+		for ( i in 0...numRow)
+			allocation.cpuAddress.blit(rowPitch * i, data, rowSizeInBytes * i, rowSizeInBytes);
+
+		src.placedFootprint.footprint.depth = 1;
+		cmd.copyTextureRegion(dst, 0, 0, is3d ? side : 0, src, null);
+
+		t.flags.set(WasCleared);
+		markUsed(t);
+	}
+
+	override function copyTexture(from:h3d.mat.Texture, to:h3d.mat.Texture):Bool {
+		if( from.t == null || from.format != to.format || from.width != to.width || from.height != to.height || from.layerCount != to.layerCount || from.mipLevels != to.mipLevels || from.residentMip != to.residentMip )
+			return false;
+		if( to.t == null ) {
+			var prev = from.lastFrame;
+			from.preventAutoDispose();
+			to.alloc();
+			@:bypassAccessor from.lastFrame = prev;
+			if( from.t == null ) throw "assert";
+			if( to.t == null ) return false;
+		}
+		markUsed(from);
+		markUsed(to);
+		transition( from.t, COPY_SOURCE);
+		transition( to.t, COPY_DEST);
+		flushTransitions();
+		var dst = tmp.dstTextureLocation;
+		var src = tmp.srcTextureLocation;
+		dst.res = to.t.res;
+		src.res = from.t.res;
+		if( dst.res == null || src.res == null ) throw "assert";
+		dst.type = SUBRESOURCE_INDEX;
+		src.type = SUBRESOURCE_INDEX;
+		var is3d = to.flags.has(Is3D);
+		var mipCount = to.mipLevels - to.residentMip;
+		var subResCount = is3d ? mipCount : to.layerCount * mipCount;
+		for ( i in 0...subResCount ) {
+			dst.subResourceIndex = i;
+			src.subResourceIndex = i;
+			frame.commandList.copyTextureRegion(dst, 0, 0, 0, src, null);
+		}
+		to.flags.set(WasCleared);
+		for( t in currentRenderTargets )
+			if( t == to || t == from )
+				transition( t.t, RENDER_TARGET );
+		return true;
+	}
+
+	override function setResidentMip( t : h3d.mat.Texture, mip : Int ) : Bool {
+		var prev = t.t;
+		var prevMip = t.residentMip;
+		var wasCleared = t.flags.has(WasCleared);
+		t.residentMip = mip;
+		var td = allocTexture(t);
+		if( wasCleared ) t.flags.set(WasCleared); // content is kept
+		if( td == null ) {
+			t.residentMip = prevMip;
+			return false;
+		}
+		// copy the mip levels common to both allocations
+		var levels = t.mipLevels;
+		var first = mip > prevMip ? mip : prevMip;
+		transition(prev, COPY_SOURCE);
+		transition(td, COPY_DEST);
+		flushTransitions();
+		var dst = tmp.dstTextureLocation;
+		var src = tmp.srcTextureLocation;
+		dst.res = td.res;
+		src.res = prev.res;
+		dst.type = SUBRESOURCE_INDEX;
+		src.type = SUBRESOURCE_INDEX;
+		for( layer in 0...t.layerCount )
+			for( m in first...levels ) {
+				src.subResourceIndex = (m - prevMip) + layer * (levels - prevMip);
+				dst.subResourceIndex = (m - mip) + layer * (levels - mip);
+				frame.commandList.copyTextureRegion(dst, 0, 0, 0, src, null);
+			}
+		// back to COMMON so the new mip levels can be uploaded with the copy queue
+		transition(td, COMMON);
+		flushTransitions();
+		// the previous allocation is used by the copy : always release it later
+		disposeResource(prev);
+		#if (hldx >= version("2.0.0"))
+		if( prev.page != null ) frame.placedToFree.push(prev);
+		#end
+		disposeTextureViews(prev);
+		t.t = td;
+		markUsed(t);
+		return true;
+	}
+
+	// ----- PIPELINE UPDATE
+
+	override function uploadShaderBuffers(buffers:h3d.shader.Buffers, which:h3d.shader.Buffers.BufferKind) {
+		if( which == Globals ) {
+			lastGlobalsShader = currentShader;
+			if( currentShader.isCompute )
+				lastFragmentGlobalBind = -1;
+		}
+		uploadBuffers(buffers, buffers.vertex, which, currentShader.shader.vertex, currentShader.vertexRegisters);
+		if( !currentShader.isCompute )
+			uploadBuffers(buffers, buffers.fragment, which, currentShader.shader.fragment, currentShader.fragmentRegisters);
+	}
+
+	function calcCBVSize( dataSize : Int ) {
+		// the view must be a mult of 256
+		var sz = dataSize & ~0xFF;
+		if( sz != dataSize ) sz += 0x100;
+		return sz;
+	}
+
+	function allocDynamicBuffer( data : hl.Bytes, dataSize : Int ) : BufferAllocation {
+		var allocation = frame.bufferAllocator.alloc(dataSize, tmp.bufferAllocation);
+		allocation.cpuAddress.blit(0, data, 0, dataSize);
+		return allocation;
+	}
+
+	function hasTexturesChanged( buf : h3d.shader.Buffers.ShaderBuffers, regs : ShaderRegisters ) : Bool {
+		if( regs.lastHeapCount != heapCount )
+			return true;
+
+		for( i in 0...regs.texturesTypes.length ) {
+			var t = buf.tex[i];
+			var td = t != null ? t.t : null;
+			var bits = t != null ? t.bits : -1;
+			if( regs.lastTextures[i] != td || regs.lastTexturesBits[i] != bits )
+				return true;
+		}
+
+		return false;
+	}
+
+	inline function toDepthFormat(format : h3d.mat.Data.TextureFormat ) : DxgiFormat {
+		var fmt = switch (format) {
+			case Depth16:
+				R16_UNORM;
+			case Depth24, Depth24Stencil8:
+				R24_UNORM_X8_TYPELESS;
+			case Depth32:
+				R32_FLOAT;
+			case Depth32Stencil8:
+				R32_FLOAT_X8X24_TYPELESS;
+			default:
+				throw "Unsupported depth format "+ format;
+		}
+		return fmt;
+	}
+
+	inline function getViewMip( t : h3d.mat.Texture ) {
+		return t.startingMip > t.residentMip ? t.startingMip - t.residentMip : 0;
+	}
+
+	function fillTexViewDesc( t : h3d.mat.Texture, srvDesc : ShaderResourceViewDesc ) {
+		if(t.slice > 0 ){
+			var desc = unsafeCastTo(srvDesc, Tex2DArraySRV);
+			desc.format = t.t.format;
+			desc.dimension = TEXTURE2DARRAY;
+			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+			desc.mostDetailedMip = getViewMip(t);
+			desc.mipLevels = -1;
+			desc.firstArraySlice = t.slice - 1;
+			desc.arraySize = 1;
+			desc.planeSlice = 0;
+			desc.resourceMinLODClamp = 0;
+		} else if( t.flags.has(Cube) ) {
+			var desc = unsafeCastTo(srvDesc, TexCubeSRV);
+			desc.format = t.isDepth() ? toDepthFormat(t.format) : t.t.format;
+			desc.dimension = TEXTURECUBE;
+			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+			desc.mostDetailedMip = getViewMip(t);
+			desc.mipLevels = -1;
+			desc.resourceMinLODClamp = 0;
+		} else if( t.flags.has(IsArray) ) {
+			var desc = unsafeCastTo(srvDesc, Tex2DArraySRV);
+			desc.format = t.isDepth() ? toDepthFormat(t.format) : t.t.format;
+			desc.dimension = TEXTURE2DARRAY;
+			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+			desc.mostDetailedMip = getViewMip(t);
+			desc.mipLevels = -1;
+			desc.firstArraySlice = 0;
+			desc.arraySize = t.layerCount;
+			desc.planeSlice = 0;
+			desc.resourceMinLODClamp = 0;
+		} else if ( t.flags.has(Is3D) ) {
+			var desc = unsafeCastTo(srvDesc, Tex3DSRV);
+			desc.format = t.t.format;
+			desc.dimension = TEXTURE3D;
+			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+			desc.mostDetailedMip = getViewMip(t);
+			desc.mipLevels = -1;
+			desc.resourceMinLODClamp = 0;
+		} else {
+			var desc = unsafeCastTo(srvDesc, Tex2DSRV);
+			desc.format = t.isDepth() ? toDepthFormat(t.format) : t.t.format;
+			desc.dimension = TEXTURE2D;
+			desc.shader4ComponentMapping = ShaderComponentMapping.DEFAULT;
+			desc.mostDetailedMip = getViewMip(t);
+			desc.mipLevels = -1;
+			desc.planeSlice = 0;
+			desc.resourceMinLODClamp = 0;
+		}
+	}
+
+	function fillSamplerDesc( t : h3d.mat.Texture, samplerDesc : SamplerDesc) {
+		var desc = samplerDesc;
+		desc.comparisonFunc = NEVER;
+		desc.maxLod = 1e30;
+		desc.filter = switch( [t.filter, t.mipMap] ) {
+			case [Nearest, None|Nearest]: MIN_MAG_MIP_POINT;
+			case [Nearest, Linear]: MIN_MAG_POINT_MIP_LINEAR;
+			case [Linear, None|Nearest]: MIN_MAG_LINEAR_MIP_POINT;
+			case [Linear, Linear]: MIN_MAG_MIP_LINEAR;
+			case [AnisotropicNearest|AnisotropicLinear,_]: ANISOTROPIC;
+		}
+		desc.addressU = desc.addressV = desc.addressW = switch( t.wrap ) {
+			case Clamp: CLAMP;
+			case Repeat: WRAP;
+			case Mirror: MIRROR;
+		}
+		desc.maxAnisotropy = t.anisotropicMaxLevel;
+		desc.mipLODBias = t.lodBias;
+	}
+
+	function getCpuTexView(t : h3d.mat.Texture) : Address {
+		var texBits = getTexBits(t);
+		var texViewIdx = t.t.getView(texBits);
+		if ( texViewIdx >= 0 )
+			return cpuSrvHeap.getCpuAddressAt(texViewIdx);
+
+		texViewIdx = cpuSrvHeap.allocIndex();
+		fillTexViewDesc(t, tmp.texViewDesc);
+		var texView = cpuSrvHeap.getCpuAddressAt(texViewIdx);
+		Driver.createShaderResourceView(t.t.res, tmp.texViewDesc, texView);
+		t.t.setView(texBits, texViewIdx);
+		return texView;
+	}
+
+	function createTexView( t : h3d.mat.Texture, srvAddr : Address) {
+		var texView = getCpuTexView(t);
+		Driver.copyDescriptorsSimple(1, srvAddr, texView, CBV_SRV_UAV);
+	}
+
+	function getTexMask() {
+		return h3d.mat.Texture.__startingMip_mask | h3d.mat.Texture.slice_mask;
+	}
+
+	function getSamplerBits( t : h3d.mat.Texture ) {
+		return @:privateAccess t.bits & ~getTexMask();
+	}
+
+	function getTexBits( t : h3d.mat.Texture ) {
+		var mask = getTexMask();
+		return @:privateAccess t.bits & mask;
+	}
+
+	function getCpuSampler( t : h3d.mat.Texture ) : Address {
+		var samplerBits = getSamplerBits(t);
+		var samplerIdx = cpuSamplersIndex.get(samplerBits);
+		if ( samplerIdx != null )
+			return cpuSamplerHeap.getCpuAddressAt(samplerIdx);
+
+		var sampler = cpuSamplerHeap.alloc(1);
+		fillSamplerDesc(t, tmp.samplerDesc);
+		Driver.createSampler(tmp.samplerDesc, sampler);
+		samplerIdx = cpuSamplerHeap.getIndex(sampler);
+		cpuSamplersIndex.set(samplerBits, samplerIdx);
+		return sampler;
+	}
+
+	function createSampler( t : h3d.mat.Texture, samplerAddr : Address ) {
+		var sampler = getCpuSampler(t);
+		Driver.copyDescriptorsSimple(1, samplerAddr, sampler, SAMPLER);
+	}
+
+	function createCBV(vbuf : BufferData, cbvAddr : Address) {
+		var desc = tmp.cbvDesc;
+		desc.bufferLocation = vbuf.res.getGpuVirtualAddress();
+		desc.sizeInBytes = vbuf.size;
+		Driver.createConstantBufferView(desc, cbvAddr);
+	}
+
+	function createBufferSRV(vbuf : BufferData, stride : Int, srvAddr : Address) {
+		var desc = tmp.bufferSRV;
+		desc.numElements = Std.int(vbuf.size / stride);
+		desc.structureByteStride = stride;
+		desc.flags = NONE;
+		Driver.createShaderResourceView(vbuf.res, desc, srvAddr);
+	}
+
+	function createBufferUAV(vbuf : BufferData, stride : Int, uavAddr : Address) {
+		var desc = tmp.uavDesc;
+		desc.numElements = Std.int(vbuf.size / stride);
+		desc.structureSizeInBytes = stride;
+		Driver.createUnorderedAccessView(vbuf.res, null, desc, uavAddr);
+	}
+
+	function uploadBuffers( buffers : h3d.shader.Buffers, buf : h3d.shader.Buffers.ShaderBuffers, which:h3d.shader.Buffers.BufferKind, shader : hxsl.RuntimeShader.RuntimeShaderData, regs : ShaderRegisters ) {
+		switch( which ) {
+		case Params:
+			if( shader.paramsSize > 0 ) {
+				var data = hl.Bytes.getArray(buf.params.toData());
+				var dataSize = shader.paramsSize << 4;
+				if( regs.params & 0x100 != 0 ) {
+					// update CBV
+					var srv = frame.srvHeap.alloc(1);
+					var alloc = allocDynamicBuffer(data,dataSize);
+					var desc = tmp.cbvDesc;
+					desc.bufferLocation = alloc.resource.getGpuVirtualAddress() + alloc.offset;
+					desc.sizeInBytes = alloc.byteSize;
+					Driver.createConstantBufferView(desc, srv);
+					if( currentShader.isCompute )
+						frame.commandList.setComputeRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
+					else
+						frame.commandList.setGraphicsRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
+				} else if( currentShader.isCompute )
+					frame.commandList.setComputeRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
+				else
+					frame.commandList.setGraphicsRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
+				var state = shader.kind == Fragment ? PIXEL_SHADER_RESOURCE : NON_PIXEL_SHADER_RESOURCE;
+				for ( i in 0...shader.paramsTexHandleCount ) {
+					var handle = buf.texHandles[i];
+					handle.texture.t.lastUseFence = frameFenceValue + 1;
+					transition(handle.texture.t, state);
+				}
+				for ( i in 0...shader.paramsBufHandleCount ) {
+					var handle = buf.bufHandles[i];
+					transition(handle.buffer.vbuf, state);
+				}
+			}
+		case Globals:
+			var isFragment = shader.kind == Fragment;
+			var bind = -1;
+			if( shader.globalsSize > 0 ) {
+				var data = hl.Bytes.getArray(buf.globals.toData());
+				var dataSize = shader.globalsSize << 4;
+				if( regs.globals & 0x100 != 0 ) {
+					// update CBV
+					var srv = frame.srvHeap.alloc(1);
+					var alloc = allocDynamicBuffer(data,dataSize);
+					var desc = isFragment ? tmp.fragmentGlobalDesc : tmp.vertexGlobalDesc;
+					desc.bufferLocation = alloc.resource.getGpuVirtualAddress() + alloc.offset;
+					desc.sizeInBytes = alloc.byteSize;
+					Driver.createConstantBufferView(desc, srv);
+					bind = regs.globals & 0xFF;
+					if( currentShader.isCompute )
+						frame.commandList.setComputeRootDescriptorTable(bind, frame.srvHeap.toGPU(srv));
+					else
+						frame.commandList.setGraphicsRootDescriptorTable(bind, frame.srvHeap.toGPU(srv));
+				} else if( currentShader.isCompute )
+					frame.commandList.setComputeRoot32BitConstants(regs.globals, dataSize >> 2, data, 0);
+				else
+					frame.commandList.setGraphicsRoot32BitConstants(regs.globals, dataSize >> 2, data, 0);
+				var state = isFragment ? PIXEL_SHADER_RESOURCE : NON_PIXEL_SHADER_RESOURCE;
+				var startIdx = shader.paramsTexHandleCount;
+				var lastIdx = startIdx + shader.globalsTexHandleCount;
+				for ( i in startIdx...lastIdx ) {
+					var handle = buf.texHandles[i];
+					handle.texture.t.lastUseFence = frameFenceValue + 1;
+					transition(handle.texture.t, state);
+				}
+				startIdx = shader.paramsBufHandleCount;
+				lastIdx = startIdx + shader.globalsBufHandleCount;
+				for ( i in startIdx...lastIdx ) {
+					var handle = buf.bufHandles[i];
+					transition(handle.buffer.vbuf, state);
+				}
+			}
+			if ( isFragment )
+				lastFragmentGlobalBind = bind;
+			else
+				lastVertexGlobalBind = bind;
+		case Textures:
+			if( shader.texturesCount > 0 ) {
+				if ( hasTexturesChanged(buf, regs) ) {
+					regs.lastHeapCount = heapCount;
+					regs.srv = frame.srvHeap.alloc(shader.texturesCount);
+					regs.samplersView = frame.samplerHeap.alloc(regs.texturesCount);
+					if ( regs.lastTextures.length < shader.texturesCount ) {
+						regs.lastTextures.resize(shader.texturesCount);
+						regs.lastTexturesBits.resize(shader.texturesCount);
+					}
+					var regIndex = regs.buffers + shader.bufferCount;
+					var textureIndex = 0;
+					var uavIndex = regs.texturesCount;
+					for( i in 0...shader.texturesCount ) {
+						var t = buf.tex[i];
+						var pt = regs.texturesTypes[i];
+						if( t == null || t.isDisposed() ) {
+							switch ( pt ) {
+							case TSampler(TCube, false):
+								t = h3d.mat.Texture.defaultCubeTexture();
+							case TSampler(_, false):
+								var color = h3d.mat.Defaults.loadingTextureColor;
+								t = h3d.mat.Texture.fromColor(color, (color >>> 24) / 255);
+							default:
+								t = errorTex;
+							}
+						}
+						if( t != null && t.t == null && t.realloc != null ) {
+							var s = currentShader;
+							t.alloc();
+							t.realloc();
+							if( hasDeviceError ) return;
+							if( s != currentShader ) {
+								// realloc triggered a shader change !
+								// we need to reset the original shader and reupload everything
+								currentShader = null;
+								selectShader(s.shader);
+								uploadShaderBuffers(buffers,Globals);
+								uploadShaderBuffers(buffers,Params);
+								uploadShaderBuffers(buffers,Textures);
+								return;
+							}
+						}
+
+						regs.lastTextures[i] = buf.tex[i] != null ? buf.tex[i].t : null;
+						regs.lastTexturesBits[i] = buf.tex[i] != null ? buf.tex[i].bits : -1;
+
+						markUsed(t);
+
+						switch( pt ) {
+						case TRWTexture(dim,arr,chans):
+							var tdim : hxsl.Ast.TexDimension = t.flags.has(Cube) ? TCube : dim;
+							var fmt;
+							if( (arr != t.flags.has(IsArray)) || dim != tdim )
+								throw "Texture format does not match: "+t+"["+t.format+"] should be "+hxsl.Ast.Tools.toString(pt);
+							var srv = frame.srvHeap.alloc(1);
+							if( !t.flags.has(Writable) )
+								throw "Texture was allocated without Writable flag";
+							t.flags.set(WasCleared);
+							transition(t.t, UNORDERED_ACCESS);
+							var desc = tmp.wtexDesc;
+							desc.format = cast getTextureFormat(t);
+							desc.viewDimension = switch( [dim,arr] ) {
+							case [T1D, false]: TEXTURE1D;
+							case [T2D, false]: TEXTURE2D;
+							case [T3D, false]: TEXTURE3D;
+							case [T1D, true]: TEXTURE1DARRAY;
+							case [T2D, true]: TEXTURE2DARRAY;
+							default: throw "Unsupported RWTexture "+t;
+							}
+							desc.mipSlice = t.startingMip;
+							desc.planeSlice = 0;
+							if(t.flags.has(Is3D)){
+								desc.wSlice = t.get_layerCount();
+							}
+							if( arr ) {
+								desc.firstArraySlice = 0;
+								desc.arraySize = 1;
+							}
+							Driver.createUnorderedAccessView(t.t.res, null, desc, regs.srv.offset(uavIndex * frame.srvHeap.stride));
+							uavIndex++;
+							continue;
+						default:
+							var state = if ( shader.kind == Fragment )
+								PIXEL_SHADER_RESOURCE;
+							else
+								NON_PIXEL_SHADER_RESOURCE;
+							transition(t.t, state);
+							createTexView(t, regs.srv.offset(textureIndex * frame.srvHeap.stride));
+							createSampler(t, regs.samplersView.offset(textureIndex * frame.samplerHeap.stride));
+							textureIndex++;
+						}
+					}
+				} else {
+					for( i in 0...shader.texturesCount ) {
+						var t = buf.tex[i];
+						if (t == null || t.t == null)
+							continue;
+						var pt = regs.texturesTypes[i];
+						var state = switch( pt ) {
+						case TRWTexture(_,_,_):
+							UNORDERED_ACCESS;
+						default:
+							(shader.kind == Fragment ? PIXEL_SHADER_RESOURCE : NON_PIXEL_SHADER_RESOURCE);
+						}
+						transition(t.t, state);
+					}
+				}
+
+				if( currentShader.isCompute ) {
+					frame.commandList.setComputeRootDescriptorTable(regs.textures, frame.srvHeap.toGPU(regs.srv));
+					if ( regs.texturesCount > 0 )
+						frame.commandList.setComputeRootDescriptorTable(regs.samplers, frame.samplerHeap.toGPU(regs.samplersView));
+				} else {
+					frame.commandList.setGraphicsRootDescriptorTable(regs.textures, frame.srvHeap.toGPU(regs.srv));
+					if ( regs.texturesCount > 0 )
+						frame.commandList.setGraphicsRootDescriptorTable(regs.samplers, frame.samplerHeap.toGPU(regs.samplersView));
+				}
+			}
+		case Buffers:
+			if( shader.bufferCount > 0 ) {
+				var srv = frame.srvHeap.alloc(shader.bufferCount);
+				var cbvIndex = 0;
+				var storageIndex = regs.cbvCount;
+				var uavIndex = regs.cbvCount + regs.storageCount;
+				for( i in 0...shader.bufferCount ) {
+					var b = buf.buffers[i];
+					var cbv = b.vbuf;
+					if ( cbv != null ) {
+						switch( regs.bufferTypes[i] ) {
+						case Uniform:
+							if( cbv.view != null )
+								throw "Buffer was allocated without UniformBuffer flag";
+							transition(cbv, VERTEX_AND_CONSTANT_BUFFER);
+							var cbvAddress = srv.offset(cbvIndex * frame.srvHeap.stride);
+							var cViewIndex = cbv.cViewIndex;
+							if ( cViewIndex == -1 ) {
+								cbv.cViewIndex = cViewIndex = cpuSrvHeap.allocIndex();
+								createCBV(cbv, cpuSrvHeap.getCpuAddressAt(cViewIndex));
+							}
+							Driver.copyDescriptorsSimple(1, cbvAddress, cpuSrvHeap.getCpuAddressAt(cViewIndex), CBV_SRV_UAV);
+							cbvIndex++;
+						case Storage:
+							var state = shader.kind == Fragment ? PIXEL_SHADER_RESOURCE : NON_PIXEL_SHADER_RESOURCE;
+							transition(cbv, state);
+							var srvAddress = srv.offset(storageIndex * frame.srvHeap.stride);
+							var stride = regs.bufferStrides[i];
+							var sViewIndex = cbv.getSRV(stride);
+							if ( sViewIndex == -1 ) {
+								sViewIndex = cpuSrvHeap.allocIndex();
+								createBufferSRV(cbv, stride, cpuSrvHeap.getCpuAddressAt(sViewIndex));
+								cbv.setSRV(stride, sViewIndex);
+							}
+							Driver.copyDescriptorsSimple(1, srvAddress, cpuSrvHeap.getCpuAddressAt(sViewIndex), CBV_SRV_UAV);
+							storageIndex++;
+						case RW:
+							if( !b.flags.has(ReadWriteBuffer) )
+								throw "Buffer was allocated without ReadWriteBuffer flag";
+							transition(cbv, UNORDERED_ACCESS);
+							var uavAddress = srv.offset(uavIndex * frame.srvHeap.stride);
+							var stride = regs.bufferStrides[i];
+							var uViewIndex = cbv.getUAV(stride);
+							if ( uViewIndex == -1 ) {
+								uViewIndex = cpuSrvHeap.allocIndex();
+								createBufferUAV(cbv, stride, cpuSrvHeap.getCpuAddressAt(uViewIndex));
+								cbv.setUAV(stride, uViewIndex);
+							}
+							Driver.copyDescriptorsSimple(1, uavAddress, cpuSrvHeap.getCpuAddressAt(uViewIndex), CBV_SRV_UAV);
+							uavIndex++;
+						default:
+							throw "assert";
+						}
+					}
+				}
+				if( currentShader.isCompute )
+					frame.commandList.setComputeRootDescriptorTable(regs.buffers, frame.srvHeap.toGPU(srv));
+				else
+					frame.commandList.setGraphicsRootDescriptorTable(regs.buffers, frame.srvHeap.toGPU(srv));
+			}
+		}
+	}
+
+	override function selectShader( shader : hxsl.RuntimeShader ) {
+		var sh = compileShader(shader);
+		if( currentShader == sh )
+			return false;
+		currentShader = sh;
+		pipelineBuilder.setShader(shader);
+		if( sh.isCompute ) {
+			frame.commandList.setComputeRootSignature(currentShader.rootSignature);
+			if ( currentPipelineState != currentShader.computePipeline ) {
+				frame.commandList.setPipelineState(currentShader.computePipeline);
+				currentPipelineState = currentShader.computePipeline;
+			}
+		} else {
+			frame.commandList.setGraphicsRootSignature(currentShader.rootSignature);
+		}
+		return true;
+	}
+
+	override function selectMaterial( pass : h3d.mat.Pass ) @:privateAccess {
+		var depthClamp = pass.depthClamp;
+		pass.depthClamp = depthClamp || useDepthClamp;
+		pipelineBuilder.selectMaterial(pass);
+		pass.depthClamp = depthClamp;
+		var st = pass.stencil;
+		if( st != null && curStencilRef != st.reference ) {
+			curStencilRef = st.reference;
+			frame.commandList.omSetStencilRef(st.reference);
+		}
+	}
+
+	override function selectTextureHandles( handles : Array<h3d.mat.TextureHandle> ) {
+		for( h in handles ) {
+			var t = h.texture;
+			if ( h.handle == -1 )
+				throw "Handle is invalid";
+			if( t != null && t.t == null && t.realloc != null ) {
+				var s = currentShader;
+				t.alloc();
+				t.realloc();
+				if( hasDeviceError ) return;
+				if( s != currentShader )
+					throw "Shader change detected.";
+			}
+			markUsed(t);
+			transition(t.t, PIXEL_SHADER_RESOURCE);
+		}
+	}
+
+	override function selectBufferHandles( handles : Array<h3d.BufferHandle> ) {
+		for ( h in handles ) {
+			var vbuf = h.buffer.vbuf;
+			if ( h.handle == -1 )
+				throw "Handle is invalid";
+			transition(vbuf, PIXEL_SHADER_RESOURCE);
+		}
+	}
+
+	override function selectBuffer(buffer:Buffer) {
+		var views = tmp.vertexViews;
+		var bview = buffer.vbuf.view;
+		var map = buffer.format.resolveMapping(currentShader.format);
+		var vbuf = buffer.vbuf;
+		for( i in 0...currentShader.inputCount ) {
+			var v = views[i];
+			var inf = map[i];
+			v.bufferLocation = bview.bufferLocation;
+			v.sizeInBytes = bview.sizeInBytes;
+			v.strideInBytes = bview.strideInBytes;
+			pipelineBuilder.setBuffer(i, inf, v.strideInBytes);
+		}
+		transition(vbuf, VERTEX_AND_CONSTANT_BUFFER);
+		frame.commandList.iaSetVertexBuffers(0, currentShader.inputCount, views[0]);
+	}
+
+	override function selectMultiBuffers(formats:hxd.BufferFormat.MultiFormat,buffers:Array<h3d.Buffer>) {
+		var views = tmp.vertexViews;
+		var map = formats.resolveMapping(currentShader.format);
+				for( i in 0...map.length ) {
+			var v = views[i];
+			var inf = map[i];
+			var vbuf = @:privateAccess buffers[inf.bufferIndex].vbuf;
+			var bview = vbuf.view;
+			v.bufferLocation = bview.bufferLocation;
+			v.sizeInBytes = bview.sizeInBytes;
+			v.strideInBytes = bview.strideInBytes;
+			transition(vbuf, VERTEX_AND_CONSTANT_BUFFER );
+			pipelineBuilder.setBuffer(i, inf, v.strideInBytes);
+		}
+		frame.commandList.iaSetVertexBuffers(0, map.length, views[0]);
+	}
+
+	static var CULL : Array<CullMode> = [NONE,BACK,FRONT,NONE];
+	static var BLEND_OP : Array<BlendOp> = [ADD,SUBTRACT,REV_SUBTRACT,MIN,MAX];
+	static var COMP : Array<ComparisonFunc> = [ALWAYS, NEVER, EQUAL, NOT_EQUAL, GREATER, GREATER_EQUAL, LESS, LESS_EQUAL];
+	static var BLEND : Array<Blend> = [
+		ONE,ZERO,SRC_ALPHA,SRC_COLOR,DEST_ALPHA,DEST_COLOR,INV_SRC_ALPHA,INV_SRC_COLOR,INV_DEST_ALPHA,INV_DEST_COLOR,
+		SRC1_COLOR,SRC1_ALPHA,INV_SRC1_COLOR,INV_SRC1_ALPHA,SRC_ALPHA_SAT
+	];
+	static var BLEND_ALPHA : Array<Blend> = [
+		ONE,ZERO,SRC_ALPHA,SRC_ALPHA,DEST_ALPHA,DEST_ALPHA,INV_SRC_ALPHA,INV_SRC_ALPHA,INV_DEST_ALPHA,INV_DEST_ALPHA,
+		SRC1_ALPHA,SRC1_ALPHA,INV_SRC1_ALPHA,INV_SRC1_ALPHA,SRC_ALPHA_SAT,
+	];
+	static var STENCIL_OP : Array<StencilOp> = [KEEP, ZERO, REPLACE, INCR_SAT, INCR, DECR_SAT, DECR, INVERT];
+
+	static function makePipeline( shader : CompiledShader, pipelineBuilder : PipelineCache.PipelineBuilder ) {
+		var p = shader.pipeline;
+		var pass = pipelineBuilder.getCurrentPass();
+		var depth = pipelineBuilder.getDepthProps();
+		if( pass.wireframe ) pass.culling = None;
+
+		var rtCount = pipelineBuilder.getRenderTargetsCount();
+		if( rtCount == 0 ) rtCount = 1;
+
+		p.numRenderTargets = rtCount;
+
+		p.rasterizerState.cullMode = CULL[pass.culling.getIndex()];
+		p.rasterizerState.fillMode = pass.wireframe ? WIREFRAME : SOLID;
+		p.depthStencilDesc.depthEnable = pass.depthTest != Always;
+		p.depthStencilDesc.depthWriteMask = !pass.depthWrite || !pipelineBuilder.getDepthEnabled() ? ZERO : ALL;
+		p.depthStencilDesc.depthFunc = COMP[pass.depthTest.getIndex()];
+		p.rasterizerState.depthClipEnable = !pass.depthClamp;
+		p.rasterizerState.depthBias = Std.int(depth.bias);
+		p.rasterizerState.slopeScaledDepthBias = depth.slopeScaledBias;
+
+		var bl = p.blendState;
+		for( i in 0...rtCount ) {
+			var t = bl.renderTargets[i];
+
+			t.blendEnable = pass.blendSrc != One || pass.blendDst != Zero;
+			t.srcBlend = BLEND[pass.blendSrc.getIndex()];
+			t.dstBlend = BLEND[pass.blendDst.getIndex()];
+			t.srcBlendAlpha = BLEND_ALPHA[pass.blendAlphaSrc.getIndex()];
+			t.dstBlendAlpha = BLEND_ALPHA[pass.blendAlphaDst.getIndex()];
+			t.blendOp = BLEND_OP[pass.blendOp.getIndex()];
+			t.blendOpAlpha = BLEND_OP[pass.blendAlphaOp.getIndex()];
+			t.renderTargetWriteMask = pass.colorMask;
+
+			var fmt = pipelineBuilder.getRenderTargetFormat(i);
+			p.rtvFormats[i] = fmt == null ? R8G8B8A8_UNORM : toDxgiFormat(fmt);
+		}
+		p.dsvFormat = toDxgiDepthFormat(depth.format);
+		for ( i in rtCount...8 )
+			p.rtvFormats[i] = DxgiFormat.UNKNOWN;
+
+		for( i in 0...shader.inputCount ) {
+			var d = shader.inputLayout[i];
+
+			var inf = pipelineBuilder.getBufferInput(i);
+			d.alignedByteOffset = inf.offset;
+			d.format = @:privateAccess switch( [shader.format.inputs[i].type, inf.precision] ) {
+			case [DFloat, F32]: R32_FLOAT;
+			case [DFloat, F16]: R16_FLOAT;
+			case [DFloat, S8]: R8_SNORM;
+			case [DFloat, U8]: R8_UNORM;
+			case [DVec2, F32]: R32G32_FLOAT;
+			case [DVec2, F16]: R16G16_FLOAT;
+			case [DVec2, S8]: R8G8_SNORM;
+			case [DVec2, U8]: R8G8_UNORM;
+			case [DVec3, F32]: R32G32B32_FLOAT;
+			case [DVec3, F16]: R16G16B16A16_FLOAT; // padding
+			case [DVec3, S8]: R8G8B8A8_SNORM; // padding
+			case [DVec3, U8]: R8G8B8A8_UNORM; // padding
+			case [DVec4, F32]: R32G32B32A32_FLOAT;
+			case [DVec4, F16]: R16G16B16A16_FLOAT;
+			case [DVec4, S8]: R8G8B8A8_SNORM;
+			case [DVec4, U8]: R8G8B8A8_UNORM;
+			case [DBytes4, _]: R8G8B8A8_UINT;
+			default: throw "assert";
+			};
+		}
+
+		var stencil = pass.stencil;
+		var st = p.depthStencilDesc;
+		st.stencilEnable = stencil != null;
+		if( stencil != null ) {
+			var front = st.frontFace;
+			var back = st.backFace;
+			st.stencilReadMask = stencil.readMask;
+			st.stencilWriteMask = stencil.writeMask;
+			front.stencilFunc = COMP[stencil.frontTest.getIndex()];
+			front.stencilPassOp = STENCIL_OP[stencil.frontPass.getIndex()];
+			front.stencilFailOp = STENCIL_OP[stencil.frontSTfail.getIndex()];
+			front.stencilDepthFailOp = STENCIL_OP[stencil.frontDPfail.getIndex()];
+			back.stencilFunc = COMP[stencil.backTest.getIndex()];
+			back.stencilPassOp = STENCIL_OP[stencil.backPass.getIndex()];
+			back.stencilFailOp = STENCIL_OP[stencil.backSTfail.getIndex()];
+			back.stencilDepthFailOp = STENCIL_OP[stencil.backDPfail.getIndex()];
+		}
+
+		return Driver.createGraphicsPipelineState(p);
+	}
+
+	override function warmupShader( shader : hxsl.RuntimeShader) {
+		compileShader(shader);
+	}
+
+	function flushPipeline() : Bool {
+		if( !pipelineBuilder.needFlush )
+			return true;
+
+		#if heaps_mt_hxsl_cache
+		currentShader.pipelineMutex.acquire();
+		#end
+		var cache = pipelineBuilder.lookup(currentShader.pipelines, currentShader.inputCount);
+		if( cache.pipeline == null ) {
+			var p = makePipeline(currentShader, pipelineBuilder);
+			if( p == null ) {
+				h3d.Engine.getCurrent().mem.garbage();
+				p = makePipeline(currentShader, pipelineBuilder);
+			}
+			#if pso_cache_verbose
+			var reason = currentShader.usedPSOConfig ? "cache hit but state missing" : "not in cache";
+			trace('Pipeline cache miss ($reason): $cache [${currentShader.shader.signature}]\n${currentShader.pipelines.diff(cache)}');
+			#end
+			if( p == null ) {
+				trace('Failed to create pipeline for ${currentShader.shader.signature}');
+				#if !js
+				hasDeviceError = true;
+				#end
+				#if heaps_mt_hxsl_cache
+				currentShader.pipelineMutex.release();
+				#end
+				return false;
+			}
+			cache.pipeline = p;
+			psoConfigCache?.addConfig(currentShader.shader, cache);
+		}
+		#if heaps_mt_hxsl_cache
+		currentShader.pipelineMutex.release();
+		#end
+		if ( currentPipelineState != cache.pipeline ) {
+			frame.commandList.setPipelineState(cache.pipeline);
+			currentPipelineState = cache.pipeline;
+		}
+		return true;
+	}
+
+	// MARKING
+
+	override function beginEvent( name : String ) {
+		#if heaps_debug_events
+		frame.commandList.pixBeginEvent(0, @:privateAccess name.bytes);
+		#end
+	}
+
+	override function endEvent() {
+		#if heaps_debug_events
+		frame.commandList.pixEndEvent();
+		#end
+	}
+
+	// QUERIES
+
+	static inline var QUERY_COUNT = 128;
+
+	override function allocQuery( queryKind : QueryKind ) : Query {
+		if( queryKind != TimeStamp )
+			throw "Not implemented";
+		return new Query();
+	}
+
+	override function deleteQuery( q : Query ) {
+		// nothing to do
+	}
+
+	override function beginQuery( q : Query ) {
+		// nothing
+	}
+
+	override function endQuery( q : Query ) {
+		var heap = frame.queryHeaps[frame.queryCurrentHeap];
+		if( heap == null ) {
+			var desc = new QueryHeapDesc();
+			desc.type = TIMESTAMP;
+			desc.count = QUERY_COUNT;
+			heap = Driver.createQueryHeap(desc);
+			frame.queryHeaps[frame.queryCurrentHeap] = heap;
+			if( frame.queryBuffer != null ) {
+				frame.queryBuffer.release();
+				frame.queryBuffer = null;
+			}
+		}
+		q.offset = frame.queryHeapOffset++;
+		q.heap = frame.queryCurrentHeap;
+		frame.commandList.endQuery(heap, TIMESTAMP, q.offset);
+		frame.queriesPending.push(q);
+		if( frame.queryHeapOffset == QUERY_COUNT ) {
+			frame.queryHeapOffset = 0;
+			frame.queryCurrentHeap++;
+		}
+	}
+
+	override function queryResultAvailable( q : Query ) {
+		return q.heap < 0;
+	}
+
+	override function queryResult( q : Query ) {
+		return q.result;
+	}
+
+	function beginQueries() {
+		if( frame.queryBuffer == null || frame.queriesPending.length == 0 )
+			return;
+		var ptr : hl.BytesAccess<Int64> = frame.queryBuffer.map(0, null);
+		while( true ) {
+			var q = frame.queriesPending.pop();
+			if( q == null ) break;
+			if( q.heap >= 0 ) {
+				var position = q.heap * QUERY_COUNT + q.offset;
+				var v = ptr[position];
+				q.result = ((v / tsFreq).low + (v % tsFreq).low / tsFreq.low) * 1e9;
+				q.heap = -1;
+			}
+		}
+		frame.queryBuffer.unmap(0, null);
+	}
+
+	function flushQueries() {
+		if( frame.queryHeapOffset > 0 )
+			frame.queryCurrentHeap++;
+		if( frame.queryCurrentHeap == 0 )
+			return;
+		if( frame.queryBuffer == null ) {
+			frame.queryBuffer = allocGPU(frame.queryHeaps.length * QUERY_COUNT * 8, READBACK, COPY_DEST);
+			frame.queryBuffer.setName("QueryBuffer");
+		}
+		var position = 0;
+		for( i in 0...frame.queryCurrentHeap ) {
+			var count = i < frame.queryCurrentHeap - 1 || frame.queryHeapOffset == 0 ? QUERY_COUNT : frame.queryHeapOffset;
+			frame.commandList.resolveQueryData(frame.queryHeaps[i], TIMESTAMP, 0, count, frame.queryBuffer, position);
+			position += count * 8;
+		}
+		frame.queryCurrentHeap = 0;
+		frame.queryHeapOffset = 0;
+	}
+
+	// --- DRAW etc.
+
+	override function draw( ibuf : Buffer, startIndex : Int, ntriangles : Int ) {
+		if ( (tmp.rect.right - tmp.rect.left) <= 0 || (tmp.rect.bottom - tmp.rect.top) <= 0 )
+			return;
+
+		if( !flushPipeline() )
+			return;
+		if( currentIndex != ibuf ) {
+			currentIndex = ibuf;
+			transition(ibuf.vbuf, INDEX_BUFFER);
+			frame.commandList.iaSetIndexBuffer(ibuf.vbuf.iview);
+		}
+		flushTransitions();
+		frame.commandList.drawIndexedInstanced(ntriangles * 3,1,startIndex,0,0);
+	}
+
+	override function drawInstanced(ibuf:Buffer, commands:InstanceBuffer) {
+		if ( (tmp.rect.right - tmp.rect.left) <= 0 || (tmp.rect.bottom - tmp.rect.top) <= 0 )
+			return;
+
+		if( !flushPipeline() )
+			return;
+		if( currentIndex != ibuf ) {
+			currentIndex = ibuf;
+			transition(ibuf.vbuf, INDEX_BUFFER);
+			frame.commandList.iaSetIndexBuffer(ibuf.vbuf.iview);
+		}
+		if( commands.data != null ) {
+			transition(commands.data, INDIRECT_ARGUMENT);
+			if ( commands.countBuffer != null )
+				transition(commands.countBuffer, INDIRECT_ARGUMENT);
+			flushTransitions();
+			frame.commandList.executeIndirect(indirectCommand, commands.commandCount, commands.data.res, commands.offset * InstanceBuffer.ELEMENT_SIZE, commands.countBuffer != null ? commands.countBuffer.res : null, commands.countOffset * 4);
+		} else {
+			flushTransitions();
+			frame.commandList.drawIndexedInstanced(commands.indexCount, commands.commandCount, commands.startIndex, 0, 0);
+		}
+	}
+
+	function flushHeaps() {
+		frame.srvHeapCache.checkSize(bindlessSrvHeap.size + INITIAL_SRV_COUNT, frame.toRelease);
+		frame.samplerHeapCache.checkSize(hxd.Math.imin(bindlessSamplerHeap.size + INITIAL_SAMPLER_COUNT, 2048), frame.toRelease);
+		frame.srvHeap = frame.srvHeapCache.next();
+		frame.samplerHeap = frame.samplerHeapCache.next();
+		heapCount++;
+		var arr = tmp.descriptors2;
+		arr[0] = @:privateAccess frame.srvHeap.heap;
+		arr[1] = @:privateAccess frame.samplerHeap.heap;
+		frame.commandList.setDescriptorHeaps(arr);
+
+		if ( !bindlessSrvHeap.isEmpty() )
+			Driver.copyDescriptorsSimple( bindlessSrvHeap.size, frame.srvHeap.address.value, bindlessSrvHeap.address.value, CBV_SRV_UAV );
+		if ( !bindlessSamplerHeap.isEmpty() )
+			Driver.copyDescriptorsSimple( bindlessSamplerHeap.size, frame.samplerHeap.address.value, bindlessSamplerHeap.address.value, SAMPLER );
+
+		@:privateAccess frame.srvHeap.cursor = bindlessSrvHeap.size;
+		@:privateAccess frame.samplerHeap.cursor = bindlessSamplerHeap.size;
+
+		if ( currentShader != null ) {
+			if ( currentShader.shader.hasBindless() ) {
+				if ( currentShader.isCompute )
+					frame.commandList.setComputeRootSignature(currentShader.rootSignature);
+				else
+					frame.commandList.setGraphicsRootSignature(currentShader.rootSignature);
+				if ( currentPipelineState != null )
+					frame.commandList.setPipelineState(currentPipelineState);
+			}
+
+			inline function rebindGlobal(bindSlot, desc) {
+				if ( bindSlot >= 0 ) {
+					var srv = frame.srvHeap.alloc(1);
+					Driver.createConstantBufferView(desc, srv);
+					if( currentShader.isCompute )
+						frame.commandList.setComputeRootDescriptorTable(bindSlot, frame.srvHeap.toGPU(srv));
+					else
+						frame.commandList.setGraphicsRootDescriptorTable(bindSlot, frame.srvHeap.toGPU(srv));
+				}
+			}
+
+			if ( lastGlobalsShader == currentShader ) {
+				rebindGlobal(lastVertexGlobalBind, tmp.vertexGlobalDesc);
+				rebindGlobal(lastFragmentGlobalBind, tmp.fragmentGlobalDesc);
+			}
+		}
+	}
+
+	override function flushShaderBuffers() {
+		if( frame.srvHeap.available < 128 || frame.samplerHeap.available < 64 )
+			flushHeaps();
+	}
+
+	function flushFrame( onResize : Bool = false ) {
+		flushQueries();
+		frame.commandList.close();
+		frame.copyCommandList.close();
+		copyQueue.executeCommandList(frame.copyCommandList);
+		copyQueue.signal(copyFence, ++copyFenceValue);
+		directQueue.wait(copyFence, copyFenceValue);
+		directQueue.executeCommandList(frame.commandList);
+		currentPipelineState = null;
+		currentShader = null;
+		Driver.flushMessages();
+		psoConfigCache?.save();
+		frame.fenceValue = ++frameFenceValue;
+		directQueue.signal(frameFence, frame.fenceValue);
+	}
+
+	override function present() {
+
+		upscaling.beforePresent();
+		transition(frame.backBuffer, PRESENT);
+		flushTransitions();
+		flushFrame();
+		upscaling.beforeQueuePresent();
+		directQueue.present(hxd.Window.getInstance().presentMode != hxd.PresentMode.Immediate);
+		upscaling.afterQueuePresent();
+		waitForFrame(Driver.getCurrentBackBufferIndex());
+		beginFrame();
+
+		if( hasDeviceError ) {
+			Sys.println("----------- OnContextLost ----------");
+			hasDeviceError = false;
+			dispose();
+			reset();
+			var cur = h3d.Engine.getCurrent();
+			for( f in [for( f in contextLost ) f] ) f();
+			cur?.setCurrent();
+		}
+
+	}
+
+	function waitForFrame( index : Int ) {
+		var frame = frames[index];
+		if( frameFence.getValue() < frame.fenceValue ) {
+			frameFence.setEvent(frame.fenceValue, fenceEvent);
+			fenceEvent.wait(-1);
+		}
+	}
+
+	override function computeDispatch( x : Int = 1, y : Int = 1, z : Int = 1, barrier : Bool = true ) {
+		flushTransitions();
+		frame.commandList.dispatch(x,y,z);
+		if( barrier )
+			memoryBarrier();
+	}
+
+	override function memoryBarrier() {
+		needUAVBarrier = true;
+	}
+
+	override function getTextureHandle( t : h3d.mat.Texture ) : h3d.mat.TextureHandle {
+		var handle : h3d.mat.TextureHandle = null;
+		if ( t.t == null && t.realloc != null ) {
+			t.alloc();
+			t.realloc();
+		}
+		var handles = textureHandles.get(t);
+		if ( handles == null ) {
+			handles = [];
+			textureHandles.set(t, handles);
+		}
+		handle = handles.get(t.bits);
+		if ( handle == null ) {
+			var samplerBits = getSamplerBits(t);
+			var samplerIndex = samplerHandles.get(samplerBits);
+			if ( samplerIndex == null ) {
+				var sampler = getCpuSampler(t);
+				samplerIndex = bindlessSamplerHeap.allocIndex();
+				samplerHandles.set(samplerBits, samplerIndex);
+				Driver.copyDescriptorsSimple(1, bindlessSamplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
+				Driver.copyDescriptorsSimple(1, frame.samplerHeap.getCpuAddressAt(samplerIndex), sampler, SAMPLER);
+			}
+			var srv = getCpuTexView(t);
+			var srvIndex = bindlessSrvHeap.allocIndex();
+			Driver.copyDescriptorsSimple(1, bindlessSrvHeap.getCpuAddressAt(srvIndex), srv, CBV_SRV_UAV);
+			Driver.copyDescriptorsSimple(1, frame.srvHeap.getCpuAddressAt(srvIndex), srv, CBV_SRV_UAV);
+			handle = new h3d.mat.TextureHandle(t, haxe.Int64.make(samplerIndex, srvIndex));
+			handles.set(t.bits, handle);
+		}
+		return handle;
+	}
+
+	override function getBufferHandle( b : h3d.Buffer ) : h3d.BufferHandle {
+		var vbuf = b.vbuf;
+		var handle : h3d.BufferHandle = vbuf.handle;
+		if ( handle == null ) {
+			var viewIndex = bindlessSrvHeap.allocIndex();
+			var srv = bindlessSrvHeap.getCpuAddressAt(viewIndex);
+			createBufferSRV(b.vbuf, 4, srv);
+			Driver.copyDescriptorsSimple(1, frame.srvHeap.getCpuAddressAt(viewIndex), srv, CBV_SRV_UAV);
+			vbuf.handle = handle = new h3d.BufferHandle(b, viewIndex);
+		}
+		return handle;
+	}
+
+	override function copyBackBuffer( to : h3d.mat.Texture ) : Bool {
+		if( to.t == null )
+			return false;
+		markUsed(to);
+		transition(frame.backBuffer, COPY_SOURCE);
+		transition(to.t, COPY_DEST);
+		flushTransitions();
+		var dst = tmp.dstTextureLocation;
+		var src = tmp.srcTextureLocation;
+		dst.res = to.t.res;
+		src.res = frame.backBuffer.res;
+		dst.type = SUBRESOURCE_INDEX;
+		src.type = SUBRESOURCE_INDEX;
+		dst.subResourceIndex = 0;
+		src.subResourceIndex = 0;
+		frame.commandList.copyTextureRegion(dst, 0, 0, 0, src, null);
+		to.flags.set(WasCleared);
+		transition(frame.backBuffer, RENDER_TARGET);
+		return true;
+	}
+
+	function setSwapChain( sc : SwapChain ) {
+		swapChain = sc;
+		Driver.setSwapChain(sc);
+	}
+
+	function beginExternalCommands() : CommandList {
+		flushTransitions();
+		return frame.commandList;
+	}
+
+	function endExternalCommands() {
+		var arr = tmp.descriptors2;
+		arr[0] = @:privateAccess frame.srvHeap.heap;
+		arr[1] = @:privateAccess frame.samplerHeap.heap;
+		frame.commandList.setDescriptorHeaps(arr);
+		heapCount++;
+		currentShader = null;
+		currentPipelineState = null;
+	}
+
+	#if (hl_ver >= version("1.16.0"))
+	public static function setGpuCrashHandler( cb : (String, haxe.io.Bytes, Bool) -> Void ) {
+		var wrapper = function( name : hl.Bytes, bytes : hl.Bytes, size : Int, lastFile : Bool ) {
+			try {
+				var name = @:privateAccess String.fromUTF8(name);
+				var content = haxe.io.Bytes.ofData(new haxe.io.BytesData(bytes, size));
+				cb(name, content, lastFile);
+			} catch(e) {
+				trace("Failed to process gpu crash");
+			}
+		}
+		Driver.setGpuCrashHandler(wrapper);
+	}
+	#end
+}
+#end

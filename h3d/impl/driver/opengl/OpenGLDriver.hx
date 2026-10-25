@@ -15,7 +15,7 @@ import h3d.impl.driver.opengl.CompiledAttribute;
 import h3d.impl.driver.opengl.CompiledProgram;
 import h3d.impl.driver.opengl.CompiledShader;
 
-#if (js || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
+#if ((js && !dx12) || usegl || (limen && (gfx_opengl || (!gfx_dx11 && !gfx_dx12 && !gfx_vulkan))))
 
 #if js
 import hxd.impl.TypedArray;
@@ -252,7 +252,6 @@ class OpenGLDriver extends Driver {
 		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
 	}
 
-	#if limen
 	static var computeEnabled : Bool = false;
 	public static function enableComputeShaders() {
 		#if limen
@@ -261,7 +260,19 @@ class OpenGLDriver extends Driver {
 		throw "enableComputeShaders() requires limen 1.15+";
 		#end
 	}
-	#end
+
+	@:allow(h3d.impl.driver.DriverFactory)
+	static function onFeatureRequested( f : Feature ) : Bool {
+		#if limen
+		if( f != ComputeShaders ) return false;
+		if( @:privateAccess limen.platform.window.Window.windows.length > 0 )
+			throw "Driver.requestFeature(ComputeShaders) must be called before the window is created";
+		computeEnabled = true;
+		return true;
+		#else
+		return false;
+		#end
+	}
 
 	override function setRenderFlag( r : RenderFlag, value : Int ) {
 		switch( r ) {
@@ -302,12 +313,12 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function getNativeShaderCode( shader : hxsl.RuntimeShader ) {
-		inline function compile(sh) {
-			return makeCompiler().run(sh);
+		inline function compile( sh : hxsl.RuntimeShader.RuntimeShaderData ) {
+			return sh.code ?? makeCompiler().run(sh.data);
 		}
 		if( shader.mode == Compute )
-			return compile(shader.compute.data);
-		return "// vertex:\n" + compile(shader.vertex.data) + "// fragment:\n" + compile(shader.fragment.data);
+			return compile(shader.compute);
+		return "// vertex:\n" + compile(shader.vertex) + "// fragment:\n" + compile(shader.fragment);
 	}
 
 	override public function getDriverName(details:Bool) {
@@ -345,9 +356,6 @@ class OpenGLDriver extends Driver {
 		var s = gl.createShader(type);
 		if( shader.code == null ){
 			shader.code = glout.run(shader.data);
-			#if !heaps_compact_mem
-			shader.data.funs = null;
-			#end
 		}
 		gl.shaderSource(s, shader.code);
 		var tracing = hxd.NMBTrace.enabled();
@@ -626,6 +634,7 @@ class OpenGLDriver extends Driver {
 				}
 			p.format = hxd.BufferFormat.make(format);
 			programs.set(shader.id, p);
+			shader.releaseData();
 		}
 		if( curShader == p ) return false;
 		setProgram(p);
@@ -2149,7 +2158,7 @@ class OpenGLDriver extends Driver {
 			glES != null
 				? glES >= 3
 				: glVersion >= 3.3 || gl.hasExtension("GL_ARB_instanced_arrays") && gl.hasExtension("GL_ARB_draw_instanced");
-		case Bindless, Upscaling:
+		case Bindless:
 			false;
 		};
 		#end

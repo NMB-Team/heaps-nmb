@@ -100,6 +100,7 @@ class GlslOut {
 	var isCompute : Bool;
 	var bindlessSamplers : Map<String, BindlessResolvedResource>;
 	var bindlessBuffers : Map<String, BindlessResolvedResource>;
+	var highpUniforms : Bool;
 
 	var isES(get,never) : Bool;
 	var isES2(get,never) : Bool;
@@ -265,6 +266,7 @@ class GlslOut {
 			var v = v.clone();
 			#end
 			v.type = TArray(t,size);
+			if( highpUniforms ) add("highp ");
 			addVar(v);
 			v.type = TBuffer(t,size,kind);
 			add("; }");
@@ -855,6 +857,8 @@ class GlslOut {
 					add('layout(${format}32f, set=${binding.set}, binding=${binding.binding}) uniform ');
 				} else
 					add('layout(${format}32f, binding=${rwTextures++}) uniform ');
+			case TArray(TVec(4, VFloat), _) if( highpUniforms ):
+				add("uniform highp ");
 			default:
 				if( isVulkan && isSampler(v.type) ) {
 					if( vulkanLayout == null )
@@ -1080,6 +1084,7 @@ class GlslOut {
 		var f = s.funs[0];
 		isVertex = f.kind == Vertex;
 		isCompute = f.kind == Main;
+		highpUniforms = isES && f.kind == Fragment && (foundGlobals.exists(FloatBitsToInt) || foundGlobals.exists(FloatBitsToUint));
 
 		if( isCompute ) {
 			// no prec

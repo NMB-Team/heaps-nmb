@@ -34,7 +34,7 @@ class Output {
 
 	@:access(h3d.scene)
 	function setupShaders( passes : h3d.pass.PassList ) {
-		var lightInit = false;
+		var lightInit = false, failed = false;
 		for( p in passes ) {
 			var shaders = p.pass.getShadersRec();
 			shaders = processShaders(p, shaders);
@@ -45,8 +45,18 @@ class Output {
 				}
 				shaders = ctx.lightSystem.computeLight(p.obj, shaders);
 			}
-			p.shader = output.compileShaders(ctx.globals, shaders, p.pass.batchMode ? Batch : Default);
 			p.shaders = shaders;
+			if( onShaderError != null ) {
+				try {
+					p.shader = output.compileShaders(ctx.globals, shaders, p.pass.batchMode ? Batch : Default);
+				} catch( e ) {
+					p.shader = null;
+					failed = true;
+					onShaderError(e.message, p);
+					continue;
+				}
+			} else
+				p.shader = output.compileShaders(ctx.globals, shaders, p.pass.batchMode ? Batch : Default);
 			var t = p.shader.fragment.textures;
 			if( t == null || t.type.match(TArray(_)) )
 				p.texture = 0;
@@ -55,6 +65,8 @@ class Output {
 				p.texture = t == null ? 0 : t.id;
 			}
 		}
+		if( failed )
+			passes.filter(p -> p.shader != null);
 	}
 
 	inline function log( str : String ) {
@@ -105,8 +117,9 @@ class Output {
 				defaultSort(passes);
 			else
 				sort(passes);
-			var buf = ctx.shaderBuffers, prevShader = null;
+			var buf = ctx.shaderBuffers, prevShader = null, failedShader = null;
 			for( p in passes ) {
+				if( p.shader == failedShader ) continue;
 				#if sceneprof h3d.impl.SceneProf.mark(p.obj); #end
 				ctx.globalPreviousModelView = p.obj.prevAbsPos ?? p.obj.absPos;
 				ctx.globalModelView = p.obj.absPos;
@@ -118,6 +131,7 @@ class Output {
 						try {
 							ctx.engine.selectShader(p.shader);
 						} catch(e) {
+							failedShader = p.shader;
 							onShaderError(e.message, p);
 							continue;
 						}
@@ -132,7 +146,15 @@ class Output {
 					ctx.fillParams(buf, p.shader, p.shaders);
 					ctx.engine.uploadInstanceShaderBuffers(buf);
 				}
-				drawObject(p);
+				if( onShaderError != null ) {
+					try {
+						drawObject(p);
+					} catch(e) {
+						onShaderError(e.message, p);
+						continue;
+					}
+				} else
+					drawObject(p);
 			}
 		} catch(e:Dynamic) {
 			if( gpuQuery != null ) engine.gpuTrace.end(gpuQuery);

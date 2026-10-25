@@ -41,7 +41,7 @@ class CascadeShadow extends hxsl.Shader {
 				var viewZ = (transformedPosition * camera.view.mat3x4()).z;
 
 				var shouldContinue = true;
-				#if (limen && gfx_dx11)
+				#if ((limen && (gfx_dx11 || gfx_dx12)) || (js && dx12))
 				for( i in 0...cascadeCount ) {
 				#else
 				@unroll for( i in 0...MAX_CASCADE_COUNT )

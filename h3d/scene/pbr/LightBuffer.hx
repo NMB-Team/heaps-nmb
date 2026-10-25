@@ -9,6 +9,7 @@ class LightBuffer {
 	var useBindless : Bool;
 	var useDynamicSamplerIndex : Bool;
 	public var shadowHandles : Array<h3d.mat.TextureHandle> = [];
+	public var tightShadowSamplers = #if (js && !dx12) true #else false #end;
 
 	var MAX_DIR_SHADOW = 1;
 	var MAX_SPOT_SHADOW = 2;
@@ -32,7 +33,7 @@ class LightBuffer {
 	// Keep in sync with h3d.shader.pbr.DefaultForward
 	final DIR_LIGHT_STRIDE     = 2;
 	final POINT_LIGHT_STRIDE   = 2;
-	final SPOT_LIGHT_STRIDE    = 3;
+	final SPOT_LIGHT_STRIDE    = 4;
 	final CAPSULE_LIGHT_STRIDE = 3;
 	final RECT_LIGHT_STRIDE    = 6;
 
@@ -378,6 +379,7 @@ class LightBuffer {
 			var pbr = @:privateAccess pl.pbr;
 			fillColor(i, pl.color, pl.getIntensity());
 			lightInfos[i+2] = pbr.pointSize;
+			lightInfos[i+3] = pbr.inverseSquareFalloff ? 1 : 0;
 			fillVector(lightInfos, pbr.lightPos, i+4);
 			lightInfos[i+7] = pbr.invLightRange4;
 		}
@@ -405,6 +407,7 @@ class LightBuffer {
 			lightInfos[i+7] = pbr.invLightRange4;
 			fillVector(lightInfos, pbr.spotDir, i+8);
 			lightInfos[i+11] = pbr.range;
+			lightInfos[i+12] = pbr.inverseSquareFalloff ? 1 : 0;
 		}
 
 		for (li in 0...spotLightsShadow.length) {
@@ -434,6 +437,7 @@ class LightBuffer {
 			fillVector(lightInfos, pbr.lightPos, i+4);
 			lightInfos[i+7] = pbr.invRange4;
 			fillVector(lightInfos, pbr.left, i+8);
+			lightInfos[i+11] = pbr.inverseSquareFalloff ? 1 : 0;
 		}
 
 		for (li in 0...capsuleLightsShadow.length) {
@@ -465,6 +469,7 @@ class LightBuffer {
 			lightInfos[i+19] = pbr.horizontalFallOff;
 			lightInfos[i+20] = pbr.verticalAngle;
 			lightInfos[i+21] = pbr.verticalFallOff;
+			lightInfos[i+22] = pbr.inverseSquareFalloff ? 1 : 0;
 		}
 
 		for (li in 0...rectLightsShadow.length) {
@@ -512,11 +517,13 @@ class LightBuffer {
 		s.capsuleLightCount = capsuleLights.length;
 		s.rectLightCount = rectLights.length;
 		s.HAS_CASCADE = cascadeLight != null;
-		s.MAX_DIR_SHADOW_COUNT = MAX_DIR_SHADOW;
-		s.MAX_POINT_SHADOW_COUNT = MAX_POINT_SHADOW;
-		s.MAX_SPOT_SHADOW_COUNT = MAX_SPOT_SHADOW;
-		s.MAX_CAPSULE_SHADOW_COUNT = MAX_CAPSULE_SHADOW;
-		s.MAX_RECT_SHADOW_COUNT = MAX_RECT_SHADOW;
+		var tight = tightShadowSamplers && !useBindless;
+		s.DYNAMIC_SAMPLER_INDEX = useDynamicSamplerIndex && !tight;
+		s.MAX_DIR_SHADOW_COUNT = tight ? dirLightsShadow.length : MAX_DIR_SHADOW;
+		s.MAX_POINT_SHADOW_COUNT = tight ? pointLightsShadow.length : MAX_POINT_SHADOW;
+		s.MAX_SPOT_SHADOW_COUNT = tight ? spotLightsShadow.length : MAX_SPOT_SHADOW;
+		s.MAX_CAPSULE_SHADOW_COUNT = tight ? capsuleLightsShadow.length : MAX_CAPSULE_SHADOW;
+		s.MAX_RECT_SHADOW_COUNT = tight ? rectLightsShadow.length : MAX_RECT_SHADOW;
 		s.dirShadowCount = dirLightsShadow.length;
 		s.pointShadowCount = pointLightsShadow.length;
 		s.spotShadowCount = spotLightsShadow.length;

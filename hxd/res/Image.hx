@@ -92,7 +92,7 @@ class Image extends Resource {
 
 	/**
 		Disable the mip levels streaming : the texture is loaded at full resolution.
-		Must be set before the texture is loaded.
+		If set after the texture is loaded, it is reloaded at full resolution on the next streaming update.
 	**/
 	public var disableStreaming = false;
 
@@ -634,6 +634,7 @@ class Image extends Resource {
 			if (stream != null)
 				stream.cancel();
 			stream = null;
+			tex.flags.unset(Streamed);
 		} else if (stream == null)
 			stream = new TextureStream(this);
 		else

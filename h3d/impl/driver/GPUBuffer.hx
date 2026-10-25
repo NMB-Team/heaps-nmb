@@ -2,6 +2,8 @@ package h3d.impl.driver;
 
 #if macro
 typedef GPUBuffer = {};
+#elseif (js && dx12)
+typedef GPUBuffer = h3d.impl.driver.dx12.js.JSDriver.BufferData;
 #elseif js
 typedef GPUBuffer = js.html.webgl.Buffer;
 #elseif (limen && ((gfx_dx11 && (gfx_dx12 || gfx_vulkan || gfx_opengl)) || (gfx_dx12 && (gfx_vulkan || gfx_opengl)) || (gfx_vulkan && gfx_opengl)))

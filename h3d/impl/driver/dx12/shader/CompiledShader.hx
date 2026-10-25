@@ -22,6 +22,9 @@ class CompiledShader {
 	public var isCompute : Bool;
 	public var computePipeline : ComputePipelineState;
 	public var usedPSOConfig : Bool;
+	#if heaps_mt_hxsl_cache
+	public var pipelineMutex = new sys.thread.Mutex();
+	#end
 
 	public function new() {
 	}

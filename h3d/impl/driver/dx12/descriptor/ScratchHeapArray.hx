@@ -19,6 +19,14 @@ class ScratchHeapArray {
 		cursor = 0;
 	}
 
+	public function checkSize(minSize:Int, toRelease:Array<limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource>) {
+		if(minSize <= size) return;
+		size = minSize;
+		for(h in heaps) toRelease.push(@:privateAccess h.heap);
+		heaps = [];
+		cursor = 0;
+	}
+
 	public function next() {
 		var h = heaps[cursor++];
 		if(h == null) {

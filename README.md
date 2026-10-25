@@ -82,3 +82,11 @@ Get started!
 * [Live samples with source code](https://heaps.io/samples/)
 * [Documentation](https://heaps.io/documentation/home.html)
 * [API documentation](https://heaps.io/api/)
+
+### JavaScript DX12 host
+
+The `-D dx12` JavaScript target uses the Origin DX12 host API through
+`h3d.impl.driver.dx12.js.JSDriver`. It requires the host's `dx.*` bindings and
+JavaScript implementations of `hl.*`; it does not run in a standard browser.
+Supply those bindings on the compiler classpath. Regular JavaScript builds
+continue to use WebGL, and native builds use Limen's selected graphics driver.

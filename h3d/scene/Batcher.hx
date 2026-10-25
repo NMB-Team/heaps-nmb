@@ -755,7 +755,7 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@param var instanceStride : Int;
 		@param var modelViewOffset : Int;
 		@param var instancesInfos : StorageBuffer<Int>; // 1 elements => 0 : flags = subPartID(16 bits) + subMeshID(16 bits)
-		@param var subMeshInfos : StorageBuffer<Float>; // 3 elements => 0 : lodStart, 1 : lodCount, 2 : boundingSphere
+		@param var subMeshInfos : StorageBuffer<Vec4>; // 2 elements => 0 : boundingSphere (center, radius), 1 : x : lodStart, y : lodCount
 		@param var lodInfos : StorageBuffer<Float>; // x : screenRatio
 		@param var buckets : RWBuffer<Int>;
 		@param var instanceSlots : RWBuffer<Int>;
@@ -769,7 +769,8 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@param var maxDistance : Float = -1;
 		@param var meshLodScale : Float = 1.0;
 
-		final subMeshInfosStride : Int = 3;
+		final subMeshInfosStride : Int = 2;
+		final subPartInfosStride : Int = 2;
 
 		@param var lightMatrix : Mat3;
 		@param var lightOBBMin : Vec3;
@@ -777,6 +778,25 @@ private class BatchCommandBuilder extends hxsl.Shader {
 
 		@param var hzb : Sampler2D;
 		@param var hzbSize : Vec2;
+
+		@const var ENABLE_STREAMING_FEEDBACK : Bool;
+		@param var streamingFeedback : RWBuffer<Int>;
+		@param var feedbackSize : Int;
+		@param var textureHandlePos : StorageBuffer<Int>;
+		@param var textureHandleCount : Int;
+
+		function writeStreamingFeedback( instanceID : Int ) {
+			var base = instanceID * instanceStride;
+			for ( i in 0...textureHandleCount ) {
+				var pos = textureHandlePos[i];
+				var v = instancesData[base + (pos >> 2)];
+				var c = pos & 3;
+				var f = c == 0 ? v.x : (c == 1 ? v.y : (c == 2 ? v.z : v.w));
+				var srv = floatBitsToInt(f);
+				if ( srv < feedbackSize && streamingFeedback[srv] == 0 )
+					streamingFeedback[srv] = 1;
+			}
+		}
 
 		function insideOBB(pos : Vec3, radius : Float, min : Vec3, max : Vec3) : Bool {
 			return (pos.x + radius) > min.x && (pos.x - radius) < max.x &&
@@ -805,7 +825,6 @@ private class BatchCommandBuilder extends hxsl.Shader {
 				instancesData[modelViewPos + 2],
 				instancesData[modelViewPos + 3],
 			);
-			var position = vec3(modelView[0].w, modelView[1].w, modelView[2].w);
 			var scale = vec3(
 				length(vec3(modelView[0].x,modelView[1].x,modelView[2].x)),
 				length(vec3(modelView[0].y,modelView[1].y,modelView[2].y)),
@@ -814,6 +833,18 @@ private class BatchCommandBuilder extends hxsl.Shader {
 
 			if ( dot(scale, scale) < 1e-12 )
 				return;
+
+			var flags : Int = instancesInfos[instanceID];
+			var subMeshID : Int = flags >> 16;
+
+			var subMeshPos = subMeshID * subMeshInfosStride;
+			var localSphere = subMeshInfos[subMeshPos + 0];
+			var lodInfo = subMeshInfos[subMeshPos + 1];
+			var lodStart : Int = floatBitsToInt(lodInfo.x);
+			var lodCount : Int = floatBitsToInt(lodInfo.y);
+
+			var localCenter = vec4(localSphere.xyz, 1.0);
+			var position = vec3(dot(modelView[0], localCenter), dot(modelView[1], localCenter), dot(modelView[2], localCenter));
 
 			if ( IS_RELATIVE ) {
 				position = position * worldMatrix.mat3x4();
@@ -825,13 +856,7 @@ private class BatchCommandBuilder extends hxsl.Shader {
 				scale *= worldScale;
 			}
 
-			var flags : Int = instancesInfos[instanceID];
-			var subMeshID : Int = flags >> 16;
-
-			var subMeshPos = subMeshID * subMeshInfosStride;
-			var lodStart : Int = floatBitsToInt(subMeshInfos[subMeshPos + 0]);
-			var lodCount : Int = floatBitsToInt(subMeshInfos[subMeshPos + 1]);
-			var boundingSphere = subMeshInfos[subMeshPos + 2] * max(scale.x,max(scale.y, scale.z));
+			var boundingSphere = localSphere.w * max(scale.x,max(scale.y, scale.z));
 
 			if ( ENABLE_FRUSTUM_CULLING ) {
 				@unroll for ( i  in 0...6 ) {
@@ -916,6 +941,9 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			if ( lodSelected >= lodCount )
 				return;
 
+			if ( ENABLE_STREAMING_FEEDBACK )
+				writeStreamingFeedback(instanceID);
+
 			var subPartID : Int = flags & 0xFFFF;
 			var bucket = subPartID + lodSelected;
 			instanceSlots[instanceID * 2] = bucket;
@@ -969,6 +997,8 @@ private class BatchPass {
 
 	var bufferHandles : Array<h3d.BufferHandle>;
 	var textureHandles : Array<h3d.mat.TextureHandle>;
+	var textureHandlePos : Array<Int> = [];
+	var textureHandlePosBuffer : h3d.Buffer;
 
 	public function new(renderer : h3d.scene.Renderer, batch : Batch, p : h3d.mat.Pass, prim : h3d.prim.BatchPrimitive) @:privateAccess {
 		primitive = prim;
@@ -1048,6 +1078,8 @@ private class BatchPass {
 					previousModelViewPos = p.pos;
 				else
 					throw "Unsupported global param " + g.path;
+			} else if ( p.type.match(TTextureHandle | TSampler(_)) ) {
+				textureHandlePos.push(p.pos);
 			}
 			p = p.next;
 		}
@@ -1331,6 +1363,7 @@ private class BatchPass {
 		}
 
 		builderShader.meshLodScale = ctx.meshLodScale;
+		setupStreamingFeedback(ctx);
 		countBuffer.reset();
 		var bucketCount = primitive.gpuSubPartInfos.vertices;
 		var bucketGroups = hxd.Math.ceil(bucketCount/64.0);
@@ -1352,9 +1385,31 @@ private class BatchPass {
 		ctx.computeDispatch(instanceScatterShader, hxd.Math.ceil(totalInstanceCount/64.0), false);
 	}
 
+	function setupStreamingFeedback( ctx : h3d.scene.RenderContext ) {
+		var fb = textureHandlePos.length > 0 && textureHandles != null ? ctx.getStreamingFeedback() : null;
+		if ( fb == null || !fb.isActive() ) {
+			builderShader.ENABLE_STREAMING_FEEDBACK = false;
+			return;
+		}
+		if ( textureHandlePosBuffer == null ) {
+			var bytes = haxe.io.Bytes.alloc(textureHandlePos.length << 2);
+			for ( i in 0...textureHandlePos.length )
+				bytes.setInt32(i << 2, textureHandlePos[i]);
+			textureHandlePosBuffer = new h3d.Buffer(textureHandlePos.length, hxd.BufferFormat.INDEX32, [UniformBuffer]);
+			textureHandlePosBuffer.uploadBytes(bytes, 0, textureHandlePos.length);
+		}
+		builderShader.ENABLE_STREAMING_FEEDBACK = true;
+		builderShader.streamingFeedback = fb.getBuffer();
+		builderShader.feedbackSize = fb.getSize();
+		builderShader.textureHandlePos = textureHandlePosBuffer;
+		builderShader.textureHandleCount = textureHandlePos.length;
+		fb.track(textureHandles);
+	}
+
 	public function draw( ctx : h3d.scene.RenderContext ) {
+		var fb = ctx.streamingFeedback;
 		if ( textureHandles != null )
-			ctx.selectTextureHandles( textureHandles );
+			ctx.selectTextureHandles( textureHandles, fb == null || !fb.isActive() );
 		if ( bufferHandles != null )
 			ctx.selectBufferHandles( bufferHandles );
 		var engine = ctx.engine;
@@ -1395,6 +1450,8 @@ private class BatchPass {
 		}
 		countBuffer?.dispose();
 		countBuffer = null;
+		textureHandlePosBuffer?.dispose();
+		textureHandlePosBuffer = null;
 		command = null;
 	}
 }
