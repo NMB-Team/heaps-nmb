@@ -49,7 +49,7 @@ class Bindless extends SampleApp {
 	}
 
 	static function main() {
-		h3d.impl.Driver.requestFeature(Bindless);
+		h3d.impl.driver.Driver.requestFeature(Bindless);
 		h3d.mat.PbrMaterialSetup.set();
 		hxd.Res.initEmbed();
 		new Bindless();

@@ -202,8 +202,8 @@ class ScreenSpaceReflection extends BenchApp {
 	}
 
 	static function main() {
-		h3d.impl.Driver.requestFeature(ComputeShaders);
-		h3d.impl.Driver.requestFeature(Bindless);
+		h3d.impl.driver.Driver.requestFeature(ComputeShaders);
+		h3d.impl.driver.Driver.requestFeature(Bindless);
 		h3d.mat.MaterialSetup.current = new h3d.mat.PbrMaterialSetup();
 		new ScreenSpaceReflection();
 	}

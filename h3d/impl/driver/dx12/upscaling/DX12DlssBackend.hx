@@ -31,6 +31,8 @@ import limen.graphics.postprocess.dlss.reflex.ReflexFrameReport;
 import limen.graphics.postprocess.dlss.reflex.ReflexModeNative;
 import limen.graphics.postprocess.dlss.reflex.ReflexStateInfo;
 import limen.graphics.postprocess.dlss.DLSS;
+import limen.graphics.postprocess.PostProcessDevice;
+import limen.graphics.postprocess.TextureResource;
 
 @:access(h3d.impl.driver.dx12.DX12Driver)
 class DX12DlssBackend extends UpscalingBackend {
@@ -108,21 +110,21 @@ class DX12DlssBackend extends UpscalingBackend {
 		supported = new haxe.EnumFlags();
 		if( !slReady )
 			return;
-		var adapter = D3D12Bindings.getAdapter();
+		var device = new PostProcessDevice(D3D12, driver.nativeDevice);
 		var dlssOk = false;
 		if( wanted.has(Upscaler) ) {
-			dlssSupportResult = DLSS.isFeatureSupported(adapter, DLSSFeature.DLSS);
+			dlssSupportResult = DLSS.isFeatureSupported(device, DLSSFeature.DLSS);
 			dlssOk = dlssSupportResult == 0;
 		}
-		var dlssgOk = wanted.has(FrameGen) && DLSS.isFeatureSupported(adapter, DLSSFeature.FRAMEGEN) == 0;
-		var reflexOk = (wanted.has(LowLatency) || dlssgOk) && DLSS.isFeatureSupported(adapter, DLSSFeature.REFLEX) == 0;
+		var dlssgOk = wanted.has(FrameGen) && DLSS.isFeatureSupported(device, DLSSFeature.FRAMEGEN) == 0;
+		var reflexOk = (wanted.has(LowLatency) || dlssgOk) && DLSS.isFeatureSupported(device, DLSSFeature.REFLEX) == 0;
 		if( !dlssOk && !dlssgOk && !reflexOk ) {
 			DLSS.shutdown();
 			slReady = false;
 			return;
 		}
 		D3D12Bindings.setDevice(DLSS.upgradeDevice(driver.nativeDevice));
-		slReady = DLSS.setDevice(D3D12Bindings.getDevice()) == 0;
+		slReady = DLSS.setDevice(new PostProcessDevice(D3D12, D3D12Bindings.getDevice())) == 0;
 		if( !slReady )
 			return;
 		if( wanted.has(FrameGen) && !dlssgOk )
@@ -130,7 +132,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		dlssReady = dlssOk;
 		framegenReady = dlssgOk;
 		if( reflexOk ) {
-			pclReady = DLSS.isFeatureSupported(adapter, DLSSFeature.PCL) == 0 && DLSS.pclInitStats() == 0;
+			pclReady = DLSS.isFeatureSupported(device, DLSSFeature.PCL) == 0 && DLSS.pclInitStats() == 0;
 			if( reflexState == null )
 				reflexState = new ReflexStateInfo();
 			reflexReady = DLSS.reflexSetOptions(ReflexModeNative.OFF, 0, false, PCLHotKey.USE_PING_MESSAGE, 0) == 0;
@@ -390,6 +392,8 @@ class DX12DlssBackend extends UpscalingBackend {
 		tagTextures.push(t);
 	}
 
+	var taggedResources : Array<TextureResource> = [];
+
 	function flushTags( cmd : CommandList ) {
 		var count = tagTypes.length;
 		if( count > 0 && frameToken != null ) {
@@ -397,11 +401,14 @@ class DX12DlssBackend extends UpscalingBackend {
 			for( i in 0...count ) {
 				var t = tagTextures[i];
 				var r = resources[i];
-				r.res = t.t.res;
+				if( i == taggedResources.length ) taggedResources.push(new TextureResource(null, 0));
+				var texture = taggedResources[i];
+				texture.native = t.t.res;
+				texture.state = cast t.t.state;
+				r.res = texture;
 				r.width = t.width;
 				r.height = t.height;
 				r.type = tagTypes[i];
-				r.state = t.t.state;
 				r.lifecycle = DLSSResourceLifecycle.VALID_UNTIL_PRESENT;
 				driver.markUsed(t);
 			}

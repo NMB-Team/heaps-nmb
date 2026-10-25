@@ -8,6 +8,8 @@ import limen.graphics.renderer.d3d12.internal.D3D12Bindings;
 import limen.graphics.renderer.d3d12.internal.D3D12Bindings.SwapChain;
 import limen.graphics.renderer.d3d12.resource.Resources;
 import limen.graphics.postprocess.fsr.FSR;
+import limen.graphics.postprocess.PostProcessDevice;
+import limen.graphics.postprocess.TextureResource;
 import limen.graphics.postprocess.fsr.FSRContext;
 import limen.graphics.postprocess.fsr.FSRDebugLevel;
 import limen.graphics.postprocess.fsr.FSRResult;
@@ -33,12 +35,17 @@ class DX12FsrBackend extends UpscalingBackend {
 	static inline var FG_STATUS_NOT_PREPARED = 8;
 
 	static var params = new FSRDispatchParams();
+	static var colorResource = new TextureResource(null, 0);
+	static var depthResource = new TextureResource(null, 0);
+	static var motionVectorsResource = new TextureResource(null, 0);
+	static var outputResource = new TextureResource(null, 0);
 	static var fgConfig = new FSRFrameGenConfig();
 	static var fgPrepare = new FSRFrameGenPrepareParams();
 	static var fgSettings = new FrameGenSettings();
 
 	var driver : DX12Driver;
 	var loaded : Bool;
+	var postProcessDevice : PostProcessDevice;
 	var initResult = -1;
 
 	var context : FSRContext;
@@ -90,14 +97,15 @@ class DX12FsrBackend extends UpscalingBackend {
 	override function afterCreateDevice() {
 		supported = new haxe.EnumFlags();
 		var device = driver.nativeDevice;
+		postProcessDevice = new PostProcessDevice(D3D12, device);
 		if( !FSR.isAvailable() ) return;
 		if( wanted.has(Upscaler) || wanted.has(FrameGen) ) {
-			initResult = FSR.init(device, Upscaling.DEBUG ? FSRDebugLevel.WARNINGS : FSRDebugLevel.ERRORS);
+			initResult = FSR.init(postProcessDevice, Upscaling.DEBUG ? FSRDebugLevel.WARNINGS : FSRDebugLevel.ERRORS);
 			loaded = initResult == FSRResult.Ok;
 			if( loaded ) {
-				if( wanted.has(Upscaler) && FSR.isEffectAvailable(device, FSREffect.UPSCALE) )
+				if( wanted.has(Upscaler) && FSR.isEffectAvailable(postProcessDevice, FSREffect.UPSCALE) )
 					supported.set(Upscaler);
-				if( wanted.has(FrameGen) && FSR.isEffectAvailable(device, FSREffect.FRAME_GENERATION) )
+				if( wanted.has(FrameGen) && FSR.isEffectAvailable(postProcessDevice, FSREffect.FRAME_GENERATION) )
 					supported.set(FrameGen);
 			} else
 				trace('FSR unavailable ($initResult)');
@@ -129,7 +137,7 @@ class DX12FsrBackend extends UpscalingBackend {
 			return;
 		}
 		driver.setSwapChain(proxy);
-		var version = FSR.getEffectVersion(driver.nativeDevice, FSREffect.FRAME_GENERATION);
+		var version = FSR.getEffectVersion(postProcessDevice, FSREffect.FRAME_GENERATION);
 		fgName = version == null ? "FSR FG" : "FSR FG " + version;
 	}
 
@@ -233,7 +241,7 @@ class DX12FsrBackend extends UpscalingBackend {
 			return settings;
 		var renderWidth = targetWidth;
 		var renderHeight = targetHeight;
-		var res = FSR.getRenderResolution(driver.nativeDevice, getQuality(mode), targetWidth, targetHeight, renderWidth, renderHeight);
+		var res = FSR.getRenderResolution(postProcessDevice, getQuality(mode), targetWidth, targetHeight, renderWidth, renderHeight);
 		if( res != FSRResult.Ok ) {
 			trace('FSR render resolution query failed ($res)');
 			renderWidth = targetWidth;
@@ -274,7 +282,7 @@ class DX12FsrBackend extends UpscalingBackend {
 		if( output.width != contextWidth || output.height != contextHeight || flags != contextFlags ) {
 			destroyContext();
 			var res = 0;
-			context = FSR.createContext(driver.nativeDevice, flags, output.width, output.height, output.width, output.height, res);
+			context = FSR.createContext(postProcessDevice, flags, output.width, output.height, output.width, output.height, res);
 			contextWidth = output.width;
 			contextHeight = output.height;
 			contextFlags = flags;
@@ -289,14 +297,18 @@ class DX12FsrBackend extends UpscalingBackend {
 		var cmd = driver.beginExternalCommands();
 
 		var d = params;
-		d.color = color.t.res;
-		d.colorState = color.t.state;
-		d.depth = depth.t.res;
-		d.depthState = depth.t.state;
-		d.motionVectors = motionVectors.t.res;
-		d.motionVectorsState = motionVectors.t.state;
-		d.output = output.t.res;
-		d.outputState = output.t.state;
+		colorResource.native = color.t.res;
+		colorResource.state = cast color.t.state;
+		d.color = colorResource;
+		depthResource.native = depth.t.res;
+		depthResource.state = cast depth.t.state;
+		d.depth = depthResource;
+		motionVectorsResource.native = motionVectors.t.res;
+		motionVectorsResource.state = cast motionVectors.t.state;
+		d.motionVectors = motionVectorsResource;
+		outputResource.native = output.t.res;
+		outputResource.state = cast output.t.state;
+		d.output = outputResource;
 		d.jitterOffsetX = p.jitterOffsetX;
 		d.jitterOffsetY = p.jitterOffsetY;
 		d.motionVectorScaleX = p.mvecScaleX * color.width;
