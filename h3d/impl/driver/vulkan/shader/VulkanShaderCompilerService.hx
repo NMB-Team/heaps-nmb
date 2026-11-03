@@ -61,8 +61,10 @@ class VulkanShaderCompilerService {
 	final cache:Map<String, VulkanCompiledProgramData> = new Map();
 	final optimization:ShaderOptimizationMode;
 	final debugInfo:Bool;
+	final core13:Bool;
 
-	public function new() {
+	public function new(core13:Bool = true) {
+		this.core13 = core13;
 		#if debug
 		optimization = None;
 		debugInfo = true;
@@ -81,30 +83,31 @@ class VulkanShaderCompilerService {
 			return cached;
 		}
 		hxd.NMBTrace.shaderCacheMiss();
+		final miss = hxsl.ShaderMiss.report(shader);
 
 		final stages = [];
 		for (stage in generated) {
 			saveGeneratedArtifact(stage, cacheKey);
-			final request = new ShaderCompileRequest(stage.source, stage.sourceName, "main", stage.kind, Vulkan13, Spirv16,
+			final request = new ShaderCompileRequest(stage.source, stage.sourceName, "main", stage.kind, core13 ? Vulkan13 : Vulkan12, core13 ? Spirv16 : Spirv15,
 				optimization, debugInfo, true);
 			final tracing = hxd.NMBTrace.enabled();
 			if (tracing) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
 			final result = try compiler.compile(request) catch (error:Dynamic) {
 				if (tracing) hxd.NMBTrace.end("heaps.shader");
-				throw error;
+				throw "Failed to compile Vulkan shader:\n" + (miss != null ? miss + "\n" : "") + stage.source + "\n\n" + error;
 			};
 			if (tracing) hxd.NMBTrace.end("heaps.shader");
 			if (!result.succeeded) {
 				saveFailureArtifact(stage, cacheKey);
 				throw 'Vulkan shader compilation failed: program=${shader.signature}, stage=${VulkanShaderAbi.stageName(stage.stage)}, '
-					+ 'source=${stage.sourceName}, entry=main, target=Vulkan 1.3/SPIR-V 1.6, status=${result.status}, '
-					+ 'warnings=${result.warnings}, errors=${result.errors}\n${result.diagnostics}';
+					+ 'source=${stage.sourceName}, entry=main, target=${core13 ? "Vulkan 1.3/SPIR-V 1.6" : "Vulkan 1.2/SPIR-V 1.5"}, status=${result.status}, '
+					+ 'warnings=${result.warnings}, errors=${result.errors}\n' + (miss != null ? miss + "\n" : "") + stage.source + '\n${result.diagnostics}';
 			}
 			final spirv = result.spirv;
-			final reflection = try SpirvReflection.reflect(spirv) catch (error:Dynamic) {
+			final reflection = try SpirvReflection.reflect(spirv, core13 ? Vulkan13 : Vulkan12) catch (error:Dynamic) {
 				saveFailureArtifact(stage, cacheKey);
 				throw 'Vulkan SPIR-V validation/reflection failed: program=${shader.signature}, stage=${VulkanShaderAbi.stageName(stage.stage)}, '
-					+ 'source=${stage.sourceName}, target=Vulkan 1.3/SPIR-V 1.6: $error';
+					+ 'source=${stage.sourceName}, target=${core13 ? "Vulkan 1.3/SPIR-V 1.6" : "Vulkan 1.2/SPIR-V 1.5"}: $error';
 			};
 			VulkanShaderAbiVerifier.verifyStage(abi, stage.stage, reflection);
 			final compiled = new VulkanCompiledStageSource(stage.stage, stage.sourceName, "main", stage.source, stage.sourceHash,
@@ -155,7 +158,7 @@ class VulkanShaderCompilerService {
 	function makeCacheKey(shader:hxsl.RuntimeShader, abi:VulkanShaderAbi, stages:Array<GeneratedStage>):String {
 		final identity = shader.signature == null ? 'runtime:${shader.id}' : shader.signature;
 		final sourceHashes = [for (stage in stages) '${stage.stage}:${stage.sourceHash}'].join("|");
-		final options = 'vulkan=1.3|spirv=1.6|optimization=$optimization|debug=$debugInfo|warningsAsErrors=true';
+		final options = 'vulkan=${core13 ? "1.3" : "1.2"}|spirv=${core13 ? "1.6" : "1.5"}|optimization=$optimization|debug=$debugInfo|warningsAsErrors=true';
 		return haxe.crypto.Sha256.encode('$identity|sources=$sourceHashes|abi=${abi.version}|$options|capabilities=${VulkanShaderAbi.CAPABILITY_MODE}');
 	}
 

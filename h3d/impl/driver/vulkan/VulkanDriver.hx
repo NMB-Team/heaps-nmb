@@ -343,7 +343,11 @@ class VulkanDriver extends Driver {
 
 	public function new() {
 		var win = hxd.Window.getInstance();
-		surface = Surface.create(@:privateAccess win.window, Vulkan.ENABLE_VALIDATION);
+		final requirements = new limen.graphics.renderer.vulkan.VulkanRequirements();
+		#if renderdoc
+		requirements.renderdoc = true;
+		#end
+		surface = Surface.create(@:privateAccess win.window, Vulkan.ENABLE_VALIDATION, requirements);
 		try {
 			initContext(surface);
 			if( initSwapchain(win.width, win.height) )
@@ -359,7 +363,7 @@ class VulkanDriver extends Driver {
 
 		ctx = VulkanRuntime.createContext(surface, queueFamily);
 		capabilities = VulkanRuntime.getCapabilities(ctx);
-		shaderCompiler = new VulkanShaderCompilerService();
+		shaderCompiler = new VulkanShaderCompilerService(capabilities.apiVersion >= ((1 << 22) | (3 << 12)));
 		this.queueFamily = queueFamily;
 		this.depthFormat = selectDepthFormat();
 
@@ -1544,9 +1548,6 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		return allocTexture(texture);
 	}
 
-	override function disposeDepthBuffer(texture:h3d.mat.Texture) {
-		disposeTexture(texture);
-	}
 
 	override function getDefaultDepthBuffer():h3d.mat.Texture {
 		if( defaultDepthBuffer == null ) {

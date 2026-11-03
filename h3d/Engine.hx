@@ -84,6 +84,7 @@ class Engine {
 	var nullTexture : h3d.mat.Texture;
 	var textureColorCache = new Map<Int,h3d.mat.Texture>();
 	var inRender = false;
+	public var shaderFailed(default, null) = false;
 	public var ready(default,null) = false;
 	@:allow(hxd.res) var resCache = new ResCache();
 
@@ -141,8 +142,23 @@ class Engine {
 	}
 
 	public function selectShader( shader : hxsl.RuntimeShader ) {
-		flushTarget();
-		if( driver.selectShader(shader) )
+		if( shader.mode != Compute )
+			flushTarget();
+		var onError = h3d.impl.RenderError.onRenderError;
+		shaderFailed = onError != null && shader.failed != null;
+		if( shaderFailed ) {
+			onError(Shader(shader), shader.failed);
+			return;
+		}
+		var switched = false;
+		if( onError == null )
+			switched = driver.selectShader(shader);
+		else try switched = driver.selectShader(shader) catch( e : haxe.Exception ) {
+			shaderFailed = true;
+			shader.failed = e.message;
+			onError(Shader(shader), shader.failed);
+		}
+		if( switched )
 			shaderSwitches++;
 	}
 
@@ -151,6 +167,8 @@ class Engine {
 	}
 
 	public function uploadInstanceShaderBuffers(buffers) {
+		if( shaderFailed )
+			return;
 		driver.flushShaderBuffers();
 		driver.uploadShaderBuffers(buffers, Params);
 		driver.uploadShaderBuffers(buffers, Textures);
@@ -158,6 +176,8 @@ class Engine {
 	}
 
 	public function uploadShaderBuffers(buffers, which) {
+		if( shaderFailed )
+			return;
 		driver.uploadShaderBuffers(buffers, which);
 	}
 
@@ -179,7 +199,7 @@ class Engine {
 
 	// we use preallocated indexes so all the triangles are stored inside our buffers
 	function renderBuffer( b : Buffer, indexes : Indexes, vertPerTri : Int, startTri = 0, drawTri = -1 ) {
-		if( indexes.isDisposed() )
+		if( shaderFailed || indexes.isDisposed() )
 			return;
 		var ntri = Std.int(b.vertices / vertPerTri);
 		if( drawTri < 0 )
@@ -196,7 +216,7 @@ class Engine {
 
 	// we use custom indexes, so the number of triangles is the number of indexes/3
 	public function renderIndexed( b : Buffer, indexes : Indexes, startTri = 0, drawTri = -1 ) {
-		if( indexes.isDisposed() )
+		if( shaderFailed || indexes.isDisposed() )
 			return;
 		var maxTri = Std.int(indexes.count / 3);
 		if( drawTri < 0 ) drawTri = maxTri - startTri;
@@ -209,6 +229,8 @@ class Engine {
 	}
 
 	public function renderMultiBuffers( format : hxd.BufferFormat.MultiFormat, buffers : Array<Buffer>, indexes : Indexes, startTri = 0, drawTri = -1 ) {
+		if( shaderFailed )
+			return;
 		var maxTri = Std.int(indexes.count / 3);
 		if( maxTri <= 0 ) return;
 		flushTarget();
@@ -225,13 +247,20 @@ class Engine {
 	}
 
 	public function renderInstanced( indexes : Indexes, commands : h3d.impl.InstanceBuffer ) {
-		if( indexes.isDisposed() )
+		if( shaderFailed || indexes.isDisposed() )
 			return;
 		if( commands.commandCount > 0 ) {
 			driver.drawInstanced(indexes, commands);
 			drawTriangles += commands.triCount;
 			drawCalls++;
 		}
+	}
+
+	public function computeDispatch( x = 1, y = 1, z = 1, barrier = true ) {
+		if( shaderFailed )
+			return;
+		driver.computeDispatch(x, y, z, barrier);
+		dispatches++;
 	}
 
 	function set_debug(d) {

@@ -1148,6 +1148,8 @@ class JSDriver extends h3d.impl.driver.Driver {
 					tex.t = allocCheck(() -> allocTexture(tex));
 					@:privateAccess tex.t.clearColorChanges = prev.clearColorChanges;
 					frame.toRelease.push(prev.res);
+					disposeTextureViews(prev);
+					markUsed(tex);
 					Driver.createRenderTargetView(tex.t.res, lastRtvDesc, tmp.renderTargets[i]);
 				}
 				tex.flags.set(WasCleared);
@@ -1697,15 +1699,19 @@ class JSDriver extends h3d.impl.driver.Driver {
 	}
 
 	static final SHADER_ARGS : Array<String>= [#if shader_debug_info "-Zi", "-Qembed_debug" #end];
-	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, rootStr = "" ) {
+	function compileSource( rt : hxsl.RuntimeShader, sh : hxsl.RuntimeShader.RuntimeShaderData, profile, rootStr = "" ) {
 		resolveShaderDataCode(sh, rootStr);
 		var key = profile;
 		for ( arg in SHADER_ARGS )
 			key += arg;
+		var bytes = getBinaryPayload(sh.code, key);
+		if( bytes != null )
+			return bytes;
+		var miss = shaderCache != null ? hxsl.ShaderMiss.report(rt) : null;
 		#if heaps_mt_hxsl_cache
 		shaderBinaryMutex.acquire();
 		#end
-		var bytes = try {
+		bytes = try {
 			var bytes = getBinaryPayload(sh.code, key);
 			if( bytes == null ) {
 				bytes = compiler.compile(sh.code, profile, SHADER_ARGS);
@@ -1717,7 +1723,7 @@ class JSDriver extends h3d.impl.driver.Driver {
 			#if heaps_mt_hxsl_cache
 			shaderBinaryMutex.release();
 			#end
-			throw e;
+			throw "Failed to compile shader:\n" + (miss != null ? miss + "\n" : "") + sh.code + "\n\n" + e;
 		}
 		#if heaps_mt_hxsl_cache
 		shaderBinaryMutex.release();
@@ -2144,9 +2150,9 @@ class JSDriver extends h3d.impl.driver.Driver {
 		var c = new CompiledShader();
 
 		var rootStr = stringifyRootSignature(res.sign, "ROOT_SIGNATURE", res.params, res.paramsCount);
-		var vs = shader.mode == Compute ? null : compileSource(shader.vertex, useSM6_6 ? "vs_6_6" : "vs_6_1", rootStr);
-		var ps = shader.mode == Compute ? null : compileSource(shader.fragment, useSM6_6 ? "ps_6_6" : "ps_6_1", rootStr);
-		var cs = shader.mode == Compute ? compileSource(shader.compute, useSM6_6 ? "cs_6_6" : "cs_6_1", rootStr) : null;
+		var vs = shader.mode == Compute ? null : compileSource(shader, shader.vertex, useSM6_6 ? "vs_6_6" : "vs_6_1", rootStr);
+		var ps = shader.mode == Compute ? null : compileSource(shader, shader.fragment, useSM6_6 ? "ps_6_6" : "ps_6_1", rootStr);
+		var cs = shader.mode == Compute ? compileSource(shader, shader.compute, useSM6_6 ? "cs_6_6" : "cs_6_1", rootStr) : null;
 
 		var signSize = 0;
 		var signBytes = Driver.serializeRootSignature(res.sign, 1, signSize);
@@ -2602,11 +2608,6 @@ class JSDriver extends h3d.impl.driver.Driver {
 				}
 			}
 		}
-		t.t = null;
-	}
-
-	override function disposeDepthBuffer(t:h3d.mat.Texture) {
-		disposeResource(t.t);
 		t.t = null;
 	}
 
