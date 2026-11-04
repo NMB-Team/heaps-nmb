@@ -1,3 +1,6 @@
+//TARGETS=hldx12
+//PARAM=-D gpu_memory_benchmark
+
 #if !(gfx_dx12 && gpu_memory_benchmark)
 #error "Requires gfx_dx12 and gpu_memory_benchmark"
 #end

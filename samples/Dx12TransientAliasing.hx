@@ -1,3 +1,6 @@
+//TARGETS=hldx12
+//PARAM=-D gfx_d3d12ma
+
 class Dx12TransientAliasing extends hxd.App {
 	override function init() {
 		var driver : h3d.impl.driver.dx12.DX12Driver = cast @:privateAccess engine.driver;

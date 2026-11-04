@@ -1,3 +1,6 @@
+//TARGETS=hldx12
+//PARAM=-D dx12_descriptor_profile
+
 #if !dx12_descriptor_profile
 #error "Requires dx12_descriptor_profile"
 #end

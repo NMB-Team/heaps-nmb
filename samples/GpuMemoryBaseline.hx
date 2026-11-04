@@ -1,3 +1,6 @@
+//TARGETS=hl,hldx11,hldx12,hlvulkan
+//PARAM=-D gpu_memory_benchmark
+
 #if !gpu_memory_benchmark
 #error "Build with -D gpu_memory_benchmark"
 #end

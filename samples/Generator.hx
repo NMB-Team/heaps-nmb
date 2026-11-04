@@ -92,6 +92,11 @@ class Generator {
 			var content = sys.io.File.getContent(f);
 			~/\/\/PARAM=(.*)/g.map(content,function(r) { params.push(StringTools.trim(r.matched(1))); return ""; });
 
+			var targets = null;
+			var targetPattern = ~/\/\/TARGETS=(.*)/;
+			if( targetPattern.match(content) )
+				targets = StringTools.trim(targetPattern.matched(1)).split(",");
+
 			var context = {
 				main : title,
 				name : name,
@@ -110,6 +115,15 @@ class Generator {
 			for( f in Reflect.fields(context) )
 				interp.variables.set(f, Reflect.field(context, f));
 			for( t in templates ) {
+				if( targets != null && StringTools.endsWith(t.file,".hxml") ) {
+					var target = t.file.substr("__name_".length, t.file.length - "__name_".length - ".hxml".length);
+					if( targets.indexOf(target) < 0 ) {
+						var path = "build/" + name + "/" + t.file.split("__name").join(name);
+						if( sys.FileSystem.exists(path) ) sys.FileSystem.deleteFile(path);
+						continue;
+					}
+				}
+
 				var data = ~/::([^:]+)::/g.map(t.data, function(r) {
 					var script = r.matched(1);
 					var expr = new hscript.Parser().parseString(script);

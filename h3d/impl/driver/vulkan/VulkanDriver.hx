@@ -1612,7 +1612,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				textures.push(t);
 				var allocation = (t.t : VulkanTexture).allocation;
 				bytes += allocation.size;
-				ranges.push({ resource : i, allocation : allocation.debugId, offset : allocation.offset.toString(), size : allocation.size.toString() });
+				ranges.push({ resource : i, allocation : allocation.debugId, offset : haxe.Int64.toStr(allocation.offset), size : haxe.Int64.toStr(allocation.size) });
 			}
 			for (i in 0...2) {
 				if (aliasing && i > 0) {
@@ -1644,7 +1644,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		for (t in textures) disposeTexture(t);
 		var peak = aliasing ? bytes / 2 : bytes;
 		var result = { aliasingAllocations : aliasing ? 1 : 0, ranges : ranges, lifetimes : lifetimes,
-			peakTransientBytes : peak.toString(), savedBytes : (bytes - peak).toString(), aliasingBarriers : barriers };
+			peakTransientBytes : Std.string(peak), savedBytes : Std.string(bytes - peak), aliasingBarriers : barriers };
 		if (diagnostics) trace(result);
 		return result;
 	}

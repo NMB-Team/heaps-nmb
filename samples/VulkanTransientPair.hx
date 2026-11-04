@@ -1,3 +1,5 @@
+//TARGETS=hlvulkan
+
 class VulkanTransientPair extends hxd.App {
 	var remaining = 3;
 

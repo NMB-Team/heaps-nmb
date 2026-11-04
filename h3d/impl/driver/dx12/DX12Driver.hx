@@ -2239,7 +2239,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		var peak = aliasing ? bytes : bytes * 2;
 		var saved = bytes * 2 - peak;
 		if( diagnostics ) trace({ pairs : aliasing ? [{ before : ids[0], after : ids[1], backing : textures[0].id }] : [],
-			lifetimes : lifetimes, peakTransientBytes : peak.toString(), savedBytes : saved.toString(), aliasingBarriers : barriers });
+			lifetimes : lifetimes, peakTransientBytes : haxe.Int64.toStr(peak), savedBytes : haxe.Int64.toStr(saved), aliasingBarriers : barriers });
 		return { peakTransientBytes : peak, savedBytes : saved, aliasingBarriers : barriers };
 	}
 
