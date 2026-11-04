@@ -95,7 +95,6 @@ import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewCreateInfo;
 import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewType;
 import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryHeapBudgetInfo;
 import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendFactor;
 import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendOp;
 import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
@@ -401,7 +400,7 @@ class VulkanDriver extends Driver {
 		}
 
 		limits = ctx.getLimits();
-		allocator = new VulkanMemoryAllocator(ctx, limits);
+		allocator = new VulkanMemoryAllocator(ctx);
 		uploadManager = new VulkanUploadManager(ctx, allocator, frameCount);
 		readbackManager = new VulkanReadbackManager(ctx, allocator, frameCount);
 		queryManager = new VulkanQueryManager(ctx, frameCount, capabilities.timestampValidBits, capabilities.timestampPeriod,
@@ -458,10 +457,8 @@ class VulkanDriver extends Driver {
 				throw VulkanRuntime.error("Failed to create Vulkan depth image");
 			final depthName = 'swapchain-depth-$swapchainImageIndex';
 			ctx.setImageName(depth, @:privateAccess depthName.toUtf8());
-			var depthRequirements = new VkMemoryRequirementsInfo();
-			ctx.getImageMemoryRequirements2(depth, depthRequirements);
 			final deviceLocal = 1 << Type.enumIndex(VkMemoryPropertyFlag.DEVICE_LOCAL);
-			var depthAllocation = try allocator.allocate(depthRequirements, DeviceImage, deviceLocal, deviceLocal, null, depth, depthName) catch( error : Dynamic ) {
+			var depthAllocation = try allocator.allocate(DeviceImage, deviceLocal, deviceLocal, null, depth, depthName) catch( error : Dynamic ) {
 				ctx.destroyImage(depth);
 				throw error;
 			};
@@ -509,7 +506,7 @@ class VulkanDriver extends Driver {
 			depthAspect.set(DEPTH);
 			if( formatHasStencil(depthFormat) )
 				depthAspect.set(STENCIL);
-			out.depthResource = new VulkanTexture(depth, depthView, depthAllocation, depthRequirements.size, depthFormat, width, height, 1, 1, 1,
+			out.depthResource = new VulkanTexture(depth, depthView, depthAllocation, depthAllocation.size, depthFormat, width, height, 1, 1, 1,
 				depthAspect, inf.usage, false, VulkanMipmapMode.None, -1000 - swapchainImageIndex, depthName);
 			out.renderFinished = ctx.createSemaphore(new VkSemaphoreCreateInfo());
 			if( out.renderFinished == null )
@@ -612,6 +609,7 @@ class VulkanDriver extends Driver {
 			completedSubmissionSerial = frame.submissionSerial;
 		queryManager.completeFrame(currentFrameIndex);
 		deferredDestroy.collect(completedSubmissionSerial);
+		readbackManager.beginFrame();
 		readbackManager.completeFrame(currentFrameIndex);
 		uploadManager.beginFrame(currentFrameIndex);
 		frame.reclaimDescriptors();
@@ -1488,8 +1486,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		final depth = resolveDepthAttachment(textures[0].depthBuffer, width, height, depthBinding);
 		final colors = depthBinding == DepthOnly ? [] : resolved;
-		final keyParts = [for( color in colors ) '${color.resource.allocation.debugId}:${cast(color.format, Int)}:${color.mipLevel}:${color.layer}'];
-		final depthKey = depth == null ? "none" : '${depth.resource.allocation.debugId}:${cast(depth.format, Int)}';
+		final keyParts = [for( color in colors ) '${color.resource.identity}:${cast(color.format, Int)}:${color.mipLevel}:${color.layer}'];
+		final depthKey = depth == null ? "none" : '${depth.resource.identity}:${cast(depth.format, Int)}';
 		return new VulkanRenderingTargetSet(colors, depth, depth != null && formatHasStencil(depth.format) ? depth : null,
 			width, height, 1, depthBinding, false, '${keyParts.join(",")}|$depthKey:${Type.enumIndex(depthBinding)}');
 	}
@@ -1538,7 +1536,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( texture == null )
 			throw "Vulkan depth-only rendering requires a depth texture";
 		final depth = resolveTextureAttachment(texture, 0, 0, true);
-		final key = 'depth:${depth.resource.allocation.debugId}:${cast(depth.format, Int)}:${depth.layer}';
+		final key = 'depth:${depth.resource.identity}:${cast(depth.format, Int)}:${depth.layer}';
 		changeTarget(new VulkanRenderingTargetSet([], depth, formatHasStencil(depth.format) ? depth : null,
 			texture.width, texture.height, 1, DepthOnly, false, key));
 	}
@@ -1585,7 +1583,77 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		return defaultDepthBuffer;
 	}
 
+
+	@:noCompletion
+	public function validateTransientTargetPair(diagnostics = false) {
+		if (!frameStarted) throw "Transient validation requires an active Vulkan frame";
+		var graph = new h3d.impl.RenderGraphAnalysis();
+		for (i in 0...2) {
+			var id = graph.register("VulkanTransientProbe" + i, FrameTransient, i * 2);
+			graph.declare(id, FrameTransient, true, false);
+			graph.use(id, i * 2, Clear, "graphics");
+			graph.use(id, i * 2 + 1, TransferRead, "graphics");
+		}
+		// capturePixels waits for the graphics submission fence before the next use.
+		graph.synchronize(1, 2, "graphics", "graphics");
+		var lifetimes = graph.dump().resources;
+		if (!lifetimes[0].aliasingEligible || !lifetimes[1].aliasingEligible || lifetimes[0].lastUse >= lifetimes[1].firstUse)
+			throw "Transient probe lifetimes are not disjoint";
+		var aliasing = #if gfx_vulkan_transient_aliasing true #else false #end;
+		var textures:Array<h3d.mat.Texture> = [];
+		var bytes:haxe.Int64 = 0;
+		var barriers = 0;
+		var ranges = [];
+		try {
+			for (i in 0...2) {
+				var t = new h3d.mat.Texture(64, 64, [Target, NoAlloc], RGBA);
+				var backing = i == 1 && aliasing ? (textures[0].t : VulkanTexture).allocation : null;
+				t.t = createTexture(t, backing, aliasing);
+				textures.push(t);
+				var allocation = (t.t : VulkanTexture).allocation;
+				bytes += allocation.size;
+				ranges.push({ resource : i, allocation : allocation.debugId, offset : allocation.offset.toString(), size : allocation.size.toString() });
+			}
+			for (i in 0...2) {
+				if (aliasing && i > 0) {
+					suspendRendering();
+					VulkanResourceState.recordBarrier();
+					final previousAccess:hl.I64 = cast ((VkAccess2.COLOR_ATTACHMENT_WRITE : haxe.Int64) | (VkAccess2.TRANSFER_READ : haxe.Int64));
+					command.memoryBarrier2(VkPipelineStage2.ALL_COMMANDS, previousAccess,
+						VkPipelineStage2.ALL_COMMANDS, VkAccess2.COLOR_ATTACHMENT_WRITE);
+					barriers++;
+				}
+				setRenderTarget(textures[i], 0, 0, NotBound);
+				clear(new Vector4(i == 0 ? 1 : 0, i == 1 ? 1 : 0, 0, 1));
+				var pixels = capturePixels(textures[i], 0, 0);
+				var matches = true;
+				for (y in 0...64)
+					for (x in 0...64) {
+						var p = pixels.getPixelF(x, y);
+						if (p.r != (i == 0 ? 1 : 0) || p.g != (i == 1 ? 1 : 0) || p.b != 0 || p.a != 1) matches = false;
+					}
+				pixels.dispose();
+				if (!matches) throw "Vulkan transient probe readback mismatch";
+			}
+		} catch (error:Dynamic) {
+			setRenderTarget(null);
+			for (t in textures) disposeTexture(t);
+			throw error;
+		}
+		setRenderTarget(null);
+		for (t in textures) disposeTexture(t);
+		var peak = aliasing ? bytes / 2 : bytes;
+		var result = { aliasingAllocations : aliasing ? 1 : 0, ranges : ranges, lifetimes : lifetimes,
+			peakTransientBytes : peak.toString(), savedBytes : (bytes - peak).toString(), aliasingBarriers : barriers };
+		if (diagnostics) trace(result);
+		return result;
+	}
+
 	override function allocTexture( t : h3d.mat.Texture ) : Texture {
+		return createTexture(t);
+	}
+
+	function createTexture(t:h3d.mat.Texture, ?backing:h3d.impl.driver.vulkan.resource.VulkanAllocation, transient = false):Texture {
 		final mapping = VulkanTextureFormat.resolve(t.format);
 		final isDepth = t.isDepth();
 		final formatProperties = new VkFormatProperties();
@@ -1607,6 +1675,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		inf.tiling = OPTIMAL;
 		inf.samples = 1;
 		inf.format = mapping.format;
+		if (transient) inf.flags.set(ALIAS);
 		if( t.flags.has(Cube) )
 			inf.flags.set(CUBE_COMPATIBLE);
 		inf.usage = VulkanTextureFormat.usage(t.flags, isDepth, graphicsMipmapFallback);
@@ -1620,15 +1689,24 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final debugName = t.name == null ? 'texture-${t.id}' : 'texture-${t.id}-${t.name}';
 		ctx.setImageName(img, @:privateAccess debugName.toUtf8());
 
-		var requirements = new VkMemoryRequirementsInfo();
-		ctx.getImageMemoryRequirements2(img, requirements);
 		var deviceLocal = 1 << Type.enumIndex(VkMemoryPropertyFlag.DEVICE_LOCAL);
-		var allocation = try allocator.allocate(requirements, DeviceImage, deviceLocal, deviceLocal, null, img, debugName) catch( error : Dynamic ) {
+		var allocation = try {
+			if (backing != null) {
+				@:privateAccess backing.retain();
+				backing;
+			} else if (transient)
+				allocator.allocateTransientImage(img, deviceLocal, debugName);
+			else
+				allocator.allocate(DeviceImage, deviceLocal, deviceLocal, null, img, debugName);
+		} catch( error : Dynamic ) {
 			ctx.destroyImage(img);
 			throw error;
 		};
 
-		if( !ctx.bindImageMemory64(img, allocation.memory, (allocation.offset : hl.I64)) ) {
+		final bound = transient
+			? limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator.bind_transient_image(@:privateAccess allocation.handle, img) == 0
+			: ctx.bindImageMemory64(img, allocation.memory, (allocation.offset : hl.I64));
+		if( !bound ) {
 			allocation.dispose();
 			ctx.destroyImage(img);
 			throw VulkanRuntime.error('Failed to bind Vulkan texture ${t.id} memory');
@@ -1663,7 +1741,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				aspect.set(STENCIL);
 		} else
 			aspect.set(COLOR);
-		var texture = new VulkanTexture(img, view, allocation, requirements.size, inf.format, inf.width, inf.height, inf.depth, inf.mipLevels, inf.arrayLayers,
+		var texture = new VulkanTexture(img, view, allocation, allocation.size, inf.format, inf.width, inf.height, inf.depth, inf.mipLevels, inf.arrayLayers,
 			aspect, inf.usage, mapping.supportsLinearFiltering(formatProperties), mipmapMode, t.id, debugName);
 		liveTextures.push(texture);
 		return texture;
@@ -1937,9 +2015,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( buffer == null )
 			throw VulkanRuntime.error('Failed to create Vulkan buffer $debugName ($byteSize bytes)');
 		ctx.setBufferName(buffer, @:privateAccess debugName.toUtf8());
-		var requirements = new VkMemoryRequirementsInfo();
-		ctx.getBufferMemoryRequirements2(buffer, requirements);
-		var allocation = try allocator.allocate(requirements, memoryClass, requiredProperties, preferredProperties, buffer, null, debugName) catch( error : Dynamic ) {
+		var allocation = try allocator.allocate(memoryClass, requiredProperties, preferredProperties, buffer, null, debugName) catch( error : Dynamic ) {
 			ctx.destroyBuffer(buffer);
 			throw error;
 		};
@@ -1960,10 +2036,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final id = nextInstanceBufferId++;
 		final name = 'instance-buffer-$id';
 		ctx.setBufferName(buffer, @:privateAccess name.toUtf8());
-		final requirements = new VkMemoryRequirementsInfo();
-		ctx.getBufferMemoryRequirements2(buffer, requirements);
 		final deviceLocal = 1 << Type.enumIndex(VkMemoryPropertyFlag.DEVICE_LOCAL);
-		final allocation = try allocator.allocate(requirements, DeviceBuffer, deviceLocal, deviceLocal, buffer, null, name) catch( error : Dynamic ) {
+		final allocation = try allocator.allocate(DeviceBuffer, deviceLocal, deviceLocal, buffer, null, name) catch( error : Dynamic ) {
 			ctx.destroyBuffer(buffer);
 			throw error;
 		};
@@ -2804,7 +2878,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				switch( resource.descriptorType ) {
 				case VulkanDescriptorType.CombinedImageSampler, VulkanDescriptorType.StorageImage:
 					for( value in resolvedTextures.get(resource.logicalId) )
-						hash = (hash * 31) ^ value.image.allocation.debugId;
+						hash = (hash * 31) ^ value.image.identity;
 				case VulkanDescriptorType.UniformBuffer, VulkanDescriptorType.StorageBuffer:
 					for( allocationId in resource.allocationIds ) {
 						final buffer = bufferBindings.get(allocationId);
@@ -3596,6 +3670,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			descriptorUpdates: descriptorUpdates,
 			descriptorPoolPages: descriptorPoolPages,
 			descriptorPoolResets: descriptorPoolResets,
+			uploadRetainedBytes: uploadManager == null ? haxe.Int64.ofInt(0) : uploadManager.retainedBytes,
+			readbackRetainedBytes: readbackManager == null ? haxe.Int64.ofInt(0) : readbackManager.retainedBytes,
+			readbackCachedBytes: readbackManager == null ? haxe.Int64.ofInt(0) : readbackManager.cachedBytes,
+			uploadPageDestructions: uploadManager == null ? 0 : uploadManager.pageDestructionCount,
+			readbackBufferDestructions: readbackManager == null ? 0 : readbackManager.bufferDestructionCount,
 			constantUploadPages: uploadManager == null ? 0 : uploadManager.pageCreationCount,
 			readbackBuffers: readbackManager == null ? 0 : readbackManager.bufferCreationCount,
 			uploadedBytes: uploadManager == null ? haxe.Int64.ofInt(0) : uploadManager.uploadedBytes,

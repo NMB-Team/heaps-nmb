@@ -4,6 +4,7 @@ import h3d.impl.driver.Feature;
 import h3d.impl.driver.GPUBuffer;
 import h3d.impl.driver.Query;
 import h3d.impl.driver.Texture;
+import h3d.impl.RenderGraphAnalysis;
 
 #if render_graph
 class RenderGraphDriver extends Driver {
@@ -101,6 +102,11 @@ class RenderGraphDriver extends Driver {
 				var t = s.textures;
 				while( t != null ) {
 					RenderGraph.sampleTexture(buf.tex[t.pos]);
+					if( buf.tex[t.pos] != null )
+						switch( t.type ) {
+							case TRWTexture(_, _, _): RenderGraph.frame.recordTexture(buf.tex[t.pos], ShaderWrite);
+							default:
+						}
 					log('Set ${s.kind.getName()} Texture@${t.pos} ' + t.name);
 					t = t.next;
 				}
@@ -135,17 +141,17 @@ class RenderGraphDriver extends Driver {
 
 	override function setRenderTarget( tex : Null<h3d.mat.Texture>, face = 0, mipMap = 0, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 		h3d.impl.RenderGraph.setTarget(tex, face, mipMap, depthBinding);
-		d.setRenderTarget(tex, face);
+		d.setRenderTarget(tex, face, mipMap, depthBinding);
 	}
 
 	override function setRenderTargets( textures : Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 		h3d.impl.RenderGraph.setTargets(textures, depthBinding);
-		d.setRenderTargets(textures);
+		d.setRenderTargets(textures, depthBinding);
 	}
 
-	override function setDepth( depthBuffer : h3d.mat.Texture ) {
+	override function setDepth( depthBuffer : h3d.mat.Texture, layer = 0 ) {
 		h3d.impl.RenderGraph.setDepth(depthBuffer);
-		d.setDepth(depthBuffer);
+		d.setDepth(depthBuffer, layer);
 	}
 
 	override function end() {
@@ -161,10 +167,12 @@ class RenderGraphDriver extends Driver {
 	}
 
 	override function allocTexture( t : h3d.mat.Texture ) : Texture {
+		RenderGraph.frame.createdTexture(t);
 		return d.allocTexture(t);
 	}
 
 	override function allocDepthBuffer( t : h3d.mat.Texture ) : Texture {
+		RenderGraph.frame.createdTexture(t);
 		return d.allocDepthBuffer(t);
 	}
 
@@ -209,10 +217,12 @@ class RenderGraphDriver extends Driver {
 	}
 
 	override function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, side : Int ) {
+		RenderGraph.frame.recordTexture(t, TransferWrite, mipLevel, side);
 		d.uploadTextureBitmap(t, bmp, mipLevel, side);
 	}
 
 	override function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
+		RenderGraph.frame.recordTexture(t, TransferWrite, mipLevel, side);
 		d.uploadTexturePixels(t, pixels, mipLevel, side);
 	}
 
@@ -225,10 +235,13 @@ class RenderGraphDriver extends Driver {
 	}
 
 	override function capturePixels(tex, layer, mipLevel, ?region) {
+		RenderGraph.frame.recordTexture(tex, TransferRead, mipLevel, layer);
 		return d.capturePixels(tex, layer, mipLevel, region);
 	}
 
 	override function copyTexture(from, to) {
+		RenderGraph.frame.recordTexture(from, TransferRead);
+		RenderGraph.frame.recordTexture(to, TransferWrite);
 		return d.copyTexture(from, to);
 	}
 

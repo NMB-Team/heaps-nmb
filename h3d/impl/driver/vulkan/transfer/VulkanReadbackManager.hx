@@ -17,7 +17,6 @@ import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
 import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
 import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
 import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 
 class VulkanImageReadbackRequest {
 	public final source:VkImage;
@@ -105,12 +104,26 @@ private class VulkanPendingReadback {
 	}
 }
 
+private class VulkanCachedReadback {
+	public final buffer:VulkanReadbackBuffer;
+	public var idleFrames = 0;
+
+	public function new(buffer:VulkanReadbackBuffer) {
+		this.buffer = buffer;
+	}
+}
+
 class VulkanReadbackManager {
 	final context:VkContext;
 	final allocator:VulkanMemoryAllocator;
 	final pending:Array<Array<VulkanPendingReadback>>;
-	final available:Array<VulkanReadbackBuffer> = [];
+	final available:Array<VulkanCachedReadback> = [];
 	var nextId = 1;
+	static inline final CACHE_BYTE_LIMIT = 32 << 20;
+	static inline final IDLE_FRAME_LIMIT = 120;
+	public var retainedBytes(default, null):Int64 = 0;
+	public var cachedBytes(default, null):Int64 = 0;
+	public var bufferDestructionCount(default, null) = 0;
 	public var bufferCreationCount(default, null) = 0;
 	public var readbackBytes(default, null):Int64 = 0;
 
@@ -161,6 +174,19 @@ class VulkanReadbackManager {
 			request.sourceRowStride, request.destinationRowStride, request.rowCount(), request.callback));
 	}
 
+	public function beginFrame() {
+		var index = 0;
+		while (index < available.length) {
+			final cached = available[index];
+			if (++cached.idleFrames >= IDLE_FRAME_LIMIT) {
+				available.splice(index, 1);
+				cachedBytes -= cached.buffer.size;
+				destroyBuffer(cached.buffer);
+			} else
+				index++;
+		}
+	}
+
 	public function completeFrame(frameIndex:Int) {
 		final requests = pending[frameIndex];
 		pending[frameIndex] = [];
@@ -172,7 +198,11 @@ class VulkanReadbackManager {
 			else
 				for (row in 0...request.rowCount)
 					request.target.blit(request.targetOffset + row * request.destinationRowStride, mapped, row * request.sourceRowStride, request.sourceRowStride);
-			available.push(request.buffer);
+			if (cachedBytes + request.buffer.size <= CACHE_BYTE_LIMIT) {
+				available.push(new VulkanCachedReadback(request.buffer));
+				cachedBytes += request.buffer.size;
+			} else
+				destroyBuffer(request.buffer);
 			if (request.callback != null)
 				request.callback();
 		}
@@ -180,11 +210,16 @@ class VulkanReadbackManager {
 
 	function acquireBuffer(size:Int):VulkanReadbackBuffer {
 		var bestIndex = -1;
-		for (index => buffer in available)
-			if (buffer.size >= Int64.ofInt(size) && (bestIndex < 0 || buffer.size < available[bestIndex].size))
+		for (index => cached in available)
+			if (cached.buffer.size >= Int64.ofInt(size) && (bestIndex < 0 || cached.buffer.size < available[bestIndex].buffer.size))
 				bestIndex = index;
-		if (bestIndex >= 0)
-			return available.splice(bestIndex, 1)[0];
+		if (bestIndex >= 0) {
+			final buffer = available[bestIndex].buffer;
+			available[bestIndex] = available[available.length - 1];
+			available.pop();
+			cachedBytes -= buffer.size;
+			return buffer;
+		}
 		return createBuffer(size);
 	}
 
@@ -194,11 +229,9 @@ class VulkanReadbackManager {
 		final handle = context.createBuffer64((Int64.ofInt(size) : hl.I64), usage);
 		if (handle == null)
 			throw VulkanRuntime.error('Failed to create Vulkan readback buffer ($size bytes)');
-		final requirements = new VkMemoryRequirementsInfo();
-		context.getBufferMemoryRequirements2(handle, requirements);
 		final name = 'readback-${nextId++}';
 		context.setBufferName(handle, @:privateAccess name.toUtf8());
-		final allocation = try allocator.allocate(requirements, Readback, HOST_VISIBLE, HOST_CACHED, handle, null, name) catch (error:Dynamic) {
+		final allocation = try allocator.allocate(Readback, HOST_VISIBLE, HOST_CACHED, handle, null, name) catch (error:Dynamic) {
 			context.destroyBuffer(handle);
 			throw error;
 		};
@@ -208,19 +241,23 @@ class VulkanReadbackManager {
 			throw VulkanRuntime.error('Failed to bind Vulkan readback buffer $name');
 		}
 		bufferCreationCount++;
+		retainedBytes += size;
 		return new VulkanReadbackBuffer(handle, allocation, Int64.ofInt(size), usage, 1, Undefined, -1, name);
 	}
 
 	function destroyBuffer(buffer:VulkanReadbackBuffer) {
 		context.destroyBuffer(buffer.buffer);
 		buffer.allocation.dispose();
+		retainedBytes -= buffer.size;
+		bufferDestructionCount++;
 	}
 
 	public function dispose() {
 		for (frameIndex in 0...pending.length)
 			completeFrame(frameIndex);
-		for (buffer in available)
-			destroyBuffer(buffer);
+		for (cached in available)
+			destroyBuffer(cached.buffer);
+		cachedBytes = 0;
 		available.resize(0);
 	}
 }

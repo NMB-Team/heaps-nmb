@@ -19,12 +19,12 @@ import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
 import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
 import limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag;
 import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryRequirementsInfo;
 
 private class VulkanUploadPage {
 	public var buffer:VulkanUploadBuffer;
 	public var capacity:Int;
 	public var offset = 0;
+	public var idleFrames = 0;
 
 	public function new(buffer:VulkanUploadBuffer, capacity:Int) {
 		this.buffer = buffer;
@@ -50,6 +50,10 @@ class VulkanUploadManager {
 	var nextPageId = 1;
 	var allocatedPage:VulkanUploadPage;
 	var allocatedOffset:Int;
+	static inline final IDLE_FRAME_LIMIT = 120;
+	static inline final LARGE_IDLE_FRAME_LIMIT = 8;
+	public var retainedBytes(default, null):Int64 = 0;
+	public var pageDestructionCount(default, null) = 0;
 	public var pageCreationCount(default, null) = 0;
 	public var uploadedBytes(default, null):Int64 = 0;
 
@@ -65,8 +69,21 @@ class VulkanUploadManager {
 
 	public function beginFrame(frameIndex:Int) {
 		currentFrame = frameIndex;
-		for (page in frames[frameIndex])
-			page.offset = 0;
+		allocatedPage = null;
+		final pages = frames[frameIndex];
+		var index = 0;
+		while (index < pages.length) {
+			final page = pages[index];
+			page.idleFrames = page.offset == 0 ? page.idleFrames + 1 : 0;
+			final idleLimit = page.capacity > pageSize ? LARGE_IDLE_FRAME_LIMIT : IDLE_FRAME_LIMIT;
+			if (page.idleFrames >= idleLimit) {
+				pages.splice(index, 1);
+				destroyPage(page);
+			} else {
+				page.offset = 0;
+				index++;
+			}
+		}
 	}
 
 	public function uploadBuffer(command:VkCommandBuffer, destination:VulkanBuffer, destinationOffset:Int, source:hl.Bytes, sourceOffset:Int, size:Int) {
@@ -135,9 +152,14 @@ class VulkanUploadManager {
 	function allocate(size:Int, alignment:Int) {
 		if (currentFrame < 0)
 			throw "Vulkan uploads require an active frame";
+		if (allocatedPage != null) {
+			final offset = alignUp(allocatedPage.offset, alignment);
+			if (size <= allocatedPage.capacity - offset)
+				return reserve(allocatedPage, offset, size);
+		}
 		for (page in frames[currentFrame]) {
 			final offset = alignUp(page.offset, alignment);
-			if (offset + size <= page.capacity)
+			if (size <= page.capacity - offset)
 				return reserve(page, offset, size);
 		}
 		final capacity = size > pageSize ? alignUp(size, alignment) : pageSize;
@@ -159,11 +181,9 @@ class VulkanUploadManager {
 		final handle = context.createBuffer64((Int64.ofInt(capacity) : hl.I64), usage);
 		if (handle == null)
 			throw VulkanRuntime.error('Failed to create Vulkan upload page $nextPageId ($capacity bytes)');
-		final requirements = new VkMemoryRequirementsInfo();
-		context.getBufferMemoryRequirements2(handle, requirements);
 		final name = 'frame-upload-page-${nextPageId++}';
 		context.setBufferName(handle, @:privateAccess name.toUtf8());
-		final allocation = try allocator.allocate(requirements, Upload, HOST_VISIBLE, HOST_COHERENT, handle, null, name) catch (error:Dynamic) {
+		final allocation = try allocator.allocate(Upload, HOST_VISIBLE, HOST_COHERENT, handle, null, name) catch (error:Dynamic) {
 			context.destroyBuffer(handle);
 			throw error;
 		};
@@ -174,15 +194,24 @@ class VulkanUploadManager {
 		}
 		final buffer = new VulkanUploadBuffer(handle, allocation, Int64.ofInt(capacity), usage, 1, HostWrite, -1, name);
 		pageCreationCount++;
+		retainedBytes += capacity;
 		return new VulkanUploadPage(buffer, capacity);
 	}
 
+	function destroyPage(page:VulkanUploadPage) {
+		context.destroyBuffer(page.buffer.buffer);
+		page.buffer.allocation.dispose();
+		retainedBytes -= page.capacity;
+		pageDestructionCount++;
+	}
+
 	public function dispose() {
-		for (frame in frames)
-			for (page in frame) {
-				context.destroyBuffer(page.buffer.buffer);
-				page.buffer.allocation.dispose();
-			}
+		allocatedPage = null;
+		for (frame in frames) {
+			for (page in frame)
+				destroyPage(page);
+			frame.resize(0);
+		}
 	}
 
 	static inline function alignUp(value:Int, alignment:Int):Int {

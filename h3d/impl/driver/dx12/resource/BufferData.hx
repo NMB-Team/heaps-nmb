@@ -7,6 +7,9 @@ import limen.graphics.renderer.d3d12.command.Commands.IndexBufferView;
 import limen.graphics.renderer.d3d12.command.Commands.VertexBufferView;
 
 class BufferData extends ResourceData {
+	#if (gfx_d3d12ma && !console)
+	public var managed : ManagedBuffer;
+	#end
 	public var view : VertexBufferView;
 	public var iview : IndexBufferView;
 	public var handle : h3d.BufferHandle = null;

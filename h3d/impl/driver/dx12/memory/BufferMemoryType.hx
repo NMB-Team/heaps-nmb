@@ -17,6 +17,10 @@ import h3d.impl.allocator.MemoryPage;
 import h3d.impl.allocator.MemoryType;
 
 class BufferMemoryType extends MemoryType {
+	#if gpu_memory_benchmark
+	static var benchmarkResourceCreations = 0;
+	static var benchmarkResourceDestructions = 0;
+	#end
 
 	var heapType : HeapType;
 	var startState : ResourceState;
@@ -51,6 +55,9 @@ class BufferMemoryType extends MemoryType {
 		var res = Dx12.createCommittedResource(heap, flags, desc, startState, null);
 		if(res == null)
 			return null;
+		#if gpu_memory_benchmark
+		benchmarkResourceCreations++;
+		#end
 		res.setName(resourceName + "Page");
 		var cpuAddress = res.map(0, null);
 		return new MemoryPage(cpuAddress, res.getGpuVirtualAddress(), size, res);
@@ -60,6 +67,9 @@ class BufferMemoryType extends MemoryType {
 		var res : GpuResource = mem.ref;
 		res.unmap(0, null);
 		res.release();
+		#if gpu_memory_benchmark
+		benchmarkResourceDestructions++;
+		#end
 	}
 }
 #end

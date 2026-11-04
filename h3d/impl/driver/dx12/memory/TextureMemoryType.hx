@@ -9,6 +9,11 @@ import h3d.impl.allocator.MemoryPage;
 import h3d.impl.allocator.MemoryType;
 
 class TextureMemoryType extends MemoryType {
+	#if gpu_memory_benchmark
+	static var benchmarkHeapCreations = 0;
+	static var benchmarkHeapDestructions = 0;
+	#end
+
 	var desc : HeapDesc;
 
 	public function new() {
@@ -25,6 +30,9 @@ class TextureMemoryType extends MemoryType {
 		var heap = Dx12.createHeap(desc);
 		if( heap == null )
 			return null;
+		#if gpu_memory_benchmark
+		benchmarkHeapCreations++;
+		#end
 		heap.setName("TextureHeapPage");
 		return new MemoryPage(null, 0, desc.sizeInBytes.low, heap);
 	}
@@ -32,6 +40,9 @@ class TextureMemoryType extends MemoryType {
 	public function free(page:MemoryPage) {
 		var heap : Heap = page.ref;
 		heap.release();
+		#if gpu_memory_benchmark
+		benchmarkHeapDestructions++;
+		#end
 	}
 }
 #end

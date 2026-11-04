@@ -14,6 +14,21 @@ import h3d.impl.driver.dx12.DX12Driver;
 
 @:allow(h3d.impl.driver.dx12.descriptor)
 class DescriptorHeapBase {
+	#if dx12_descriptor_profile
+	public var allocations = 0;
+	public var allocatedDescriptors = 0.;
+	public var peakUsage = 0;
+	public var creations = 0;
+	public static var totalCreations = 0;
+	public static var totalGrowths = 0;
+	public var allocationSeconds = 0.;
+	public var resetSeconds = 0.;
+	public var resets = 0;
+	public static var copyCalls = 0;
+	public static var copiedDescriptors = 0.;
+	public static var copySeconds = 0.;
+	#end
+
 	public var stride(default,null) : Int;
 	public var size(default,null) : Int;
 	public var address(default,null) : Address;
@@ -40,13 +55,18 @@ class DescriptorHeapBase {
 		if(shaderVisible)
 			desc.flags = SHADER_VISIBLE;
 		heap = DX12Driver.allocCheck(() -> new DescriptorHeap(desc));
+		#if dx12_descriptor_profile
+		if( this.size > 0 ) totalGrowths++;
+		totalCreations++;
+		creations++;
+		#end
 		this.size = size;
 		address = heap.getHandle(false);
 		cpuToGpu = desc.flags == SHADER_VISIBLE ? (heap.getHandle(true).value - address.value) : 0;
 	}
 
 	public dynamic function onFree(prev:DescriptorHeap, prevSize:Int) {
-		throw "Too many buffers";
+		throw 'Descriptor heap exhausted (type=$type, capacity=$size, shaderVisible=$shaderVisible)';
 	}
 
 	public inline function toGPU(address:Address):Address {
@@ -62,7 +82,7 @@ class DescriptorHeapBase {
 	}
 
 	inline function getNextHeapSize():Int {
-		return (size * 3) >> 1;
+		return hxd.Math.imax(size + 1, (size * 3) >> 1);
 	}
 }
 #end

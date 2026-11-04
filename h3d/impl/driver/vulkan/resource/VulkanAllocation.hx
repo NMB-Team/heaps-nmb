@@ -4,6 +4,10 @@ package h3d.impl.driver.vulkan.resource;
 import haxe.Int64;
 import h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator;
 import limen.graphics.renderer.vulkan.memory.Memory.VkDeviceMemory;
+import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator as Vma;
+import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator.AllocationHandle;
+import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
 
 enum abstract VulkanMemoryClass(Int) {
 	var DeviceBuffer;
@@ -12,98 +16,54 @@ enum abstract VulkanMemoryClass(Int) {
 	var Readback;
 }
 
-class VulkanMemoryRange {
-	public var offset:Int64;
-	public var size:Int64;
-
-	public function new(offset:Int64, size:Int64) {
-		this.offset = offset;
-		this.size = size;
-	}
-}
-
-class VulkanMemoryBlock {
-	public var id(default, null):Int;
+class VulkanAllocation {
+	@:allow(h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator)
+	final handle:AllocationHandle;
 	public var memory(default, null):VkDeviceMemory;
-	public var size(default, null):Int64;
 	public var memoryType(default, null):Int;
 	public var memoryProperties(default, null):Int;
-	public var memoryClass(default, null):VulkanMemoryClass;
-	public var mapped(default, null):hl.Bytes;
-	public var dedicated(default, null):Bool;
-	public var freeRanges:Array<VulkanMemoryRange>;
-	public var liveAllocations = 0;
-
-	public function new(id:Int, memory:VkDeviceMemory, size:Int64, memoryType:Int, memoryProperties:Int, memoryClass:VulkanMemoryClass, mapped:hl.Bytes, dedicated:Bool) {
-		this.id = id;
-		this.memory = memory;
-		this.size = size;
-		this.memoryType = memoryType;
-		this.memoryProperties = memoryProperties;
-		this.memoryClass = memoryClass;
-		this.mapped = mapped;
-		this.dedicated = dedicated;
-		freeRanges = dedicated ? [] : [new VulkanMemoryRange(0, size)];
-	}
-}
-
-class VulkanAllocation {
-	public var memory(get, never):VkDeviceMemory;
-	public var memoryType(get, never):Int;
-	public var memoryProperties(get, never):Int;
-	public var blockId(get, never):Int;
 	public var offset(default, null):Int64;
 	public var size(default, null):Int64;
-	public var dedicated(get, never):Bool;
-	public var debugId(default, null):Int;
-	public var debugName(default, null):String;
+	public final debugId:Int;
+	public final debugName:String;
 	public var lastSubmission = 0;
 	public var released(default, null) = false;
 
 	final allocator:VulkanMemoryAllocator;
-	final block:VulkanMemoryBlock;
+	var mapped:hl.Bytes;
+	var owners = 1;
 
-	public function new(allocator:VulkanMemoryAllocator, block:VulkanMemoryBlock, offset:Int64, size:Int64, debugId:Int, debugName:String) {
+	public function new(allocator:VulkanMemoryAllocator, handle:AllocationHandle,
+		context:VkContext, debugId:Int, debugName:String) {
 		this.allocator = allocator;
-		this.block = block;
-		this.offset = offset;
-		this.size = size;
+		this.handle = handle;
 		this.debugId = debugId;
 		this.debugName = debugName;
-		block.liveAllocations++;
-	}
-
-	inline function get_memory():VkDeviceMemory {
-		return block.memory;
-	}
-
-	inline function get_memoryType():Int {
-		return block.memoryType;
-	}
-
-	inline function get_memoryProperties():Int {
-		return block.memoryProperties;
-	}
-
-	inline function get_blockId():Int {
-		return block.id;
-	}
-
-	inline function get_dedicated():Bool {
-		return block.dedicated;
+		var type = 0;
+		var memory:VkDeviceMemory = null;
+		var offset:Int64 = 0, size:Int64 = 0;
+		Vma.info(handle, type, memory, offset, size);
+		this.memory = memory;
+		this.memoryType = type;
+		this.offset = offset;
+		this.size = size;
+		memoryProperties = context.getMemoryTypeProperties(type);
+		Vma.setName(handle, debugName);
+		if ((memoryProperties & (1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_VISIBLE))) != 0) {
+			var result = 0;
+			mapped = Vma.map(handle, result);
+			if (mapped == null)
+				throw 'VMA mapping failed for $debugName: $result';
+		}
 	}
 
 	public function mappedBytes(relativeOffset:Int, length:Int):hl.Bytes {
-		if (released)
-			throw 'Vulkan allocation $debugName has already been released';
-		if (block.mapped == null)
+		if (released || relativeOffset < 0 || length < 0 || Int64.ofInt(relativeOffset) + length > size
+			|| Int64.ofInt(relativeOffset) + length > 0x7FFFFFFF)
+			throw 'Invalid HashLink mapped range for Vulkan allocation $debugName';
+		if (mapped == null)
 			throw 'Vulkan allocation $debugName is not host visible';
-		if (relativeOffset < 0 || length < 0 || Int64.ofInt(relativeOffset) + length > size)
-			throw 'Mapped range [$relativeOffset, ${relativeOffset + length}) exceeds Vulkan allocation $debugName ($size bytes)';
-		final absolute = offset + relativeOffset;
-		if (absolute.high != 0)
-			throw 'Mapped Vulkan allocation offset exceeds the HashLink byte-addressable range: $absolute';
-		return block.mapped.offset(absolute.low);
+		return mapped.offset(relativeOffset);
 	}
 
 	public function flush(relativeOffset:Int, length:Int) {
@@ -114,20 +74,25 @@ class VulkanAllocation {
 		allocator.invalidate(this, Int64.ofInt(relativeOffset), Int64.ofInt(length));
 	}
 
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	function retain() {
+		if (released) throw "Cannot retain released Vulkan memory";
+		owners++;
+	}
+
 	public function dispose() {
-		if (!released)
+		if (!released && --owners == 0)
 			allocator.free(this);
 	}
 
 	@:allow(h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator)
 	function markReleased() {
+		if (mapped != null) {
+			Vma.unmap(handle);
+			mapped = null;
+		}
+		Vma.release(handle);
 		released = true;
-		block.liveAllocations--;
-	}
-
-	@:allow(h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator)
-	inline function getBlock():VulkanMemoryBlock {
-		return block;
 	}
 }
 #end

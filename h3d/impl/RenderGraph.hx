@@ -2,6 +2,7 @@ package h3d.impl;
 
 #if render_graph
 import h3d.Engine.DepthBinding;
+import h3d.impl.RenderGraphAnalysis;
 
 class RenderGraph {
 	static var enable = false;
@@ -41,7 +42,7 @@ class RenderGraph {
 
 	public static function sampleTexture(t : h3d.mat.Texture) {
 		if ( !enable ) return;
-		if ( t == null || !t.flags.has(Target) ) return;
+		if ( t == null ) return;
 		frame.sampleTexture(t);
 	}
 
@@ -69,15 +70,30 @@ class Frame {
 	var curStep : String;
 	public var sections : Array<RenderSection>;
 	public var textures : Map<h3d.mat.Texture, TexData>;
+	public var analysis(default, null) = new RenderGraphAnalysis();
+	var pass = 0;
 
 	public function new() {
 		sections = [];
 		textures = [];
+		analysis.missingUsage("Legacy capture does not prove complete GPU usage; supply a separate complete declaration graph");
 	}
 
 	public function useTexture(t : h3d.mat.Texture) {
 		if ( t != null && textures.get(t) == null )
-			textures.set(t, @:privateAccess new TexData(t));
+			textures.set(t, @:privateAccess new TexData(t, analysis.register(t.name)));
+	}
+
+	public function declareTexture(t : h3d.mat.Texture, classification : ResourceClass, complete = false, observable = true) {
+		analysis.declare(getTextureId(t), classification, complete, observable);
+	}
+
+	public function recordTexture(t : h3d.mat.Texture, access : ResourceAccess, mip = -1, layer = -1) {
+		analysis.use(getTextureId(t), ++pass, access, "unknown", mip, layer);
+	}
+
+	public function createdTexture(t : h3d.mat.Texture) {
+		analysis.created(getTextureId(t), pass);
 	}
 
 	public function getTextureData(t : h3d.mat.Texture) {
@@ -101,6 +117,7 @@ class Frame {
 	}
 
 	public function mark(step : String) {
+		pass++;
 		if ( curStep != step ) {
 			curStep =  step;
 			sections.push(new RenderSection(step));
@@ -125,15 +142,29 @@ class Frame {
 	}
 
 	public function setTargetSection(targetSection : TargetSectionBase) {
+		pass++;
 		var curSection = getCurSection();
 		curSection.setTargetSection(targetSection);
+		for( id in targetSection.getTextureIds() )
+			if( id >= 0 ) {
+				if( Std.isOfType(targetSection, TargetSection) ) {
+					var target : TargetSection = cast targetSection;
+					analysis.use(id, pass, RenderTargetWrite, "unknown", target.mipLevel, target.layer);
+				} else
+					analysis.use(id, pass, RenderTargetWrite);
+			}
+
 	}
 
 	public function clearTarget() {
-		getCurTargetSection().clearTarget();
+		var target = getCurTargetSection();
+		for( id in target.getTextureIds() )
+			if( id >= 0 ) analysis.use(id, pass, Clear);
+		target.clearTarget();
 	}
 
 	public function sampleTexture(t : h3d.mat.Texture) {
+		analysis.use(getTextureId(t), pass, ShaderRead);
 		getCurTargetSection().sampleTexture(t);
 	}
 
@@ -142,7 +173,8 @@ class Frame {
 		tex.sort((t1,t2) -> return t1.id > t2.id ? 1 : -1);
 		return {
 			renderSections : [for ( s in sections ) s.dump()],
-			textures : tex
+			textures : tex,
+			resourceAnalysis : analysis.dump()
 		}
 	}
 }
@@ -255,6 +287,10 @@ class DepthSection extends TargetSectionBase {
 		this.depthId = RenderGraph.frame.getTextureId(depth);
 	}
 
+	override function getTextureIds() {
+		return [depthId];
+	}
+
 	override function dump() {
 		var res = super.dump();
 		res.depth = depthId;
@@ -263,20 +299,18 @@ class DepthSection extends TargetSectionBase {
 }
 
 class TexData {
-	static var CUR_ID : Int = 0;
 	public var name : String;
 	public var width : Int;
 	public var height : Int;
 	public var fmt : hxd.PixelFormat;
 	public var id(default, null) : Int;
 
-	function new(t : h3d.mat.Texture) {
+	function new(t : h3d.mat.Texture, resourceId : Int) {
 		name = t.name;
 		width = t.width;
 		height = t.height;
 		fmt = t.format;
-		id = CUR_ID;
-		CUR_ID++;
+		id = resourceId;
 	}
 
 	public function dump() {

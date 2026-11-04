@@ -22,11 +22,20 @@ class BlockHeap extends DescriptorHeapBase {
 	}
 
 	public function allocIndex():Int {
+		#if dx12_descriptor_profile
+		var started = haxe.Timer.stamp();
+		#end
 		var idx = freeList.pop();
 		if(idx == null) {
 			idx = size;
 			resize();
 		}
+		#if dx12_descriptor_profile
+		allocations++;
+		allocatedDescriptors += 1;
+		peakUsage = hxd.Math.imax(peakUsage, size - freeList.length);
+		allocationSeconds += haxe.Timer.stamp() - started;
+		#end
 		return idx;
 	}
 

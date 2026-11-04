@@ -32,6 +32,9 @@ enum abstract VulkanMipmapMode(Int) {
 }
 
 class VulkanImage {
+	static var nextIdentity = 0;
+	public final identity = nextIdentity++;
+
 	public var image(default, null):VkImage;
 	public var allocation(default, null):VulkanAllocation;
 	public var size(default, null):Int64;

@@ -27,6 +27,10 @@ class DX12Frame {
 	public var copyCommandList : CommandList;
 	public var fenceValue : Int64;
 	public var toRelease : Array<Dx12Resource> = [];
+	#if (gfx_d3d12ma && !console)
+	public var texturesToRelease : Array<h3d.impl.driver.dx12.resource.ManagedTexture> = [];
+	public var allocationsToRelease : Array<h3d.impl.driver.dx12.resource.ManagedBuffer> = [];
+	#end
 	public var placedToFree : Array<TextureData> = [];
 	public var texHandlesToRelease : Array<h3d.mat.TextureHandle> = [];
 	public var bufHandlesToRelease : Array<h3d.BufferHandle> = [];
@@ -41,6 +45,7 @@ class DX12Frame {
 	public var queryBuffer : GpuResource;
 	public var dynamicBufferAlloc : BlockAllocator;
 	public var pendingCopyBuffers : Array<MemoryBlock> = [];
+	public var pendingCopyBytes : Float = 0;
 
 	public function new() {
 	}

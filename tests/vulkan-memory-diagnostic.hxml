@@ -1,0 +1,7 @@
+-cp tests
+-lib heaps
+-lib limen
+-D gfx_vulkan
+-D windowSize=64x64
+-main VulkanMemoryDiagnostic
+-hl tests/vulkan-memory-diagnostic.hl

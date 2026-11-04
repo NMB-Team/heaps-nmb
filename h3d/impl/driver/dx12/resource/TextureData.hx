@@ -9,6 +9,9 @@ import h3d.impl.driver.dx12.descriptor.BlockHeap;
 class TextureData extends ResourceData {
 	public var format : DxgiFormat;
 	public var memory : MemoryBlock;
+	#if (gfx_d3d12ma && !console)
+	public var managed : ManagedTexture;
+	#end
 	public var color : h3d.Vector4;
 	var clearColorChanges : Int;
 	var cpuViewBits : Int = -1;
