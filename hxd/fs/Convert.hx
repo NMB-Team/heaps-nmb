@@ -486,6 +486,32 @@ class ConvertTGA2PNG extends Convert {
 	static var _ = Convert.register(new ConvertTGA2PNG());
 }
 
+#if hl
+class ConvertPNG2QOI extends Convert {
+	public function new() {
+		super("png", "qoi");
+	}
+
+	function preparePixels(pixels:hxd.Pixels) {}
+
+	override function convert() {
+		var image = new hxd.res.Image(new hxd.fs.BytesFileSystem.BytesFileEntry(srcPath, srcBytes));
+		var pixels = image.getPixels(RGBA);
+		var bytes = try {
+			preparePixels(pixels);
+			pixels.toQOI();
+		} catch (e:Dynamic) {
+			pixels.dispose();
+			throw 'PNG to QOI conversion failed for "$srcPath": $e';
+		}
+		pixels.dispose();
+		save(bytes);
+	}
+
+	static var _ = Convert.register(new ConvertPNG2QOI());
+}
+#end
+
 class ConvertFNT2BFNT extends Convert {
 	var emptyTile:h2d.Tile;
 

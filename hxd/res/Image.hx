@@ -8,6 +8,7 @@ enum abstract ImageFormat(Int) {
 	var Dds = 4;
 	var Raw = 5;
 	var Hdr = 6;
+	var Qoi = 7;
 
 	/*
 		Tells if we might not be able to directly decode the image without going through a loadBitmap async call.
@@ -35,6 +36,7 @@ enum abstract ImageFormat(Int) {
 			case Dds: "DDS";
 			case Raw: "RAW";
 			case Hdr: "HDR";
+			case Qoi: "QOI";
 		};
 	}
 }
@@ -158,6 +160,23 @@ class Image extends Resource {
 					}
 					f.skip(dataLen + 4); // CRC
 				}
+			case 0x6F71: // QOI
+				if (entry.size < 22 || f.readUInt16() != 0x6669) {
+					f.close();
+					throw "Invalid QOI header " + entry.path;
+				}
+				f.bigEndian = true;
+				inf.width = f.readInt32();
+				inf.height = f.readInt32();
+				var channels = f.readByte();
+				var colorspace = f.readByte();
+				if (inf.width <= 0 || inf.height <= 0 || inf.width > Std.int(0x1FFFFFFF / inf.height)
+					|| (channels != 3 && channels != 4) || colorspace > 1) {
+					f.close();
+					throw "Invalid QOI header " + entry.path;
+				}
+				inf.dataFormat = Qoi;
+				inf.pixelFormat = RGBA;
 			case 0x4947: // GIF
 				inf.dataFormat = Gif;
 				inf.pixelFormat = BGRA;
@@ -354,6 +373,16 @@ class Image extends Resource {
 					default:
 						throw "No support to decode " + inf.pixelFormat + " on this platform (" + entry.path + ")";
 				}
+				#end
+			case Qoi:
+				if (index != 0)
+					throw "QOI images only contain one frame (" + entry.path + ")";
+				#if hl
+				pixels = hxd.fmt.Qoi.decode(getData());
+				if (pixels == null)
+					throw "Failed to decode QOI " + entry.path;
+				#else
+				throw "QOI decoding requires HashLink (" + entry.path + ")";
 				#end
 			case Gif:
 				var bytes = getData();

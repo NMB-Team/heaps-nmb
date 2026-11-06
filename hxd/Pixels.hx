@@ -555,6 +555,12 @@ class Pixels {
 		return Pixels.toDDSLayers([this]);
 	}
 
+	#if hl
+	public function toQOI(?colorspace = 0) {
+		return hxd.fmt.Qoi.encode(this, colorspace);
+	}
+	#end
+
 	public function clone() {
 		var p = new Pixels(width, height, null, format);
 		p.flags = flags;
