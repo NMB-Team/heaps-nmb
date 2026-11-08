@@ -37,6 +37,7 @@ class VulkanConstantUpload {
 	public var buffer:VulkanUploadBuffer;
 	public var offset:Int;
 	public var size:Int;
+	public var paramsCache = new h3d.impl.driver.ShaderParamCache();
 
 	public function new() {
 	}

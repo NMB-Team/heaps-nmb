@@ -42,6 +42,7 @@ class SharedShader {
 	public var data : ShaderData;
 	public var globals : Array<ShaderGlobal>;
 	public var consts : ShaderConst;
+	public var revision(default, null) = 0;
 	var instanceCache : Map<Int,ShaderInstance>;
 	var lastBits = -1;
 	var lastInstance : ShaderInstance;
@@ -73,7 +74,7 @@ class SharedShader {
 	}
 
 	public inline function getInstance( constBits : Int ) {
-		if( lastBits == constBits )
+		if( lastBits == constBits && lastInstance != null )
 			return lastInstance;
 		var i = instanceCache.get(constBits);
 		if( i == null )
@@ -345,6 +346,9 @@ class SharedShader {
 			return false;
 		data = compactMem(data2);
 		instanceCache = new Map();
+		lastBits = -1;
+		lastInstance = null;
+		revision++;
 		return true;
 	}
 

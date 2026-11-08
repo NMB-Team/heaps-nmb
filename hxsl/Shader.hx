@@ -11,6 +11,7 @@ class Shader {
 	var instance : SharedShader.ShaderInstance;
 	var constBits : Int;
 	var constModified : Bool;
+	var instanceRevision = -1;
 
 	public function new() {
 		initialize();
@@ -118,6 +119,8 @@ class Shader {
 			c = c.next;
 		}
 		instance = shader.getInstance(constBits);
+		instanceRevision = shader.revision;
+		constModified = false;
 	}
 
 	public function clone() : Shader {

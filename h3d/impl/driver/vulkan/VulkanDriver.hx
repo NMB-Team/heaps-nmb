@@ -2869,7 +2869,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			frame.shaderConstants.set(blockId, upload);
 		}
 		final previousBuffer = upload.buffer;
-		uploadManager.uploadConstants(command, bytes, 0, block.sourceSize, alignment, upload, !renderingStarted);
+		if( frequency != VulkanConstantFrequency.Params || upload.paramsCache.update(source, block.sourceSize >> 2) )
+			uploadManager.uploadConstants(command, bytes, 0, block.sourceSize, alignment, upload, !renderingStarted);
 		if( previousBuffer != upload.buffer )
 			currentShader.descriptorSets[block.set].revision++;
 		final textureStart = frequency == VulkanConstantFrequency.Globals ? shader.paramsTexHandleCount : 0;

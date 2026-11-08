@@ -688,7 +688,7 @@ class OpenGLDriver extends Driver {
 				#end
 			}
 		case Params:
-			if( s.params != null ) {
+			if( s.params != null && s.paramsCache.update(buf.params, s.shader.paramsSize << 2) ) {
 				#if hl
 				gl.uniform4fv(s.params, streamData(hl.Bytes.getArray(buf.params.toData()), 0, s.shader.paramsSize * 16), 0, s.shader.paramsSize * 4);
 				#else

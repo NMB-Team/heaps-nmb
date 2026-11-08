@@ -379,6 +379,11 @@ class Macros {
 		}
 		// updateConstants
 		var exprs = [];
+		// Only top-level scalar constants are fully tracked by their setters.
+		var reusableConstants = true;
+		for( c in consts )
+			if( c.v.kind == Global || c.v.parent != null || !c.v.type.match(TInt | TBool) )
+				reusableConstants = false;
 		function getPath(v:TVar,?suffix) {
 			var name = suffix == null ? v.name : v.name + suffix;
 			if( v.parent == null )
@@ -427,6 +432,7 @@ class Macros {
 				ret : macro : Void,
 				args : [ { name : "globals", type : macro : hxsl.Globals } ],
 				expr : macro {
+					if( $v{reusableConstants} && instance != null && !constModified && instanceRevision == shader.revision ) return;
 					constBits = 0;
 					{$a{ exprs }};
 					updateConstantsFinal(globals);
@@ -475,7 +481,10 @@ class Macros {
 				ret : macro : Void,
 				args : [ { name : "index", type : macro : Int }, { name : "val", type : macro : Dynamic } ],
 				expr : {
-					expr : ESwitch(macro index, [for( p in eparams ) { values : [macro $v{ index++ } ], expr : macro $p = val } ], macro {}),
+					expr : EBlock([
+						macro constModified = true,
+						{ expr : ESwitch(macro index, [for( p in eparams ) { values : [macro $v{ index++ } ], expr : macro $p = val } ], macro {}), pos : pos },
+					]),
 					pos : pos,
 				},
 			}),

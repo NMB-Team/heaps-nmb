@@ -22,6 +22,7 @@ class CompiledShader {
 	public var buffers : Array<Int>;
 	public var bufferTypes : Array<hxsl.Ast.BufferKind>;
 	public var shader : hxsl.RuntimeShader.RuntimeShaderData;
+	public var paramsCache = new h3d.impl.driver.ShaderParamCache();
 
 	public function new(s,kind,shader) {
 		this.s = s;

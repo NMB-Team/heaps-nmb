@@ -22,6 +22,8 @@ class ShaderRegisters {
 	public var lastHeapCount : Int;
 	public var lastTextures : Array<Texture> = [];
 	public var lastTexturesBits : Array<Int> = [];
+	public var paramsCache = new h3d.impl.driver.ShaderParamCache();
+	public var paramsGeneration = -1;
 
 	public function new() {
 	}

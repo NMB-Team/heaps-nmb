@@ -11,6 +11,7 @@ class RenderContext {
 	public var textures : h3d.impl.TextureCache;
 	public var globals : hxsl.Globals;
 	public var shaderBuffers = new h3d.shader.Buffers();
+	var parameterShaders : Array<hxsl.Shader> = [];
 
 	function new() {
 		engine = h3d.Engine.getCurrent();
@@ -32,6 +33,7 @@ class RenderContext {
 			inst = null;
 		else
 			throw "Context has changed";
+		parameterShaders.resize(0);
 	}
 
 	public function dispose() {
@@ -250,17 +252,21 @@ class RenderContext {
 	}
 
 	public function fillParams( buf : h3d.shader.Buffers, s : hxsl.RuntimeShader, shaders : hxsl.ShaderList, compute : Bool = false ) {
+		var source = shaders;
+		var count = 0;
+		while( source != null ) {
+			parameterShaders[count++] = source.s;
+			source = source.next;
+		}
+		parameterShaders.resize(count);
+
 		var curInstance = -1;
 		var curInstanceValue = null;
 		inline function getInstance( index : Int ) {
 			if( curInstance == index )
 				return curInstanceValue;
-			var si = shaders;
 			curInstance = index;
-			// Compute list has no linker shader.
-			if ( compute ) index++;
-			while( --index > 0 ) si = si.next;
-			curInstanceValue = si.s;
+			curInstanceValue = parameterShaders[compute ? index : index - 1];
 			return curInstanceValue;
 		}
 		inline function getParamValue( p : hxsl.RuntimeShader.AllocParam, shaders : hxsl.ShaderList, opt = false ) : Dynamic {

@@ -179,6 +179,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	var frameCount : Int;
 	var tsFreq : haxe.Int64;
 	var heapCount : Int;
+	var paramsGeneration = 0;
 	var currentPipelineState : PipelineState;
 	var lastVertexGlobalBind : Int = -1;
 	var lastFragmentGlobalBind : Int = -1;
@@ -2780,22 +2781,25 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			if( shader.paramsSize > 0 ) {
 				var data = hl.Bytes.getArray(buf.params.toData());
 				var dataSize = shader.paramsSize << 4;
-				if( regs.params & 0x100 != 0 ) {
-					// update CBV
-					var srv = frame.srvHeap.alloc(1);
-					var alloc = allocDynamicBuffer(data,dataSize);
-					var desc = tmp.cbvDesc;
-					desc.bufferLocation = alloc.gpuAddress;
-					desc.sizeInBytes = alloc.size;
-					Driver.createConstantBufferView(desc, srv);
-					if( currentShader.isCompute )
-						frame.commandList.setComputeRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
+				if( regs.paramsCache.update(buf.params, shader.paramsSize << 2, regs.paramsGeneration != paramsGeneration) ) {
+					if( regs.params & 0x100 != 0 ) {
+						// update CBV
+						var srv = frame.srvHeap.alloc(1);
+						var alloc = allocDynamicBuffer(data,dataSize);
+						var desc = tmp.cbvDesc;
+						desc.bufferLocation = alloc.gpuAddress;
+						desc.sizeInBytes = alloc.size;
+						Driver.createConstantBufferView(desc, srv);
+						if( currentShader.isCompute )
+							frame.commandList.setComputeRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
+						else
+							frame.commandList.setGraphicsRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
+					} else if( currentShader.isCompute )
+						frame.commandList.setComputeRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
 					else
-						frame.commandList.setGraphicsRootDescriptorTable(regs.params & 0xFF, frame.srvHeap.toGPU(srv));
-				} else if( currentShader.isCompute )
-					frame.commandList.setComputeRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
-				else
-					frame.commandList.setGraphicsRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
+						frame.commandList.setGraphicsRoot32BitConstants(regs.params, dataSize >> 2, data, 0);
+					regs.paramsGeneration = paramsGeneration;
+				}
 				var state = shader.kind == Fragment ? PIXEL_SHADER_RESOURCE : NON_PIXEL_SHADER_RESOURCE;
 				for ( i in 0...shader.paramsTexHandleCount ) {
 					var handle = buf.texHandles[i];
@@ -3039,6 +3043,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if( currentShader == sh )
 			return false;
 		currentShader = sh;
+		paramsGeneration++;
 		pipelineBuilder.setShader(shader);
 		if( sh.isCompute ) {
 			frame.commandList.setComputeRootSignature(currentShader.rootSignature);
@@ -3423,6 +3428,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	function flushHeaps() {
+		paramsGeneration++;
 		frame.srvHeapCache.checkSize(bindlessSrvHeap.size + INITIAL_SRV_COUNT, frame.toRelease);
 		frame.samplerHeapCache.checkSize(hxd.Math.imin(bindlessSamplerHeap.size + INITIAL_SAMPLER_COUNT, 2048), frame.toRelease);
 		frame.srvHeap = frame.srvHeapCache.next();
