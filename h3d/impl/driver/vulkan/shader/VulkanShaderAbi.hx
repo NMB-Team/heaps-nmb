@@ -156,12 +156,14 @@ class VulkanShaderInterfaceVariable {
 	public final location:Int;
 	public final type:VulkanShaderType;
 	public final flat:Bool;
+	public final instanceDivisor:Int;
 
-	public function new(name:String, location:Int, type:VulkanShaderType, flat:Bool = false) {
+	public function new(name:String, location:Int, type:VulkanShaderType, flat:Bool = false, instanceDivisor = 0) {
 		this.name = name;
 		this.location = location;
 		this.type = type;
 		this.flat = flat;
+		this.instanceDivisor = instanceDivisor;
 	}
 }
 
@@ -385,8 +387,17 @@ class VulkanShaderAbi {
 		for (variable in data.data.vars)
 			if (variable.kind == Input) {
 				final location = result.length;
+				var divisor = 0;
+				if( variable.qualifiers != null )
+					for( qualifier in variable.qualifiers )
+						switch( qualifier ) {
+						case PerInstance(value): divisor = value;
+						default:
+						}
+				if( divisor < 0 || divisor > 1 )
+					throw 'Vulkan vertex input ${variable.name} requires unsupported instance divisor $divisor';
 				layout.locations.set(variable.id, location);
-				result.push(new VulkanShaderInterfaceVariable(variable.name, location, VulkanShaderType.fromHxsl(variable.type)));
+				result.push(new VulkanShaderInterfaceVariable(variable.name, location, VulkanShaderType.fromHxsl(variable.type), false, divisor));
 			}
 		return result;
 	}

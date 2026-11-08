@@ -46,7 +46,12 @@ class GPUMeshBatch extends MeshBatch {
 	 * Has effects only if a lod is available in the primitive.
 	 */
 	public function enableGpuLod() {
-		gpuLodEnabled = primitiveSubMeshes != null || getPrimitive().lodCount() > 1;
+		var enabled = primitiveSubMeshes != null || getPrimitive().lodCount() > 1;
+		if( enabled != gpuLodEnabled && subPartsInfos != null ) {
+			hxd.impl.Allocator.get().disposeBuffer(subPartsInfos);
+			subPartsInfos = null;
+		}
+		gpuLodEnabled = enabled;
 		return gpuLodEnabled;
 	}
 
@@ -72,7 +77,9 @@ class GPUMeshBatch extends MeshBatch {
 		if ( !gpuLodEnabled && !gpuCullingEnabled )
 			throw "No need to create a GPUMeshBatch without gpu lod nor gpu culling, create a regular MeshBatch instead";
 		subPartsEmitted = 0;
-		materialsEmitted = [for ( _ in 0...materials.length) 0.0];
+		if( materialsEmitted == null ) materialsEmitted = [];
+		materialsEmitted.resize(materials.length);
+		for( i in 0...materials.length ) materialsEmitted[i] = 0.0;
 		return super.begin(emitCountTip);
 	}
 
@@ -89,7 +96,7 @@ class GPUMeshBatch extends MeshBatch {
 		var instanceInfosByteSize = INSTANCES_INFOS_ELEMENT_COUNT << 2;
 		var minInstanceInfosSize = ( instanceCount + 1 ) * instanceInfosByteSize;
 		if ( cpuInstancesInfos.length < minInstanceInfosSize ) {
-			var next = haxe.io.Bytes.alloc(Std.int(cpuInstancesInfos.length * 3 / 2));
+			var next = haxe.io.Bytes.alloc(hxd.Math.imax(minInstanceInfosSize, Std.int(cpuInstancesInfos.length * 3 / 2)));
 			next.blit(0, cpuInstancesInfos, 0, cpuInstancesInfos.length);
 			cpuInstancesInfos = next;
 		}
@@ -109,18 +116,19 @@ class GPUMeshBatch extends MeshBatch {
 		if ( gpuInstancesInfos == null || gpuInstancesInfos.isDisposed() || instancesInfosElementCount > gpuInstancesInfos.vertices ) {
 			if ( gpuInstancesInfos != null)
 				alloc.disposeBuffer( gpuInstancesInfos );
-			gpuInstancesInfos = alloc.allocBuffer( instancesInfosElementCount, INSTANCES_INFOS_FMT, UniformReadWrite );
+			gpuInstancesInfos = alloc.allocBuffer( hxd.Math.nextPOT(instancesInfosElementCount), INSTANCES_INFOS_FMT, UniformReadWrite );
 			upload = true;
 		}
 
 		if ( upload )
 			gpuInstancesInfos.uploadBytes( cpuInstancesInfos, 0, instancesInfosElementCount );
 
-		if ( subMeshesInfos == null ) {
+		if ( subMeshesInfos == null || subMeshesInfos.isDisposed() || subPartsInfos == null || subPartsInfos.isDisposed() ) {
+			if( subMeshesInfos != null ) alloc.disposeBuffer(subMeshesInfos);
+			if( subPartsInfos != null ) alloc.disposeBuffer(subPartsInfos);
 			var tmpSubMeshesInfos = alloc.allocFloats( SUB_MESHES_INFOS_ELEMENT_COUNT * primitiveSubMeshes.length );
 
 			var pos = 0;
-			var subPartsCount = 0;
 			var subPartsStart = 0;
 			for ( subMesh in primitiveSubMeshes ) {
 				var bounds = subMesh.bounds;
@@ -132,14 +140,13 @@ class GPUMeshBatch extends MeshBatch {
 				tmpSubMeshesInfos[pos++] = subPartsStart;
 				tmpSubMeshesInfos[pos++] = subMesh.subParts.length;
 				tmpSubMeshesInfos[pos++] = 0.0;
-				subPartsCount += subMesh.subParts.length;
 				subPartsStart += subMesh.subParts.length * subMesh.lodCount;
 			}
 			subMeshesInfos = alloc.ofFloats( tmpSubMeshesInfos, hxd.BufferFormat.VEC4_DATA, Uniform );
 			alloc.disposeFloats(tmpSubMeshesInfos);
 
 			pos = 0;
-			var tmpSubPartsInfos = alloc.allocFloats( SUB_PARTS_INFOS_ELEMENT_COUNT * subPartsCount );
+			var tmpSubPartsInfos = alloc.allocFloats( SUB_PARTS_INFOS_ELEMENT_COUNT * subPartsStart );
 			for ( subMesh in primitiveSubMeshes ) {
 				var lodCount = subMesh.lodCount;
 				var lodConfig = subMesh.lodConfig;
@@ -166,10 +173,11 @@ class GPUMeshBatch extends MeshBatch {
 	}
 
 	override function flush() {
+		if( instanceCount == 0 ) return;
 		var alloc = hxd.impl.Allocator.get();
 		var materialCount = materials.length;
 
-		if ( !hasSubMeshes() ) {
+		if ( !hasSubMeshes() && (subPartsInfos == null || subPartsInfos.isDisposed()) ) {
 			var prim = getPrimitive();
 			if ( gpuLodEnabled ) {
 				var lodCount = getLodCount();
@@ -207,14 +215,12 @@ class GPUMeshBatch extends MeshBatch {
 
 		super.flush();
 
-		var computeShader : h3d.shader.InstanceIndirect.InstanceIndirectBase;
-		if( computePass == null ) {
+		var computeShader = computePass == null ? null : computePass.getShader(h3d.shader.InstanceIndirect.InstanceIndirectBase);
+		if( computeShader == null || Std.isOfType(computeShader, h3d.shader.InstanceIndirect.SubPartInstanceIndirect) != hasSubMeshes() ) {
 			computeShader = hasSubMeshes() ? new h3d.shader.InstanceIndirect.SubPartInstanceIndirect() : new h3d.shader.InstanceIndirect();
 			computePass = new h3d.mat.Pass("batchUpdate");
 			computePass.addShader(computeShader);
 			addComputeShaders(computePass);
-		} else {
-			computeShader = computePass.getShader(h3d.shader.InstanceIndirect.InstanceIndirectBase);
 		}
 
 		computeShader.ENABLE_LOD = gpuLodEnabled;
@@ -230,10 +236,14 @@ class GPUMeshBatch extends MeshBatch {
 			commandCountNeeded = subPartsEmitted;
 			var computeShader : h3d.shader.InstanceIndirect.SubPartInstanceIndirect = cast computeShader;
 			computeShader.MATERIAL_COUNT = materialCount;
-			var materialCommandStart = [new h3d.Vector4()];
-			for ( i in 1...materialCount )
-				materialCommandStart.push(new h3d.Vector4(materialsEmitted[i-1]));
-			computeShader.materialCommandStart = materialCommandStart;
+			var materialCommandStart = computeShader.materialCommandStart;
+			materialCommandStart.resize(materialCount);
+			var offset = 0.0;
+			for( i in 0...materialCount ) {
+				if( materialCommandStart[i] == null ) materialCommandStart[i] = new h3d.Vector4();
+				materialCommandStart[i].set(offset, 0, 0, 0);
+				offset += materialsEmitted[i];
+			}
 			computeShader.subMeshesInfos = subMeshesInfos;
 			computeShader.instancesInfos = gpuInstancesInfos;
 		} else {
@@ -246,15 +256,15 @@ class GPUMeshBatch extends MeshBatch {
 			computeShader.subPartsCount = materialCount;
 		}
 
-		var alloc = hxd.impl.Allocator.get();
 		var commandCountAllocated = hxd.Math.nextPOT( commandCountNeeded );
-		if ( commandBuffer == null ) {
+		if ( commandBuffer == null || commandBuffer.isDisposed() ) {
 			commandBuffer = alloc.allocBuffer( commandCountAllocated, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
-			gpuCounter = new h3d.GPUCounter( materialCount );
 		} else if ( commandBuffer.vertices < commandCountAllocated ) {
 			alloc.disposeBuffer( commandBuffer );
 			commandBuffer = alloc.allocBuffer( commandCountAllocated, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
 		}
+		if( gpuCounter == null || gpuCounter.buffer.isDisposed() )
+			gpuCounter = new h3d.GPUCounter(materialCount);
 	}
 
 	function addComputeShaders( pass : h3d.mat.Pass ) {}
@@ -290,9 +300,14 @@ class GPUMeshBatch extends MeshBatch {
 	override function setPassCommand(p : BatchData, bufferIndex : Int) {
 		super.setPassCommand(p, bufferIndex);
 		if ( commandBuffer != null ) {
+			if( hasSubMeshes() ) {
+				var computeShader = computePass.getShader(h3d.shader.InstanceIndirect.SubPartInstanceIndirect);
+				instanced.commands.setCommand(Std.int(materialsEmitted[p.matIndex]), 0);
+				@:privateAccess instanced.commands.offset = Std.int(computeShader.materialCommandStart[p.matIndex].x);
+			} else
+				@:privateAccess instanced.commands.offset = p.matIndex * instanceCount;
 			@:privateAccess instanced.commands.data = commandBuffer.vbuf;
 			@:privateAccess instanced.commands.countBuffer = gpuCounter.buffer.vbuf;
-			@:privateAccess instanced.commands.offset = p.matIndex * instanceCount;
 			@:privateAccess instanced.commands.countOffset = p.matIndex;
 		}
 	}
@@ -328,9 +343,13 @@ class GPUMeshBatch extends MeshBatch {
 		}
 		cpuInstancesInfos = null;
 
-		if ( commandBuffer != null )
+		if ( commandBuffer != null ) {
 			alloc.disposeBuffer(commandBuffer);
-		if( gpuCounter != null )
+			commandBuffer = null;
+		}
+		if( gpuCounter != null ) {
 			gpuCounter.dispose();
+			gpuCounter = null;
+		}
 	}
 }

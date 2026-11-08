@@ -32,7 +32,6 @@ class InstanceIndirectBase extends hxsl.Shader {
 				setLayout(64, 1, 1);
 				invocID = computeVar.workGroup.x * 64 + computeVar.localInvocationIndex;
 			}
-			modelView = instanceData[invocID].modelView;
 		}
 
 		function init() {}
@@ -126,6 +125,7 @@ class InstanceIndirectBase extends hxsl.Shader {
 
 		function main() {
 			if ( invocID < instanceCount ) {
+				modelView = instanceData[invocID].modelView;
 				init();
 
 				var localCenter = vec4(getCenter(), 1.0);

@@ -34,7 +34,7 @@ class MeshBatch extends MultiMaterial {
 	var meshBatchFlags(default, null) : haxe.EnumFlags<MeshBatchFlag>;
 
 	/**
-		Set if shader list or shader constants has changed, before calling begin()
+		Set if shader lists, shader constants or primitive submesh/LOD metadata changed, before calling begin().
 	**/
 	public var shadersChanged = true;
 
@@ -172,10 +172,12 @@ class MeshBatch extends MultiMaterial {
 		var alloc = hxd.impl.Allocator.get();
 		while( p != null ) {
 			var size = emitCountTip * p.paramsCount * 4;
-			if( p.data == null || p.data.length < size || shouldResizeDown(p.data.length, size) ) {
+			if( p.data == null || shouldResizeDown(p.data.length, size) ) {
 				if( p.data != null ) alloc.disposeFloats(p.data);
 				p.data = alloc.allocFloats(size);
-			}
+			} else if( p.data.length < size )
+				p.data.grow(hxd.Math.imax(size, p.data.length << 1));
+			if( p.textureHandles != null ) p.textureHandles.resize(0);
 			p = p.next;
 		}
 
@@ -343,6 +345,8 @@ class MeshBatch extends MultiMaterial {
 			case TMat4:
 				for( i in 0...4 )
 					fmt.push(new hxd.BufferFormat.BufferInput(name+"__m"+i,DVec4));
+			case TTextureHandle, TSampler(_):
+				fmt.push(new hxd.BufferFormat.BufferInput(name,DVec2));
 			default:
 				var t = hxd.BufferFormat.InputFormat.fromHXSL(p.type);
 				fmt.push(new hxd.BufferFormat.BufferInput(p.name,t));
@@ -421,7 +425,7 @@ class MeshBatch extends MultiMaterial {
 			var pos = count * instanceSize;
 			var minIndirectCallBufferSize = pos + instanceSize;
 			if ( indirectCallBuffer.bytes.length < minIndirectCallBufferSize ) {
-				var next = haxe.io.Bytes.alloc(Std.int((indirectCallBuffer.bytes.length * 3 / 2)));
+				var next = haxe.io.Bytes.alloc(hxd.Math.imax(minIndirectCallBufferSize, Std.int(indirectCallBuffer.bytes.length * 3 / 2)));
 				next.blit(0, indirectCallBuffer.bytes, 0, pos);
 				indirectCallBuffer.bytes = next;
 			}
@@ -560,11 +564,12 @@ class MeshBatch extends MultiMaterial {
 					offsets.dispose();
 					prim.removeBuffer(offsets);
 				}
-				var tmp = haxe.io.Bytes.alloc(4 * instanceCount);
-				for ( i in 0...instanceCount )
+				var capacity = hxd.Math.nextPOT(instanceCount);
+				var tmp = haxe.io.Bytes.alloc(4 * capacity);
+				for ( i in 0...capacity )
 					tmp.setFloat(i<<2, i);
-				offsets = new h3d.Buffer(instanceCount, BATCH_START_FMT);
-				offsets.uploadBytes(tmp, 0, instanceCount);
+				offsets = new h3d.Buffer(capacity, BATCH_START_FMT);
+				offsets.uploadBytes(tmp, 0, capacity);
 				prim.addBuffer(offsets);
 			}
 		}
@@ -583,7 +588,7 @@ class MeshBatch extends MultiMaterial {
 			var startPos = batch.paramsCount * instanceCount << 2;
 			// in case we are bigger than emitCountTip
 			if( startPos + (batch.paramsCount << 2) > batch.data.length )
-				batch.data.grow(batch.data.length << 1);
+				batch.data.grow(hxd.Math.imax(startPos + (batch.paramsCount << 2), batch.data.length << 1));
 
 			var p = batch.params;
 			var buf = batch.data;
@@ -752,7 +757,6 @@ class MeshBatch extends MultiMaterial {
 	}
 
 	public function disposeBuffers() {
-		if( instanceCount == 0 ) return;
 		var p = dataPasses;
 		var alloc = hxd.impl.Allocator.get();
 		while( p != null ) {

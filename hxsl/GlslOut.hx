@@ -996,6 +996,8 @@ class GlslOut {
 				case Param, Global:
 					if( vulkanLayout.bindings.exists(v.id) )
 						initVar(v);
+				case Local if( vulkanLayout.bindless != null && (isSampler(v.type) || v.type.match(TBuffer(_, _, _))) ):
+					locals.set(v.id, v);
 				default:
 					initVar(v);
 				}

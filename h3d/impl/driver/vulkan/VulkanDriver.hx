@@ -2202,21 +2202,30 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		var layout = layouts.get(v.format);
 		if( layout == null ) {
-			final mapping = v.format.resolveMapping(currentShader.shader.getInputFormat());
+			final mapping = v.format.resolveMapping(currentShader.vertexFormat);
 			final attributes = [];
+			final bindings = [];
+			final bindingIds = [-1, -1];
 			for( index => input in currentShader.vertexInterface.inputs ) {
 				final entry = mapping[index];
-				attributes.push(new VulkanVertexAttribute(input.location, 0, resolveVertexFormat(input.type, entry.precision), entry.offset));
+				final rate = input.instanceDivisor;
+				if( bindingIds[rate] < 0 ) {
+					bindingIds[rate] = bindings.length;
+					bindings.push(new VulkanVertexBinding(bindings.length, v.format.strideBytes, rate == 1));
+				}
+				attributes.push(new VulkanVertexAttribute(input.location, bindingIds[rate], resolveVertexFormat(input.type, entry.precision), entry.offset));
 			}
-			final bindings = [new VulkanVertexBinding(0, v.format.strideBytes)];
 			validateVertexAttributes(attributes, bindings);
 			layout = new VulkanVertexLayout(bindings, attributes);
 			layouts.set(v.format, layout);
 		}
 		currentVertexLayout = layout;
-		currentVertexBuffers.resize(1);
+		currentVertexBuffers.resize(hxd.Math.imax(1, layout.bindings.length));
 		currentVertexBuffers[0] = vbuf;
-		command.bindVertexBuffer(0, vbuf.buffer, 0);
+		for( binding in layout.bindings ) {
+			currentVertexBuffers[binding.binding] = vbuf;
+			command.bindVertexBuffer(binding.binding, vbuf.buffer, 0);
+		}
 	}
 
 	override function selectMultiBuffers( format : hxd.BufferFormat.MultiFormat, buffers : Array<h3d.Buffer> ) {
@@ -2224,16 +2233,6 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "A Vulkan shader must be selected before selecting Vulkan vertex buffers";
 		if( buffers.length == 0 )
 			throw "Vulkan multi-buffer selection requires at least one buffer";
-		currentVertexBuffers.resize(buffers.length);
-		if( vertexBufferScratch.length < buffers.length ) vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(buffers.length);
-		if( vertexOffsetScratch.length < buffers.length ) vertexOffsetScratch = new hl.NativeArray<hl.I64>(buffers.length);
-		for( index => buffer in buffers ) {
-			final vbuf:VulkanBuffer = @:privateAccess buffer.vbuf;
-			prepareVertexBuffer(vbuf);
-			currentVertexBuffers[index] = vbuf;
-			vertexBufferScratch[index] = vbuf.buffer;
-			vertexOffsetScratch[index] = (haxe.Int64.ofInt(0) : hl.I64);
-		}
 		var layouts = multiVertexLayouts.get(currentShader);
 		if( layouts == null ) {
 			layouts = new Map();
@@ -2241,23 +2240,46 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		var layout = layouts.get(format);
 		if( layout == null ) {
-			final map = format.resolveMapping(currentShader.shader.getInputFormat());
-			final usedBindings:Map<Int, Bool> = new Map();
+			final map = format.resolveMapping(currentShader.vertexFormat);
+			final bindingIds:Map<Int, Int> = new Map();
+			final bindings = [];
 			final attributes = [];
 			for( index => input in currentShader.vertexInterface.inputs ) {
 				final entry = map[index];
 				if( entry.bufferIndex < 0 || entry.bufferIndex >= buffers.length )
 					throw 'Vulkan vertex mapping for ${input.name} references missing buffer ${entry.bufferIndex}';
-				usedBindings.set(entry.bufferIndex, true);
-				attributes.push(new VulkanVertexAttribute(input.location, entry.bufferIndex, resolveVertexFormat(input.type, entry.precision), entry.offset));
+				final key = entry.bufferIndex * 2 + input.instanceDivisor;
+				var binding = bindingIds.get(key);
+				if( binding == null ) {
+					binding = bindings.length;
+					bindingIds.set(key, binding);
+					bindings.push(new VulkanVertexBinding(binding, buffers[entry.bufferIndex].format.strideBytes, input.instanceDivisor == 1, entry.bufferIndex));
+				}
+				attributes.push(new VulkanVertexAttribute(input.location, binding, resolveVertexFormat(input.type, entry.precision), entry.offset));
 			}
-			final bindings = [for( index in 0...buffers.length ) if( usedBindings.exists(index) ) new VulkanVertexBinding(index, buffers[index].format.strideBytes)];
 			validateVertexAttributes(attributes, bindings);
 			layout = new VulkanVertexLayout(bindings, attributes);
 			layouts.set(format, layout);
 		}
 		currentVertexLayout = layout;
-		command.bindVertexBuffersNative(0, buffers.length, vertexBufferScratch, vertexOffsetScratch);
+		final bindingCount = layout.bindings.length;
+		currentVertexBuffers.resize(hxd.Math.imax(1, bindingCount));
+		if( bindingCount == 0 ) {
+			final vbuf:VulkanBuffer = @:privateAccess buffers[0].vbuf;
+			prepareVertexBuffer(vbuf);
+			currentVertexBuffers[0] = vbuf;
+			return;
+		}
+		if( vertexBufferScratch.length < bindingCount ) vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(bindingCount);
+		if( vertexOffsetScratch.length < bindingCount ) vertexOffsetScratch = new hl.NativeArray<hl.I64>(bindingCount);
+		for( binding in layout.bindings ) {
+			final vbuf:VulkanBuffer = @:privateAccess buffers[binding.sourceBuffer].vbuf;
+			prepareVertexBuffer(vbuf);
+			currentVertexBuffers[binding.binding] = vbuf;
+			vertexBufferScratch[binding.binding] = vbuf.buffer;
+			vertexOffsetScratch[binding.binding] = (haxe.Int64.ofInt(0) : hl.I64);
+		}
+		command.bindVertexBuffersNative(0, bindingCount, vertexBufferScratch, vertexOffsetScratch);
 	}
 
 	function prepareVertexBuffer(buffer:VulkanBuffer) {

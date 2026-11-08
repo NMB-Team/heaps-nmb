@@ -59,6 +59,7 @@ class VulkanCompiledShader {
 	public final abi:VulkanShaderAbi;
 	public final programLayout:VulkanProgramLayout;
 	public final vertexInterface:VulkanVertexShaderInterface;
+	public final vertexFormat:hxd.BufferFormat;
 	public final fragmentOutputs:VulkanFragmentOutputInterface;
 	public final vertex:Null<VulkanShaderStageData>;
 	public final fragment:Null<VulkanShaderStageData>;
@@ -87,6 +88,8 @@ class VulkanCompiledShader {
 		this.abi = abi;
 		this.programLayout = abi.programLayout;
 		this.vertexInterface = abi.vertexInterface;
+		vertexFormat = hxd.BufferFormat.make([for( variable in shader.vertex.data.vars ) if( variable.kind == hxsl.Ast.VarKind.Input )
+			{ name: variable.name, type: hxd.BufferFormat.InputFormat.fromHXSL(variable.type) }]);
 		this.fragmentOutputs = abi.fragmentOutputs;
 		this.vertex = vertex;
 		this.fragment = fragment;

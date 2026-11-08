@@ -32,10 +32,14 @@ import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkVertexInputBindingDesc
 class VulkanVertexBinding {
 	public final binding:Int;
 	public final stride:Int;
+	public final perInstance:Bool;
+	public final sourceBuffer:Int;
 
-	public function new(binding:Int, stride:Int) {
+	public function new(binding:Int, stride:Int, perInstance = false, sourceBuffer = 0) {
 		this.binding = binding;
 		this.stride = stride;
+		this.perInstance = perInstance;
+		this.sourceBuffer = sourceBuffer;
 	}
 }
 
@@ -66,6 +70,7 @@ class VulkanVertexLayout {
 		for (binding in bindings) {
 			value = (value ^ binding.binding) * 0x01000193;
 			value = (value ^ binding.stride) * 0x01000193;
+			value = (value ^ (binding.perInstance ? 1 : 0)) * 0x01000193;
 		}
 		value = (value ^ attributes.length) * 0x01000193;
 		for (attribute in attributes) {
@@ -81,7 +86,8 @@ class VulkanVertexLayout {
 		if (hash != other.hash || bindings.length != other.bindings.length || attributes.length != other.attributes.length)
 			return false;
 		for (index in 0...bindings.length)
-			if (bindings[index].binding != other.bindings[index].binding || bindings[index].stride != other.bindings[index].stride)
+			if (bindings[index].binding != other.bindings[index].binding || bindings[index].stride != other.bindings[index].stride
+				|| bindings[index].perInstance != other.bindings[index].perInstance)
 				return false;
 		for (index in 0...attributes.length) {
 			final left = attributes[index];
@@ -336,7 +342,7 @@ class VulkanGraphicsPipelineManager {
 			final binding = new VkVertexInputBindingDescription();
 			binding.binding = source.binding;
 			binding.stride = source.stride;
-			binding.inputRate = VERTEX;
+			binding.inputRate = source.perInstance ? INSTANCE : VERTEX;
 			bindingDescriptions[index] = binding;
 		}
 		final attributeDescriptions = new hl.NativeArray<VkVertexInputAttributeDescription>(description.vertexLayout.attributes.length);
