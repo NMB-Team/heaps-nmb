@@ -83,6 +83,8 @@ class RenderContext extends h3d.impl.RenderContext {
 
 	var buffer = new hxd.FloatBuffer();
 	var bufPos = 0;
+	var uploadBuffer : h3d.Buffer;
+	var uploadVertex = 0;
 	var texture : h3d.mat.Texture;
 	var baseShader : h3d.shader.Base2d;
 	var output : h3d.pass.OutputShader;
@@ -166,6 +168,7 @@ class RenderContext extends h3d.impl.RenderContext {
 	override function dispose() {
 		super.dispose();
 		if( fixedBuffer != null ) fixedBuffer.dispose();
+		if( uploadBuffer != null ) uploadBuffer.dispose();
 	}
 
 	/**
@@ -694,10 +697,20 @@ class RenderContext extends h3d.impl.RenderContext {
 		if( bufPos == 0 ) return;
 		beforeDraw();
 		var nverts = Std.int(bufPos / stride);
-		var tmp = new h3d.Buffer(nverts, hxd.BufferFormat.XY_UV_RGBA, [Dynamic]);
-		tmp.uploadFloats(buffer, 0, nverts);
-		engine.renderQuadBuffer(tmp);
-		tmp.dispose();
+
+		if( uploadBuffer == null || uploadBuffer.isDisposed() || uploadBuffer.vertices < nverts ) {
+			var capacity = uploadBuffer == null ? 256 : uploadBuffer.vertices;
+			while( capacity < nverts ) capacity <<= 1;
+			if( uploadBuffer != null ) uploadBuffer.dispose();
+			uploadBuffer = new h3d.Buffer(capacity, hxd.BufferFormat.XY_UV_RGBA, [Dynamic]);
+			uploadVertex = 0;
+		} else if( uploadVertex + nverts > uploadBuffer.vertices ) {
+			uploadVertex = 0;
+		}
+
+		uploadBuffer.uploadFloats(buffer, 0, nverts, uploadVertex);
+		engine.renderQuadBuffer(uploadBuffer, uploadVertex >> 1, nverts >> 1);
+		uploadVertex += nverts;
 		bufPos = 0;
 		texture = null;
 	}
