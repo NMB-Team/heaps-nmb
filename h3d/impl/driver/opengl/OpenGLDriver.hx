@@ -160,6 +160,11 @@ class OpenGLDriver extends Driver {
 		#end
 		#end
 		commonFB = gl.createFramebuffer();
+		#if (hl && limen)
+		gl.bindFramebuffer(GL.FRAMEBUFFER, commonFB);
+		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x8D40, cast commonFB, "Heaps framebuffer");
+		gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+		#end
 		programs = new Map();
 		defStencil = new Stencil();
 		frame = hxd.Timer.frameCount;
@@ -1247,6 +1252,9 @@ class OpenGLDriver extends Driver {
 		t.lastFrame = frame;
 		t.flags.unset(WasCleared);
 		gl.bindTexture(bind, tt.t);
+		#if (hl && limen)
+		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
+		#end
 		var outOfMem = false;
 
 		inline function checkError() {
@@ -1347,6 +1355,9 @@ class OpenGLDriver extends Driver {
 		t.lastFrame = frame;
 		t.flags.unset(WasCleared);
 		gl.bindTexture(tt.bind, tt.t);
+		#if (hl && limen)
+		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
+		#end
 
 		#if (js || limen)
 		gl.texParameteri(tt.bind, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
@@ -1391,6 +1402,9 @@ class OpenGLDriver extends Driver {
 		var vb = gl.createBuffer();
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
 		gl.bindBuffer(type, vb);
+		#if (hl && limen)
+		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast vb, "Heaps buffer");
+		#end
 		if( b.vertices * b.format.stride == 0 ) throw "assert";
 		#if js
 		var size = b.getMemSize();
@@ -1578,6 +1592,9 @@ class OpenGLDriver extends Driver {
 
 	override function uploadBufferData( b : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
 		var stride = b.format.strideBytes;
+		#if (hl && limen)
+		if( gl.tryNamedBufferSubData(b.vbuf, startVertex * stride, hl.Bytes.getArray(buf.getNative()), bufPos * 4, vertexCount * stride) ) return;
+		#end
 		gl.bindBuffer(GL.ARRAY_BUFFER, b.vbuf);
 		#if hl
 		var data = #if hl hl.Bytes.getArray(buf.getNative()) #else buf.getNative() #end;
@@ -1593,6 +1610,9 @@ class OpenGLDriver extends Driver {
 	override function uploadBufferBytes( b : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
 		var stride = b.format.strideBytes;
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
+		#if (hl && limen)
+		if( gl.tryNamedBufferSubData(b.vbuf, startVertex * stride, buf.getData(), bufPos, vertexCount * stride) ) return;
+		#end
 		gl.bindBuffer(type, b.vbuf);
 		#if hl
 		gl.bufferSubData(type, startVertex * stride, streamData(buf.getData(),bufPos,vertexCount * stride), bufPos * STREAM_POS, vertexCount * stride);
@@ -1642,6 +1662,9 @@ class OpenGLDriver extends Driver {
 
 	override function uploadIndexData( i : h3d.Buffer, startIndice : Int, indiceCount : Int, buf : hxd.IndexBuffer, bufPos : Int ) {
 		var bits = i.format.strideBytes >> 1;
+		#if (hl && limen)
+		if( gl.tryNamedBufferSubData(i.vbuf, startIndice << bits, hl.Bytes.getArray(buf.getNative()), bufPos << bits, indiceCount << bits) ) return;
+		#end
 		gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, i.vbuf);
 		#if hl
 		var data = #if hl hl.Bytes.getArray(buf.getNative()) #else buf.getNative() #end;
@@ -1726,6 +1749,9 @@ class OpenGLDriver extends Driver {
 		if( hasMultiIndirect ) {
 			var buf = gl.createBuffer();
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, buf);
+			#if limen
+			limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast buf, "Heaps indirect buffer");
+			#end
 			gl.bufferData(GL.DRAW_INDIRECT_BUFFER, b.commandCount * 20, streamData(bytes.getData(),0, b.commandCount * 20), GL.DYNAMIC_DRAW);
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, null);
 			b.data = buf;
@@ -1753,6 +1779,9 @@ class OpenGLDriver extends Driver {
 		var stride = 5*4;
 		#if hl
 		var type = GL.DRAW_INDIRECT_BUFFER;
+		#if (hl && limen)
+		if( gl.tryNamedBufferSubData(b.data, startVertex * stride, buf.getData(), bufPos, vertexCount * stride) ) return;
+		#end
 		gl.bindBuffer(type, b.data);
 		gl.bufferSubData(type, startVertex * stride, streamData(buf.getData(),bufPos,vertexCount * stride), bufPos * STREAM_POS, vertexCount * stride);
 		#else
