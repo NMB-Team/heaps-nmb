@@ -67,6 +67,9 @@ class DepthCopy extends h3d.shader.ScreenShader {
 class Renderer extends h3d.scene.Renderer {
 
 	public static final LIGHTMAP_STENCIL = 0x80;
+	static inline var OPAQUE_DEPTH_BUCKETS = 32;
+	var opaqueSort : h3d.pass.PassList -> Void;
+	var opaqueCompare : h3d.pass.PassObject -> h3d.pass.PassObject -> Int;
 
 	var slides = new h3d.pass.ScreenFx(new h3d.shader.pbr.Slides());
 	var pbrOut = new h3d.pass.ScreenFx(new h3d.shader.ScreenShader());
@@ -160,6 +163,8 @@ class Renderer extends h3d.scene.Renderer {
 
 	public function new(?env) {
 		super();
+		opaqueSort = sortOpaque;
+		opaqueCompare = compareOpaque;
 		this.env = env;
 		defaultPass = new h3d.pass.Output("color");
 		slides.addShader(pbrProps);
@@ -832,6 +837,47 @@ class Renderer extends h3d.scene.Renderer {
 		ctx.setGlobal("sceneColorMap", t);
 	}
 
+	@:access(h3d.scene.Object)
+	function sortOpaque(passes:h3d.pass.PassList) {
+		var camera = ctx.camera;
+		var view = camera.mcam;
+		var direction = camera.rightHanded ? -1.0 : 1.0;
+		var minDepth = Math.POSITIVE_INFINITY, maxDepth = Math.NEGATIVE_INFINITY;
+		for( p in passes ) {
+			var material = p.pass;
+			if( !material.depthWrite || (material.depthTest != Less && material.depthTest != LessEqual)
+				|| material.blendSrc != One || material.blendDst != Zero
+				|| material.blendAlphaSrc != One || material.blendAlphaDst != Zero
+				|| material.blendOp != Add || material.blendAlphaOp != Add
+				|| material.colorMask != 15 || material.stencil != null ) {
+				frontToBack(passes);
+				return;
+			}
+
+			var position = p.obj.absPos;
+			var depth = (position._41 * view._13 + position._42 * view._23 + position._43 * view._33 + view._43) * direction;
+			p.depth = depth;
+			if( depth < minDepth ) minDepth = depth;
+			if( depth > maxDepth ) maxDepth = depth;
+		}
+
+		// Camera-space depth avoids the far-plane compression of perspective-projected depth.
+		var scale = maxDepth > minDepth ? OPAQUE_DEPTH_BUCKETS / (maxDepth - minDepth) : 0.0;
+		for( p in passes ) p.depthBucket = hxd.Math.imin(OPAQUE_DEPTH_BUCKETS - 1, Std.int((p.depth - minDepth) * scale));
+		passes.sort(opaqueCompare);
+	}
+
+	@:access(h3d.mat.Pass)
+	function compareOpaque(a:h3d.pass.PassObject, b:h3d.pass.PassObject) {
+		if( a.pass.layer != b.pass.layer ) return a.pass.layer < b.pass.layer ? -1 : 1;
+		if( a.depthBucket != b.depthBucket ) return a.depthBucket - b.depthBucket;
+		if( a.shader.id != b.shader.id ) return a.shader.id < b.shader.id ? -1 : 1;
+		if( a.pass.bits != b.pass.bits ) return a.pass.bits < b.pass.bits ? -1 : 1;
+		if( a.texture != b.texture ) return a.texture < b.texture ? -1 : 1;
+		if( a.depth == b.depth ) return 0;
+		return a.depth < b.depth ? -1 : 1;
+	}
+
 	override function render() {
 		beginPbr();
 		setTarget(textures.depth);
@@ -845,7 +891,7 @@ class Renderer extends h3d.scene.Renderer {
 		begin(MainDraw);
 		renderPass(output, get("terrain"));
 		drawPbrDecals("terrainDecal");
-		renderPass(output, get("default"), frontToBack);
+		renderPass(output, get("default"), opaqueSort);
 		renderPass(output, get("alpha"), backToFront);
 		renderPass(output, get("additive"));
 		end();

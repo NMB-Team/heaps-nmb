@@ -11,6 +11,7 @@ class PassObject {
 	public var shaders : hxsl.ShaderList;
 	public var shader : hxsl.RuntimeShader;
 	public var depth : Float;
+	@:allow(h3d.scene.pbr.Renderer) var depthBucket : Int;
 	public var texture : Int = 0;
 
 	function new() {
