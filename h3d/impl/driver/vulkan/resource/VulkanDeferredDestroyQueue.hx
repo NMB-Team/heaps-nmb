@@ -27,15 +27,17 @@ class VulkanDeferredDestroyQueue {
 	}
 
 	public function collect(completedSerial:Int) {
-		var index = 0;
-		while (index < retired.length) {
-			final resource = retired[index];
+		var readIndex = 0;
+		var writeIndex = 0;
+		while (readIndex < retired.length) {
+			final resource = retired[readIndex++];
 			if (resource.serial <= completedSerial) {
-				retired.splice(index, 1);
 				resource.destroy();
-			} else
-				index++;
+			} else {
+				retired[writeIndex++] = resource;
+			}
 		}
+		retired.resize(writeIndex);
 	}
 
 	public function drain() {

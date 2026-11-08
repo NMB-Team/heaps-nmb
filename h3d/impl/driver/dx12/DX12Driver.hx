@@ -447,6 +447,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		var adesc = hl.CArray.alloc(IndirectArgumentDesc, 1);
 		desc.byteStride = 5 * 4;
 		desc.numArgumentDescs = 1;
+		desc.nodeMask = 0;
 		desc.argumentDescs = adesc;
 		adesc[0].type = DRAW_INDEXED;
 		indirectCommand = Driver.createCommandSignature(desc,null);

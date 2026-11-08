@@ -2,6 +2,7 @@ package h3d.impl.driver.vulkan.pipeline;
 
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
+import h3d.impl.driver.vulkan.resource.VulkanDeferredDestroyQueue;
 import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
 import limen.graphics.renderer.vulkan.VulkanCore.IntArray;
 import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
@@ -284,6 +285,8 @@ class VulkanGraphicsPipelineDesc {
 private class VulkanGraphicsPipelineEntry {
 	public final description:VulkanGraphicsPipelineDesc;
 	public final pipeline:VkGraphicsPipeline;
+	public var lastFrame = 0;
+	public var lastSubmission = 0;
 
 	public function new(description:VulkanGraphicsPipelineDesc, pipeline:VkGraphicsPipeline) {
 		this.description = description;
@@ -296,18 +299,21 @@ class VulkanGraphicsPipelineManager {
 	final buckets:Map<Int, Array<VulkanGraphicsPipelineEntry>> = new Map();
 	public var createdCount(default, null) = 0;
 	public var hitCount(default, null) = 0;
+	public var reclaimedCount(default, null) = 0;
 
 	public function new(context:VkContext) {
 		this.context = context;
 	}
 
-	public function get(description:VulkanGraphicsPipelineDesc):VkGraphicsPipeline {
+	public function get(description:VulkanGraphicsPipelineDesc, submissionSerial:Int = 0):VkGraphicsPipeline {
 		final hash = description.hash();
 		var bucket = buckets.get(hash);
 		if (bucket != null)
 			for (entry in bucket)
 				if (entry.description.equals(description)) {
 					hitCount++;
+					entry.lastFrame = hxd.Timer.frameCount;
+					entry.lastSubmission = submissionSerial;
 					return entry.pipeline;
 				}
 		if (bucket == null) {
@@ -316,7 +322,10 @@ class VulkanGraphicsPipelineManager {
 		}
 		final saved = description.snapshot();
 		final pipeline = create(saved);
-		bucket.push(new VulkanGraphicsPipelineEntry(saved, pipeline));
+		final entry = new VulkanGraphicsPipelineEntry(saved, pipeline);
+		entry.lastFrame = hxd.Timer.frameCount;
+		entry.lastSubmission = submissionSerial;
+		bucket.push(entry);
 		createdCount++;
 		return pipeline;
 	}
@@ -430,6 +439,24 @@ class VulkanGraphicsPipelineManager {
 		if (pipeline == null)
 			throw VulkanRuntime.error('Failed to create Vulkan graphics pipeline for ${description.program.cacheKey}');
 		return pipeline;
+	}
+
+	public function reclaimUnused(beforeFrame:Int, completedSerial:Int, deferred:VulkanDeferredDestroyQueue) {
+		for (hash => bucket in buckets) {
+			var write = 0;
+			for (entry in bucket) {
+				if (entry.lastFrame < beforeFrame && entry.lastSubmission <= completedSerial) {
+					deferred.retire(entry.lastSubmission, () -> context.destroyGraphicsPipeline(entry.pipeline));
+					reclaimedCount++;
+				} else {
+					bucket[write++] = entry;
+				}
+			}
+			if (write != bucket.length)
+				bucket.resize(write);
+			if (write == 0)
+				buckets.remove(hash);
+		}
 	}
 
 	public function dispose() {

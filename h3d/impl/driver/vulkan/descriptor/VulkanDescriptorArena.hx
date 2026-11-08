@@ -29,6 +29,11 @@ private class VulkanDescriptorPoolPage {
 class VulkanDescriptorArena {
 	final context:VkContext;
 	final pools:Array<VulkanDescriptorPoolPage> = [];
+	final layouts = new hl.NativeArray<VkDescriptorSetLayout>(1);
+	final sets = new hl.NativeArray<VkDescriptorSet>(1);
+	final allocationInfo = new VkDescriptorSetAllocateInfo();
+	final poolSizes = new hl.NativeArray<VkDescriptorPoolSize>(5);
+	final poolInfo = new VkDescriptorPoolCreateInfo();
 	var currentPool = 0;
 	public var allocationCount(default, null) = 0;
 	public var poolCreationCount(default, null) = 0;
@@ -39,6 +44,22 @@ class VulkanDescriptorArena {
 
 	public function new(context:VkContext) {
 		this.context = context;
+		allocationInfo.descriptorSetCount = 1;
+
+		final types = [
+			VkDescriptorType.UNIFORM_BUFFER_DYNAMIC,
+			VkDescriptorType.UNIFORM_BUFFER,
+			VkDescriptorType.STORAGE_BUFFER,
+			VkDescriptorType.COMBINED_IMAGE_SAMPLER,
+			VkDescriptorType.STORAGE_IMAGE,
+		];
+		for (index => type in types) {
+			final size = new VkDescriptorPoolSize();
+			size.type = type;
+			poolSizes[index] = size;
+		}
+		poolInfo.poolSizeCount = poolSizes.length;
+
 		pools.push(createPool(64, 256));
 	}
 
@@ -61,28 +82,25 @@ class VulkanDescriptorArena {
 		if (page.usedSets == page.maxSets || page.usedDescriptors + descriptorCount > page.maxDescriptors)
 			page = nextPool(descriptorCount);
 		var result = allocateFrom(page, layout);
-		if (result.set == null) {
+		if (result != 0) {
 			page = growPool(descriptorCount);
 			result = allocateFrom(page, layout);
 		}
-		if (result.set == null)
-			throw VulkanRuntime.error('Failed to allocate frame descriptor set after pool growth (VkResult ${result.code})');
+		if (result != 0)
+			throw VulkanRuntime.error('Failed to allocate frame descriptor set after pool growth (VkResult $result)');
 		page.usedSets++;
 		page.usedDescriptors += descriptorCount;
 		allocationCount++;
-		return result.set;
+		return sets[0];
 	}
 
-	function allocateFrom(page:VulkanDescriptorPoolPage, layout:VkDescriptorSetLayout):{set:VkDescriptorSet, code:Int} {
-		final layouts = new hl.NativeArray<VkDescriptorSetLayout>(1);
-		layouts[0] = layout;
-		final sets = new hl.NativeArray<VkDescriptorSet>(1);
-		final info = new VkDescriptorSetAllocateInfo();
-		info.descriptorPool = page.pool;
-		info.descriptorSetCount = 1;
-		info.pSetLayouts = VulkanBindings.makeArray(layouts);
-		final code = context.allocateDescriptorSets(info, sets);
-		return {set: code == 0 ? sets[0] : null, code: code};
+	function allocateFrom(page:VulkanDescriptorPoolPage, layout:VkDescriptorSetLayout):Int {
+		if (layouts[0] != layout) {
+			layouts[0] = layout;
+			allocationInfo.pSetLayouts = VulkanBindings.makeArray(layouts);
+		}
+		allocationInfo.descriptorPool = page.pool;
+		return context.allocateDescriptorSets(allocationInfo, sets);
 	}
 
 	function nextPool(requiredDescriptors:Int):VulkanDescriptorPoolPage {
@@ -103,25 +121,12 @@ class VulkanDescriptorArena {
 	}
 
 	function createPool(maxSets:Int, maxDescriptors:Int):VulkanDescriptorPoolPage {
-		final types = [
-			VkDescriptorType.UNIFORM_BUFFER_DYNAMIC,
-			VkDescriptorType.UNIFORM_BUFFER,
-			VkDescriptorType.STORAGE_BUFFER,
-			VkDescriptorType.COMBINED_IMAGE_SAMPLER,
-			VkDescriptorType.STORAGE_IMAGE,
-		];
-		final sizes = new hl.NativeArray<VkDescriptorPoolSize>(types.length);
-		for (index => type in types) {
-			final size = new VkDescriptorPoolSize();
-			size.type = type;
+		for (size in poolSizes)
 			size.descriptorCount = maxDescriptors;
-			sizes[index] = size;
-		}
-		final info = new VkDescriptorPoolCreateInfo();
-		info.maxSets = maxSets;
-		info.poolSizeCount = sizes.length;
-		info.pPoolSizes = VulkanBindings.makeArray(sizes);
-		final pool = context.createDescriptorPool(info);
+
+		poolInfo.maxSets = maxSets;
+		poolInfo.pPoolSizes = VulkanBindings.makeArray(poolSizes);
+		final pool = context.createDescriptorPool(poolInfo);
 		if (pool == null)
 			throw VulkanRuntime.error('Failed to create frame descriptor pool ($maxSets sets, $maxDescriptors descriptors)');
 		poolCreationCount++;

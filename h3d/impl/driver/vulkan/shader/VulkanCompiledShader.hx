@@ -72,6 +72,8 @@ class VulkanCompiledShader {
 	public final descriptorBuffers:Map<String, {buffer:VulkanBuffer, handle:VkBuffer, range:haxe.Int64}> = new Map();
 	public final layout:VkPipelineLayout;
 	public final pipelineLayoutIdentity:String;
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	final textureAllocationIds:Map<hxsl.RuntimeShader.RuntimeShaderData, Array<String>> = new Map();
 	var disposed = false;
 
 	public function new(shader:hxsl.RuntimeShader, cacheKey:String, abi:VulkanShaderAbi, vertex:Null<VulkanShaderStageData>,
@@ -99,6 +101,22 @@ class VulkanCompiledShader {
 					sharedMemoryBytes += hxsl.Ast.Tools.size(variable.type) * 4;
 			computeMetadata = new VulkanComputeMetadata(localSize.x, localSize.y, localSize.z, sharedMemoryBytes);
 		}
+		for (stage in [shader.vertex, shader.fragment]) {
+			if (stage == null) continue;
+			final ids = [];
+			var allocation = stage.textures;
+			while (allocation != null) {
+				final count = switch (allocation.type) {
+				case TArray(_, SConst(value)): value;
+				default: 1;
+				};
+				for (element in 0...count)
+					ids.push(VulkanShaderAbi.textureAllocationId(allocation, element));
+				allocation = allocation.next;
+			}
+			textureAllocationIds.set(stage, ids);
+		}
+
 		this.stages = stages;
 		this.descriptorSetLayouts = descriptorSetLayouts.copy();
 		constantBlockIds = new Map();

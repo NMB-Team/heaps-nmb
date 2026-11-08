@@ -67,6 +67,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	static inline var BLEND_FACTORS = NTARGETS;
 
 	var driver : Dynamic;
+	final memoryInfo = new limen.graphics.renderer.d3d11.internal.D3D11Bindings.QueryVideoMemoryInfo();
 	var shaders : Map<Int,CompiledShader>;
 
 	var hasDeviceError = false;
@@ -302,6 +303,15 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			final currentDepth:DX11Texture = currentDepth;
 			DX11Commands.clearDepthStencilView(currentDepth.depthView, depth, stencil);
 		}
+	}
+
+	override function getMemoryUsage() {
+		if( !Driver.queryVideoMemoryInfo(memoryInfo) )
+			return null;
+
+		final total = hxd.Math.int64ToFloat((memoryInfo.budget : haxe.Int64));
+		final allocated = hxd.Math.int64ToFloat((memoryInfo.currentUsage : haxe.Int64));
+		return { total : total, allocated : allocated, free : Math.max(0., total - allocated) };
 	}
 
 	override function getDriverName(details:Bool) {

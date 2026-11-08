@@ -32,7 +32,13 @@ class VulkanBuffer {
 	public var debugId(default, null):Int;
 	public var debugName(default, null):String;
 	public var lastSubmission = 0;
-	public var disposed(default, null) = false;
+	public var disposed(get, never):Bool;
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	var liveIndex = -1;
+
+	inline function get_disposed():Bool {
+		return liveIndex == -2;
+	}
 
 	public function new(buffer:VkBuffer, allocation:VulkanAllocation, size:Int64, usage:haxe.EnumFlags<VkBufferUsageFlag>, stride:Int, state:VulkanBufferState, debugId:Int, debugName:String) {
 		this.buffer = buffer;
@@ -47,7 +53,7 @@ class VulkanBuffer {
 
 	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
 	function markDisposed() {
-		disposed = true;
+		liveIndex = -2;
 	}
 }
 

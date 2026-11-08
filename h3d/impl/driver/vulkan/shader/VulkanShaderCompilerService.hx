@@ -56,14 +56,32 @@ private typedef GeneratedStage = {
 	var sourceHash:String;
 }
 
+private typedef CachedProgram = {
+	var program:VulkanCompiledProgramData;
+	var bytes:Float;
+	var previous:Null<CachedProgram>;
+	var next:Null<CachedProgram>;
+}
+
 class VulkanShaderCompilerService {
 	final compiler = new ShaderCompiler();
-	final cache:Map<String, VulkanCompiledProgramData> = new Map();
+	final cache:Map<String, CachedProgram> = new Map();
+	final cacheBudget:Float;
+	var cacheBytes = 0.;
+	var oldest:Null<CachedProgram>;
+	var newest:Null<CachedProgram>;
 	final optimization:ShaderOptimizationMode;
 	final debugInfo:Bool;
 	final core13:Bool;
 
-	public function new(core13:Bool = true) {
+	public function new(core13:Bool = true, ?cacheBudgetBytes:Int) {
+		if (cacheBudgetBytes == null) {
+			final configured = Sys.getEnv("VULKAN_SHADER_CACHE_BYTES");
+			cacheBudgetBytes = configured == null ? 64 * 1024 * 1024 : Std.parseInt(configured);
+		}
+		if (cacheBudgetBytes == null || cacheBudgetBytes < 0)
+			throw "Vulkan shader cache budget must be a non-negative byte count";
+		cacheBudget = cacheBudgetBytes;
 		this.core13 = core13;
 		#if debug
 		optimization = None;
@@ -80,7 +98,8 @@ class VulkanShaderCompilerService {
 		final cached = cache.get(cacheKey);
 		if (cached != null) {
 			hxd.NMBTrace.shaderCacheHit();
-			return cached;
+			touch(cached);
+			return cached.program;
 		}
 		hxd.NMBTrace.shaderCacheMiss();
 		final miss = hxsl.ShaderMiss.report(shader);
@@ -118,13 +137,93 @@ class VulkanShaderCompilerService {
 		if (shader.mode != Compute)
 			VulkanShaderAbiVerifier.verifyGraphicsLink(findReflection(stages, Vertex), findReflection(stages, Fragment));
 		final program = new VulkanCompiledProgramData(cacheKey, stages);
-		cache.set(cacheKey, program);
+		retain(program);
 		return program;
 	}
 
 	public function dispose() {
 		compiler.dispose();
 		cache.clear();
+		oldest = newest = null;
+		cacheBytes = 0.;
+	}
+
+	function touch(entry:CachedProgram) {
+		if (entry == newest)
+			return;
+		if (entry.previous == null)
+			oldest = entry.next;
+		else
+			entry.previous.next = entry.next;
+		entry.next.previous = entry.previous;
+		entry.previous = newest;
+		entry.next = null;
+		newest.next = entry;
+		newest = entry;
+	}
+
+	function retain(program:VulkanCompiledProgramData) {
+		if (cacheBudget == 0)
+			return;
+		final bytes = programBytes(program);
+		if (bytes > cacheBudget)
+			return;
+		while (cacheBytes + bytes > cacheBudget) {
+			final entry = oldest;
+			cache.remove(entry.program.cacheKey);
+			cacheBytes -= entry.bytes;
+			oldest = entry.next;
+			if (oldest == null)
+				newest = null;
+			else
+				oldest.previous = null;
+		}
+		final entry:CachedProgram = {program: program, bytes: bytes, previous: newest, next: null};
+		if (newest == null)
+			oldest = entry;
+		else
+			newest.next = entry;
+		newest = entry;
+		cache.set(program.cacheKey, entry);
+		cacheBytes += bytes;
+	}
+
+	static function stringBytes(value:Null<String>):Float {
+		return value == null ? 0. : 32. + 2. * (value.length + 1);
+	}
+
+	static function numericBytes(value:limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvNumericTraits):Float {
+		return 128. + 8. * value.arrayDimensions.length;
+	}
+
+	static function blockBytes(value:limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvBlockVariable):Float {
+		var bytes = 160. + stringBytes(value.name) + stringBytes(value.typeName) + numericBytes(value.numeric) + 16. * value.members.length;
+		for (member in value.members)
+			bytes += blockBytes(member);
+		return bytes;
+	}
+
+	static function programBytes(program:VulkanCompiledProgramData):Float {
+		var bytes = 256. + stringBytes(program.cacheKey) + 16. * program.stages.length;
+		for (stage in program.stages) {
+			bytes += 128. + stringBytes(stage.sourceName) + stringBytes(stage.entryPoint) + stringBytes(stage.source)
+				+ stringBytes(stage.sourceHash) + stringBytes(stage.spirvHash) + 64. + stage.spirv.length;
+			final reflection = stage.reflection;
+			bytes += 256. + stringBytes(reflection.entryPoint) + 16. * (reflection.descriptorSets.length
+				+ reflection.pushConstantBlocks.length + reflection.inputs.length + reflection.outputs.length);
+			for (set in reflection.descriptorSets) {
+				bytes += 64. + 16. * set.bindings.length;
+				for (binding in set.bindings)
+					bytes += 192. + stringBytes(binding.name) + 8. * binding.arrayDimensions.length + blockBytes(binding.block);
+			}
+			for (block in reflection.pushConstantBlocks)
+				bytes += blockBytes(block);
+			for (input in reflection.inputs)
+				bytes += 128. + stringBytes(input.name) + stringBytes(input.semantic) + stringBytes(input.typeName) + numericBytes(input.numeric);
+			for (output in reflection.outputs)
+				bytes += 128. + stringBytes(output.name) + stringBytes(output.semantic) + stringBytes(output.typeName) + numericBytes(output.numeric);
+		}
+		return bytes;
 	}
 
 	function generate(shader:hxsl.RuntimeShader, abi:VulkanShaderAbi):Array<GeneratedStage> {

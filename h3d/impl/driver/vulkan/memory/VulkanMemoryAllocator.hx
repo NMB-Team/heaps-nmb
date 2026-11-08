@@ -19,26 +19,18 @@ class VulkanMemoryAllocator {
 	public var allocationCount(get, never):Int;
 
 	final context:VkContext;
-	final handles:Array<AllocatorHandle> = [];
-	final allocations:Array<VulkanAllocation> = [];
+	final handle:AllocatorHandle;
+	var liveAllocationCount = 0;
 	var nextAllocationId = 1;
 	var disposed = false;
+	var recovering = false;
 
 	public function new(context:VkContext) {
 		this.context = context;
-		try {
-			for (_ in 0...4) {
-				var result = 0;
-				final handle = Vma.create(context, result);
-				if (handle == null)
-					throw VulkanRuntime.error('VMA creation failed: $result');
-				handles.push(handle);
-			}
-		} catch (error:Dynamic) {
-			for (handle in handles)
-				Vma.destroy(handle);
-			throw error;
-		}
+		var result = 0;
+		handle = Vma.create(context, result);
+		if (handle == null)
+			throw VulkanRuntime.error('VMA creation failed: $result');
 	}
 
 	public function allocate(memoryClass:VulkanMemoryClass, requiredProperties:Int, preferredProperties:Int,
@@ -48,11 +40,10 @@ class VulkanMemoryAllocator {
 		if ((dedicatedBuffer == null) == (dedicatedImage == null))
 			throw "VMA requires exactly one buffer or image";
 		var result = 0;
-		final handle = handles[cast memoryClass];
 		var native = dedicatedBuffer != null
 			? Vma.allocate_buffer(handle, dedicatedBuffer, requiredProperties, preferredProperties, false, result)
 			: Vma.allocate_image(handle, dedicatedImage, requiredProperties, preferredProperties, false, result);
-		if (native == null && cleanupCallback != null && cleanupCallback())
+		if (native == null && recover(result))
 			native = dedicatedBuffer != null
 				? Vma.allocate_buffer(handle, dedicatedBuffer, requiredProperties, preferredProperties, false, result)
 				: Vma.allocate_image(handle, dedicatedImage, requiredProperties, preferredProperties, false, result);
@@ -66,7 +57,7 @@ class VulkanMemoryAllocator {
 			Vma.release(native);
 			throw error;
 		}
-		allocations.push(allocation);
+		liveAllocationCount++;
 		return allocation;
 	}
 
@@ -74,7 +65,9 @@ class VulkanMemoryAllocator {
 	function allocateTransientImage(image:VkImage, properties:Int, name:String):VulkanAllocation {
 		if (disposed) throw "Cannot allocate from a disposed Vulkan memory allocator";
 		var result = 0;
-		final native = Vma.allocate_transient_image(handles[cast DeviceImage], image, properties, properties, result);
+		var native = Vma.allocate_transient_image(handle, image, properties, properties, result);
+		if (native == null && recover(result))
+			native = Vma.allocate_transient_image(handle, image, properties, properties, result);
 		if (native == null) throw VulkanRuntime.error('Transient VMA allocation failed: $result');
 		var allocation:VulkanAllocation;
 		try {
@@ -83,15 +76,29 @@ class VulkanMemoryAllocator {
 			Vma.release(native);
 			throw error;
 		}
-		allocations.push(allocation);
+		liveAllocationCount++;
 		return allocation;
 	}
 
+	function recover(result:Int):Bool {
+		if ((result != -1 && result != -2) || recovering || cleanupCallback == null)
+			return false;
+		recovering = true;
+		final reclaimed = try cleanupCallback() catch (error:Dynamic) {
+			recovering = false;
+			throw error;
+		};
+		recovering = false;
+		return reclaimed;
+	}
+
 	public function free(allocation:VulkanAllocation) {
+		if (allocation.allocator != this)
+			throw "Cannot free an allocation owned by another Vulkan memory allocator";
 		if (allocation.released)
 			return;
 		allocation.markReleased();
-		allocations.remove(allocation);
+		liveAllocationCount--;
 	}
 
 	public function flush(allocation:VulkanAllocation, relativeOffset:Int64, size:Int64) {
@@ -112,41 +119,31 @@ class VulkanMemoryAllocator {
 			throw VulkanRuntime.error('VMA cache operation failed for ${allocation.debugName}: $result');
 	}
 
-	function statistics(?memoryClass:VulkanMemoryClass, heap:Int = -1) {
+	function statistics(heap:Int = -1) {
 		var blocks = 0, count = 0;
 		var reserved:Int64 = 0, used:Int64 = 0;
-		if (!disposed)
-			for (index in 0...handles.length) {
-				if (memoryClass != null && index != (cast memoryClass : Int))
-					continue;
-				var b = 0, c = 0;
-				var r:Int64 = 0, u:Int64 = 0;
-				if (heap < 0)
-					Vma.statistics(handles[index], b, c, r, u);
-				else
-					Vma.heapStatistics(handles[index], heap, b, c, r, u);
-				blocks += b;
-				count += c;
-				reserved += r;
-				used += u;
-			}
+		if (!disposed) {
+			if (heap < 0)
+				Vma.statistics(handle, blocks, count, reserved, used);
+			else
+				Vma.heapStatistics(handle, heap, blocks, count, reserved, used);
+		}
 		return {blocks: blocks, count: count, reserved: reserved, used: used};
 	}
 
 	function get_reservedBytes():Int64 { return statistics().reserved; }
 	function get_usedBytes():Int64 { return statistics().used; }
 	function get_allocationCount():Int { return statistics().count; }
-	public function getBlockCount(?memoryClass:VulkanMemoryClass):Int { return statistics(memoryClass).blocks; }
-	public function getReservedBytesForHeap(heapIndex:Int):Int64 { return statistics(null, heapIndex).reserved; }
-	public function getReservedBytesForClass(memoryClass:VulkanMemoryClass):Int64 { return statistics(memoryClass).reserved; }
+	public function getBlockCount(?memoryClass:VulkanMemoryClass):Int { return statistics().blocks; }
+	public function getReservedBytesForHeap(heapIndex:Int):Int64 { return statistics(heapIndex).reserved; }
+	public function getReservedBytesForClass(memoryClass:VulkanMemoryClass):Int64 { return statistics().reserved; }
 
 	public function dispose() {
 		if (disposed)
 			return;
-		if (allocations.length != 0)
+		if (liveAllocationCount != 0)
 			throw "Release Vulkan resources before disposing the VMA allocator";
-		for (handle in handles)
-			Vma.destroy(handle);
+		Vma.destroy(handle);
 		disposed = true;
 	}
 }

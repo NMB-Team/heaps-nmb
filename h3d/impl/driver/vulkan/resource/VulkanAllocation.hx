@@ -29,6 +29,7 @@ class VulkanAllocation {
 	public var lastSubmission = 0;
 	public var released(default, null) = false;
 
+	@:allow(h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator)
 	final allocator:VulkanMemoryAllocator;
 	var mapped:hl.Bytes;
 	var owners = 1;

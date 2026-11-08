@@ -120,7 +120,13 @@ class VulkanReadbackManager {
 	final available:Array<VulkanCachedReadback> = [];
 	var nextId = 1;
 	static inline final CACHE_BYTE_LIMIT = 32 << 20;
-	static inline final IDLE_FRAME_LIMIT = 120;
+	static inline final IDLE_FRAME_LIMIT = 16;
+	var frameDemand = 0;
+	var recentDemand = 0;
+	var frameLargest = 0;
+	var recentLargest = 0;
+	var framesSinceRequest = 0;
+	var retentionFrames = IDLE_FRAME_LIMIT;
 	public var retainedBytes(default, null):Int64 = 0;
 	public var cachedBytes(default, null):Int64 = 0;
 	public var bufferDestructionCount(default, null) = 0;
@@ -175,11 +181,22 @@ class VulkanReadbackManager {
 	}
 
 	public function beginFrame() {
+		recentDemand = Std.int(Math.max(frameDemand, recentDemand - (recentDemand >> 2)));
+		recentLargest = Std.int(Math.max(frameLargest, recentLargest - (recentLargest >> 2)));
+		frameDemand = 0;
+		frameLargest = 0;
+		if (framesSinceRequest < 60)
+			framesSinceRequest++;
+		final budget = Std.int(Math.min(CACHE_BYTE_LIMIT, Math.max(64 << 10, recentDemand * (pending.length + 1.0))));
+		final largest = Std.int(Math.max(64 << 10, recentLargest));
+
 		var index = 0;
 		while (index < available.length) {
 			final cached = available[index];
-			if (++cached.idleFrames >= IDLE_FRAME_LIMIT) {
-				available.splice(index, 1);
+			final idle = ++cached.idleFrames;
+			if (idle >= retentionFrames || (idle >= 2 && (cached.buffer.size / 4 >= largest || cachedBytes > budget))) {
+				available[index] = available[available.length - 1];
+				available.pop();
 				cachedBytes -= cached.buffer.size;
 				destroyBuffer(cached.buffer);
 			} else
@@ -190,6 +207,8 @@ class VulkanReadbackManager {
 	public function completeFrame(frameIndex:Int) {
 		final requests = pending[frameIndex];
 		pending[frameIndex] = [];
+		var callbackError:Dynamic = null;
+		var callbackFailed = false;
 		for (request in requests) {
 			request.buffer.allocation.invalidate(0, request.size);
 			final mapped = request.buffer.allocation.mappedBytes(0, request.size);
@@ -203,15 +222,33 @@ class VulkanReadbackManager {
 				cachedBytes += request.buffer.size;
 			} else
 				destroyBuffer(request.buffer);
-			if (request.callback != null)
-				request.callback();
+			if (request.callback != null) {
+				try request.callback() catch (error:Dynamic) {
+					if (!callbackFailed) callbackError = error;
+					callbackFailed = true;
+				}
+			}
 		}
+		if (callbackFailed)
+			throw callbackError;
 	}
 
 	function acquireBuffer(size:Int):VulkanReadbackBuffer {
+		var capacity = 256;
+		while (capacity < size && capacity < (1 << 20))
+			capacity <<= 1;
+		if (capacity < size)
+			capacity = size <= 0x7FFF0000 ? ((size + 65535) & ~65535) : size;
+		frameDemand += Std.int(Math.min(capacity, CACHE_BYTE_LIMIT - frameDemand));
+		frameLargest = Std.int(Math.max(frameLargest, capacity));
+		if (framesSinceRequest > 0)
+			retentionFrames = Std.int(Math.max(IDLE_FRAME_LIMIT, Math.min(60, Math.max(retentionFrames - 1, framesSinceRequest * 2))));
+		framesSinceRequest = 0;
+
+		final required = Int64.ofInt(capacity);
 		var bestIndex = -1;
 		for (index => cached in available)
-			if (cached.buffer.size >= Int64.ofInt(size) && (bestIndex < 0 || cached.buffer.size < available[bestIndex].buffer.size))
+			if (cached.buffer.size >= required && cached.buffer.size / 4 < capacity && (bestIndex < 0 || cached.buffer.size < available[bestIndex].buffer.size))
 				bestIndex = index;
 		if (bestIndex >= 0) {
 			final buffer = available[bestIndex].buffer;
@@ -220,7 +257,7 @@ class VulkanReadbackManager {
 			cachedBytes -= buffer.size;
 			return buffer;
 		}
-		return createBuffer(size);
+		return createBuffer(capacity);
 	}
 
 	function createBuffer(size:Int):VulkanReadbackBuffer {
@@ -252,13 +289,28 @@ class VulkanReadbackManager {
 		bufferDestructionCount++;
 	}
 
+	public function reclaimUnused() {
+		for (cached in available)
+			destroyBuffer(cached.buffer);
+		available.resize(0);
+		cachedBytes = 0;
+	}
+
 	public function dispose() {
-		for (frameIndex in 0...pending.length)
-			completeFrame(frameIndex);
+		var completionError:Dynamic = null;
+		var completionFailed = false;
+		for (frameIndex in 0...pending.length) {
+			try completeFrame(frameIndex) catch (error:Dynamic) {
+				if (!completionFailed) completionError = error;
+				completionFailed = true;
+			}
+		}
 		for (cached in available)
 			destroyBuffer(cached.buffer);
 		cachedBytes = 0;
 		available.resize(0);
+		if (completionFailed)
+			throw completionError;
 	}
 }
 #end

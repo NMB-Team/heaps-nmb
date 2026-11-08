@@ -52,7 +52,13 @@ class VulkanImage {
 	public var debugId(default, null):Int;
 	public var debugName(default, null):String;
 	public var lastSubmission = 0;
-	public var disposed(default, null) = false;
+	public var disposed(get, never):Bool;
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	var liveIndex = -1;
+
+	inline function get_disposed():Bool {
+		return liveIndex == -2;
+	}
 
 	public function new(image:VkImage, allocation:VulkanAllocation, size:Int64, format:VkFormat, width:Int, height:Int, depth:Int, mipCount:Int, layerCount:Int,
 		aspect:haxe.EnumFlags<VkImageAspectFlag>, usage:haxe.EnumFlags<VkImageUsageFlag>, debugId:Int, debugName:String) {
@@ -98,7 +104,7 @@ class VulkanImage {
 
 	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
 	function markDisposed() {
-		disposed = true;
+		liveIndex = -2;
 	}
 }
 

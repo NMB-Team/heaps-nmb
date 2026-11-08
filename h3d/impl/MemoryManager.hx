@@ -48,7 +48,7 @@ class MemoryManager {
 	**/
 	public var autoDisposeGpuFreeMB : Float = 1024;
 
-	var lastAutoDispose = 0;
+	var nextAutoDispose = 61;
 
 	public function new(driver) {
 		this.driver = driver;
@@ -143,7 +143,7 @@ class MemoryManager {
 		var mem = b.getMemSize();
 		if( mem == 0 ) return;
 
-		autoDisposeMemory();
+		beginFrame();
 		while( (b.vbuf = driver.allocBuffer(b)) == null ) {
 			if( driver.isDisposed() ) return;
 			tryFreeMemory();
@@ -205,28 +205,19 @@ class MemoryManager {
 	}
 
 	public function beginFrame() {
-		if( autoDisposeGpuFreeMB > 0 && hxd.Timer.frameCount > lastAutoDispose + 60 ) {
-			var stats = driver.getMemoryUsage();
-			if( stats == null ) {
-				// disable (our driver doesn't support it anyway)
-				autoDisposeGpuFreeMB = -1;
-				return;
-			}
-			if( (stats.free/(1024*1024)) <= autoDisposeGpuFreeMB && hxd.NMBTrace.enabled() )
-				hxd.NMBTrace.instant("heaps.memory", "GPU Memory Pressure");
-			if( (stats.free/(1024*1024)) > autoDisposeGpuFreeMB || !cleanTextures(false) )
-				lastAutoDispose = hxd.Timer.frameCount; // wait a bit
-		}
-	}
+		if( hxd.Timer.frameCount < nextAutoDispose )
+			return;
 
-	function autoDisposeMemory() {
-		if( autoDisposeGpuFreeMB < 0 && hxd.Timer.frameCount > lastAutoDispose + 60 ) {
-			// if we have disabled per frame memory cleanup, or if our driver doesn't support it
-			// then let's do at least some cleanup for each allocation on a regular basis
-			// so we don't wait until our GPU returns null
-			cleanTextures(false);
-			lastAutoDispose = hxd.Timer.frameCount;
+		var memoryPressure = false;
+		if( autoDisposeGpuFreeMB > 0 ) {
+			var stats = driver.getMemoryUsage();
+			memoryPressure = stats != null && stats.free / (1024 * 1024) <= autoDisposeGpuFreeMB;
 		}
+		if( memoryPressure && hxd.NMBTrace.enabled() )
+			hxd.NMBTrace.instant("heaps.memory", "GPU Memory Pressure");
+
+		var cleaned = cleanTextures(false);
+		nextAutoDispose = hxd.Timer.frameCount + (memoryPressure && cleaned ? 1 : 60);
 	}
 
 	public function tryFreeMemory() {
@@ -265,7 +256,7 @@ class MemoryManager {
 
 	@:allow(h3d.mat.Texture.alloc)
 	function allocTexture( t : h3d.mat.Texture ) {
-		autoDisposeMemory();
+		beginFrame();
 		while( true ) {
 			t.t = t.isDepth() ? driver.allocDepthBuffer(t) : driver.allocTexture(t);
 			if( t.t != null ) break;

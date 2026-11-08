@@ -1,0 +1,6 @@
+-cp samples
+-lib heaps
+-lib limen
+-D gfx_vulkan
+-main VulkanPipelineLifetimeDiagnostic
+-hl tests/pipeline-lifetime.hl

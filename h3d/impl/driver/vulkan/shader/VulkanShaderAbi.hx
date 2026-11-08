@@ -490,6 +490,8 @@ class VulkanShaderAbi {
 		final pending:Map<String, PendingResource> = new Map();
 		for (entry in stages) {
 			for (variable in entry.data.data.vars) {
+				if (variable.kind != Param)
+					continue;
 				final descriptor = descriptor(variable.type);
 				if (descriptor == null)
 					continue;
@@ -555,24 +557,33 @@ class VulkanShaderAbi {
 		default: null;
 		}
 		if (textureElement != null) {
-			final allocations = [];
+			final allocationIds = [];
 			var allocation = data.textures;
 			while (allocation != null) {
-				if (Std.string(allocation.type) == Std.string(textureElement)
-					|| (allocation.type.match(TChannel(_)) && textureElement.match(TSampler(T2D, false))))
-					allocations.push(allocation);
+				final elementType = switch (allocation.type) {
+				case TArray(element, _): element;
+				default: allocation.type;
+				}
+				if (Std.string(elementType) == Std.string(textureElement)
+					|| (elementType.match(TChannel(_)) && textureElement.match(TSampler(T2D, false)))) {
+					final count = switch (allocation.type) {
+					case TArray(_, SConst(value)): value;
+					default: 1;
+					}
+					for (element in 0...count)
+						allocationIds.push(textureAllocationId(allocation, element));
+				}
 				allocation = allocation.next;
 			}
 			final count = switch (variable.type) {
 			case TArray(_, SConst(value)): value;
 			default: 1;
 			}
-			if (allocations.length != count)
-				throw 'HxSL resource storage ${variable.name} contains $count entries, but ${allocations.length} logical resources were resolved';
-			final allocationIds = [for (value in allocations) allocationId(value)];
+			if (allocationIds.length != count)
+				throw 'HxSL resource storage ${variable.name} contains $count entries, but ${allocationIds.length} logical resources were resolved';
 			return {
 				logicalId: allocationIds.join("+"),
-				name: allocations.length == 1 ? allocations[0].name : variable.name,
+				name: variable.name,
 				allocationIds: allocationIds,
 			};
 		}
@@ -582,13 +593,19 @@ class VulkanShaderAbi {
 			: {logicalId: allocationId(allocation), name: allocation.name, allocationIds: [allocationId(allocation)]};
 	}
 
+	public static function textureAllocationId(allocation:AllocParam, element:Int):String {
+		return switch (allocation.type) {
+		case TArray(_, _): allocationId(allocation) + '[$element]';
+		default: allocationId(allocation);
+		}
+	}
+
 	public static function allocationId(allocation:AllocParam):String {
 		return allocation.perObjectGlobal == null
 			? 'param:${allocation.instance}:${allocation.index}:${allocation.name}'
 			: 'global:${allocation.perObjectGlobal.path}';
 	}
 
-	// HxSL has already flattened logical constants into tightly packed vec4 storage.
 	static function packedConstantLayout(type:Type):PackedConstantLayout {
 		return switch (type) {
 		case TInt, TBool, TFloat, TBufferHandle: new PackedConstantLayout(4);

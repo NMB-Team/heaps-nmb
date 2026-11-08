@@ -25,6 +25,7 @@ private class VulkanUploadPage {
 	public var capacity:Int;
 	public var offset = 0;
 	public var idleFrames = 0;
+	public var underusedFrames = 0;
 
 	public function new(buffer:VulkanUploadBuffer, capacity:Int) {
 		this.buffer = buffer;
@@ -46,12 +47,15 @@ class VulkanUploadManager {
 	final allocator:VulkanMemoryAllocator;
 	final pageSize:Int;
 	final frames:Array<Array<VulkanUploadPage>>;
+	final frameDemand:Array<Int>;
+	var currentDemand = 0;
+	var targetPageSize:Int;
 	var currentFrame = -1;
 	var nextPageId = 1;
 	var allocatedPage:VulkanUploadPage;
 	var allocatedOffset:Int;
-	static inline final IDLE_FRAME_LIMIT = 120;
-	static inline final LARGE_IDLE_FRAME_LIMIT = 8;
+	static inline final IDLE_FRAME_LIMIT = 8;
+	static inline final LARGE_IDLE_FRAME_LIMIT = 2;
 	public var retainedBytes(default, null):Int64 = 0;
 	public var pageDestructionCount(default, null) = 0;
 	public var pageCreationCount(default, null) = 0;
@@ -65,18 +69,33 @@ class VulkanUploadManager {
 		this.allocator = allocator;
 		this.pageSize = pageSize;
 		frames = [for (_ in 0...frameCount) []];
+		frameDemand = [for (_ in 0...frameCount) 0];
 	}
 
 	public function beginFrame(frameIndex:Int) {
 		currentFrame = frameIndex;
 		allocatedPage = null;
 		final pages = frames[frameIndex];
+		var demand = 0;
+		for (page in pages)
+			demand += Std.int(Math.min(page.offset, pageSize - demand));
+		final minimum = Std.int(Math.min(64 << 10, pageSize));
+		final previous = frameDemand[frameIndex];
+		final desired = Std.int(Math.max(demand, previous - (previous >> 2)));
+		targetPageSize = minimum;
+		while (targetPageSize < desired)
+			targetPageSize = targetPageSize > (pageSize >> 1) ? pageSize : targetPageSize * 2;
+		frameDemand[frameIndex] = desired;
+		currentDemand = 0;
+
 		var index = 0;
 		while (index < pages.length) {
 			final page = pages[index];
 			page.idleFrames = page.offset == 0 ? page.idleFrames + 1 : 0;
-			final idleLimit = page.capacity > pageSize ? LARGE_IDLE_FRAME_LIMIT : IDLE_FRAME_LIMIT;
-			if (page.idleFrames >= idleLimit) {
+			final oversized = page.capacity / 4 >= targetPageSize;
+			page.underusedFrames = oversized && page.offset <= targetPageSize ? page.underusedFrames + 1 : 0;
+			final idleLimit = oversized ? LARGE_IDLE_FRAME_LIMIT : IDLE_FRAME_LIMIT;
+			if (page.idleFrames >= idleLimit || page.underusedFrames >= LARGE_IDLE_FRAME_LIMIT) {
 				pages.splice(index, 1);
 				destroyPage(page);
 			} else {
@@ -95,8 +114,6 @@ class VulkanUploadManager {
 		page.buffer.allocation.mappedBytes(offset, size).blit(0, source, sourceOffset, size);
 		page.buffer.allocation.flush(offset, size);
 		uploadedBytes += size;
-		VulkanResourceState.recordBarrier();
-		command.bufferBarrier2(page.buffer.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(size) : hl.I64), VkPipelineStage2.HOST, VkAccess2.HOST_WRITE, VkPipelineStage2.COPY, VkAccess2.TRANSFER_READ);
 		VulkanResourceState.transitionBuffer(command, destination, TransferDestination, Int64.ofInt(destinationOffset), Int64.ofInt(size));
 		command.copyBuffer2(page.buffer.buffer, destination.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(destinationOffset) : hl.I64), (Int64.ofInt(size) : hl.I64));
 	}
@@ -130,8 +147,6 @@ class VulkanUploadManager {
 		page.buffer.allocation.mappedBytes(offset, size).blit(0, source, sourceOffset, size);
 		page.buffer.allocation.flush(offset, size);
 		uploadedBytes += size;
-		VulkanResourceState.recordBarrier();
-		command.bufferBarrier2(page.buffer.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(size) : hl.I64), VkPipelineStage2.HOST, VkAccess2.HOST_WRITE, VkPipelineStage2.COPY, VkAccess2.TRANSFER_READ);
 		VulkanResourceState.transitionImage(command, destination, mipLevel, layer, TransferDestination);
 		final region = new VkBufferImageCopy();
 		region.bufferOffset = (Int64.ofInt(offset) : hl.I64);
@@ -157,18 +172,37 @@ class VulkanUploadManager {
 			if (size <= allocatedPage.capacity - offset)
 				return reserve(allocatedPage, offset, size);
 		}
+		var best:VulkanUploadPage = null;
+		var bestOffset = 0;
+		var bestRemaining = 0x7FFFFFFF;
 		for (page in frames[currentFrame]) {
 			final offset = alignUp(page.offset, alignment);
-			if (size <= page.capacity - offset)
-				return reserve(page, offset, size);
+			final remaining = page.capacity - offset;
+			if (size <= remaining && remaining < bestRemaining) {
+				best = page;
+				bestOffset = offset;
+				bestRemaining = remaining;
+			}
 		}
-		final capacity = size > pageSize ? alignUp(size, alignment) : pageSize;
+		if (best != null)
+			return reserve(best, bestOffset, size);
+
+		var capacity = targetPageSize;
+		final demand = Std.int(Math.max(size, currentDemand));
+		while (capacity < demand && capacity < pageSize)
+			capacity = capacity > (pageSize >> 1) ? pageSize : capacity * 2;
+		if (size > capacity)
+			capacity = alignUp(size, alignment);
 		final page = createPage(capacity);
 		frames[currentFrame].push(page);
 		reserve(page, 0, size);
 	}
 
 	function reserve(page:VulkanUploadPage, offset:Int, size:Int) {
+		if (currentDemand < pageSize) {
+			final consumed = offset + size - page.offset;
+			currentDemand = consumed >= pageSize - currentDemand ? pageSize : currentDemand + consumed;
+		}
 		page.offset = offset + size;
 		allocatedPage = page;
 		allocatedOffset = offset;
@@ -203,6 +237,21 @@ class VulkanUploadManager {
 		page.buffer.allocation.dispose();
 		retainedBytes -= page.capacity;
 		pageDestructionCount++;
+	}
+
+	public function reclaimUnused(frameIndex:Int, completed:Bool) {
+		final pages = frames[frameIndex];
+		var index = 0;
+		while (index < pages.length) {
+			final page = pages[index];
+			if (page.offset == 0 || completed) {
+				if (allocatedPage == page)
+					allocatedPage = null;
+				pages.splice(index, 1);
+				destroyPage(page);
+			} else
+				index++;
+		}
 	}
 
 	public function dispose() {

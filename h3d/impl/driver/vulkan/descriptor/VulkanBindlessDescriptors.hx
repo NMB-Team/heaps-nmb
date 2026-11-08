@@ -33,7 +33,6 @@ private class VulkanBindlessImageSlot {
 
 private class VulkanBindlessSamplerSlot {
 	public var sampler:VkSampler;
-	public var version = 0;
 	public var allocated = false;
 	public function new() {}
 }
@@ -85,17 +84,20 @@ private class VulkanBindlessSlotAllocator {
 
 class VulkanBindlessGeneration {
 	public final set:VkDescriptorSet;
-	final imageVersions:Array<Int>;
-	final samplerVersions:Array<Int>;
-	final bufferVersions:Array<Int>;
+	final imageDirty:Array<Bool>;
+	final imagePending:Array<Int> = [];
+	final samplerDirty:Array<Bool>;
+	final samplerPending:Array<Int> = [];
+	final bufferDirty:Array<Bool>;
+	final bufferPending:Array<Int> = [];
 	public var descriptorWrites(default, null) = 0;
 	public var descriptorUpdateCalls(default, null) = 0;
 
 	public function new(set:VkDescriptorSet, imageCapacity:Int, samplerCapacity:Int, bufferCapacity:Int) {
 		this.set = set;
-		imageVersions = [for (_ in 0...imageCapacity) -1];
-		samplerVersions = [for (_ in 0...samplerCapacity) -1];
-		bufferVersions = [for (_ in 0...bufferCapacity) -1];
+		imageDirty = [for (_ in 0...imageCapacity) false];
+		samplerDirty = [for (_ in 0...samplerCapacity) false];
+		bufferDirty = [for (_ in 0...bufferCapacity) false];
 	}
 }
 
@@ -105,6 +107,7 @@ class VulkanBindlessDescriptors {
 	public static inline final BUFFER_BINDING = 2;
 
 	final context:VkContext;
+	final generations:Array<VulkanBindlessGeneration> = [];
 	final imageSlots:Array<VulkanBindlessImageSlot>;
 	final samplerSlots:Array<VulkanBindlessSamplerSlot>;
 	final bufferSlots:Array<VulkanBindlessBufferSlot>;
@@ -155,7 +158,10 @@ class VulkanBindlessDescriptors {
 		samplerAllocator = new VulkanBindlessSlotAllocator("sampler", samplerCapacity, samplerLimit);
 		bufferAllocator = new VulkanBindlessSlotAllocator("storage-buffer", bufferCapacity, bufferLimit);
 		layout = createLayout();
-		pool = createPool(generationCount);
+		pool = try createPool(generationCount) catch (error:Dynamic) {
+			context.destroyDescriptorSetLayout(layout);
+			throw error;
+		};
 	}
 
 	static function configuredCapacity(name:String, preferred:Int, limit:Int):Int {
@@ -229,7 +235,24 @@ class VulkanBindlessDescriptors {
 		final result = context.allocateDescriptorSets(info, sets);
 		if (result != 0)
 			throw VulkanRuntime.error('Failed to allocate Vulkan bindless descriptor generation (VkResult $result)');
-		return new VulkanBindlessGeneration(sets[0], imageCapacity, samplerCapacity, bufferCapacity);
+		final generation = new VulkanBindlessGeneration(sets[0], imageCapacity, samplerCapacity, bufferCapacity);
+		generations.push(generation);
+		for (index in 0...imageAllocator.highWater)
+			if (imageSlots[index].allocated) {
+				@:privateAccess generation.imageDirty[index] = true;
+				@:privateAccess generation.imagePending.push(index);
+			}
+		for (index in 0...samplerAllocator.highWater)
+			if (samplerSlots[index].allocated) {
+				@:privateAccess generation.samplerDirty[index] = true;
+				@:privateAccess generation.samplerPending.push(index);
+			}
+		for (index in 0...bufferAllocator.highWater)
+			if (bufferSlots[index].allocated) {
+				@:privateAccess generation.bufferDirty[index] = true;
+				@:privateAccess generation.bufferPending.push(index);
+			}
+		return generation;
 	}
 
 	public function allocateImage(view:VkImageView, layout:VkImageLayout):Int {
@@ -240,14 +263,24 @@ class VulkanBindlessDescriptors {
 		slot.layout = layout;
 		slot.allocated = true;
 		slot.version++;
+		markImage(index);
 		return index;
 	}
 
 	public function updateImage(index:Int, view:VkImageView, layout:VkImageLayout) {
 		final slot = imageSlots[index];
+		if (slot.allocated && slot.view == view && slot.layout == layout)
+			return;
 		slot.view = view;
 		slot.layout = layout;
+		slot.allocated = true;
 		slot.version++;
+		markImage(index);
+	}
+
+	public function suspendImage(index:Int) {
+		imageSlots[index].allocated = false;
+		markImage(index);
 	}
 
 	public function allocateSampler(sampler:VkSampler):Int {
@@ -255,7 +288,7 @@ class VulkanBindlessDescriptors {
 		final slot = samplerSlots[index];
 		slot.sampler = sampler;
 		slot.allocated = true;
-		slot.version++;
+		markSampler(index);
 		return index;
 	}
 
@@ -267,74 +300,126 @@ class VulkanBindlessDescriptors {
 		slot.range = range;
 		slot.allocated = true;
 		slot.version++;
+		markBuffer(index);
 		return index;
 	}
 
+	static function compareSlots(a:Int, b:Int):Int {
+		return a - b;
+	}
+
+	function markImage(index:Int) {
+		for (generation in generations) {
+			if (!@:privateAccess generation.imageDirty[index]) {
+				@:privateAccess generation.imageDirty[index] = true;
+				@:privateAccess generation.imagePending.push(index);
+			}
+		}
+	}
+
+	function markSampler(index:Int) {
+		for (generation in generations) {
+			if (!@:privateAccess generation.samplerDirty[index]) {
+				@:privateAccess generation.samplerDirty[index] = true;
+				@:privateAccess generation.samplerPending.push(index);
+			}
+		}
+	}
+
+	function markBuffer(index:Int) {
+		for (generation in generations) {
+			if (!@:privateAccess generation.bufferDirty[index]) {
+				@:privateAccess generation.bufferDirty[index] = true;
+				@:privateAccess generation.bufferPending.push(index);
+			}
+		}
+	}
+
 	public function sync(generation:VulkanBindlessGeneration) {
+		if (@:privateAccess generation.imagePending.length == 0
+			&& @:privateAccess generation.samplerPending.length == 0
+			&& @:privateAccess generation.bufferPending.length == 0)
+			return;
+
 		var writes = 0;
 		var updateCalls = 0;
-		var index = 0;
-		while (index < imageSlots.length) {
-			final slot = imageSlots[index];
-			if (!slot.allocated || @:privateAccess generation.imageVersions[index] == slot.version) {
-				index++;
+
+		final imagePending = @:privateAccess generation.imagePending;
+		haxe.ds.ArraySort.sort(imagePending, compareSlots);
+		var imageCursor = 0;
+		while (imageCursor < imagePending.length) {
+			final first = imagePending[imageCursor++];
+			@:privateAccess generation.imageDirty[first] = false;
+			if (!imageSlots[first].allocated)
 				continue;
+
+			var end = first + 1;
+			while (imageCursor < imagePending.length && imagePending[imageCursor] == end && imageSlots[end].allocated) {
+				@:privateAccess generation.imageDirty[end] = false;
+				imageCursor++;
+				end++;
 			}
-			final first = index;
-			while (index < imageSlots.length && imageSlots[index].allocated
-				&& @:privateAccess generation.imageVersions[index] != imageSlots[index].version)
-				index++;
-			final views = new hl.NativeArray<VkImageView>(index - first);
-			for (slotIndex in first...index) {
+			final views = new hl.NativeArray<VkImageView>(end - first);
+			for (slotIndex in first...end) {
 				views[slotIndex - first] = imageSlots[slotIndex].view;
-				@:privateAccess generation.imageVersions[slotIndex] = imageSlots[slotIndex].version;
 			}
 			context.updateDescriptorSampledImageRange(generation.set, IMAGE_BINDING, first, views, VkImageLayout.SHADER_READ_ONLY_OPTIMAL);
-			writes += index - first;
+			writes += end - first;
 			updateCalls++;
 		}
-		index = 0;
-		while (index < samplerSlots.length) {
-			final slot = samplerSlots[index];
-			if (!slot.allocated || @:privateAccess generation.samplerVersions[index] == slot.version) {
-				index++;
+		imagePending.resize(0);
+
+		final samplerPending = @:privateAccess generation.samplerPending;
+		haxe.ds.ArraySort.sort(samplerPending, compareSlots);
+		var samplerCursor = 0;
+		while (samplerCursor < samplerPending.length) {
+			final first = samplerPending[samplerCursor++];
+			@:privateAccess generation.samplerDirty[first] = false;
+			if (!samplerSlots[first].allocated)
 				continue;
+
+			var end = first + 1;
+			while (samplerCursor < samplerPending.length && samplerPending[samplerCursor] == end && samplerSlots[end].allocated) {
+				@:privateAccess generation.samplerDirty[end] = false;
+				samplerCursor++;
+				end++;
 			}
-			final first = index;
-			while (index < samplerSlots.length && samplerSlots[index].allocated
-				&& @:privateAccess generation.samplerVersions[index] != samplerSlots[index].version)
-				index++;
-			final samplers = new hl.NativeArray<VkSampler>(index - first);
-			for (slotIndex in first...index) {
+			final samplers = new hl.NativeArray<VkSampler>(end - first);
+			for (slotIndex in first...end) {
 				samplers[slotIndex - first] = samplerSlots[slotIndex].sampler;
-				@:privateAccess generation.samplerVersions[slotIndex] = samplerSlots[slotIndex].version;
 			}
 			context.updateDescriptorSamplerRange(generation.set, SAMPLER_BINDING, first, samplers);
-			writes += index - first;
+			writes += end - first;
 			updateCalls++;
 		}
-		index = 0;
-		while (index < bufferSlots.length) {
-			final slot = bufferSlots[index];
-			if (!slot.allocated || @:privateAccess generation.bufferVersions[index] == slot.version) {
-				index++;
+		samplerPending.resize(0);
+
+		final bufferPending = @:privateAccess generation.bufferPending;
+		haxe.ds.ArraySort.sort(bufferPending, compareSlots);
+		var bufferCursor = 0;
+		while (bufferCursor < bufferPending.length) {
+			final first = bufferPending[bufferCursor++];
+			@:privateAccess generation.bufferDirty[first] = false;
+			if (!bufferSlots[first].allocated)
 				continue;
+
+			var end = first + 1;
+			while (bufferCursor < bufferPending.length && bufferPending[bufferCursor] == end && bufferSlots[end].allocated) {
+				@:privateAccess generation.bufferDirty[end] = false;
+				bufferCursor++;
+				end++;
 			}
-			final first = index;
-			while (index < bufferSlots.length && bufferSlots[index].allocated
-				&& @:privateAccess generation.bufferVersions[index] != bufferSlots[index].version)
-				index++;
-			final buffers = new hl.NativeArray<VkBuffer>(index - first);
-			final ranges = new hl.NativeArray<hl.I64>(index - first);
-			for (slotIndex in first...index) {
+			final buffers = new hl.NativeArray<VkBuffer>(end - first);
+			final ranges = new hl.NativeArray<hl.I64>(end - first);
+			for (slotIndex in first...end) {
 				buffers[slotIndex - first] = bufferSlots[slotIndex].buffer;
 				ranges[slotIndex - first] = (bufferSlots[slotIndex].range : hl.I64);
-				@:privateAccess generation.bufferVersions[slotIndex] = bufferSlots[slotIndex].version;
 			}
 			context.updateDescriptorBufferRange(generation.set, BUFFER_BINDING, first, VkDescriptorType.STORAGE_BUFFER, buffers, ranges);
-			writes += index - first;
+			writes += end - first;
 			updateCalls++;
 		}
+		bufferPending.resize(0);
 		@:privateAccess generation.descriptorWrites += writes;
 		@:privateAccess generation.descriptorUpdateCalls += updateCalls;
 	}

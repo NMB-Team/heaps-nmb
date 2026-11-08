@@ -30,7 +30,7 @@ class VulkanSamplerCache {
 	final context:VkContext;
 	final limits:VkPhysicalDeviceLimits;
 	final anisotropySupported:Bool;
-	final samplers:Map<String, VkSampler> = new Map();
+	final samplers:Map<Int, VulkanSamplerHandle> = new Map();
 	public var creationCount(default, null) = 0;
 	public var cacheHitCount(default, null) = 0;
 
@@ -45,28 +45,38 @@ class VulkanSamplerCache {
 		final linear = texture.filter == Filter.Linear || texture.filter == Filter.AnisotropicLinear || (anisotropic && anisotropySupported);
 		if (linear && !formatFilterable)
 			throw 'Texture format ${texture.format} does not support the requested filtered sampling';
-		if (Math.abs(texture.lodBias) > limits.maxSamplerLodBias)
-			throw 'Texture LOD bias ${texture.lodBias} exceeds Vulkan limit ${limits.maxSamplerLodBias}';
+		final lodBias = texture.lodBias;
+		if (Math.abs(lodBias) > limits.maxSamplerLodBias)
+			throw 'Texture LOD bias $lodBias exceeds Vulkan limit ${limits.maxSamplerLodBias}';
 
 		final anisotropyEnable = anisotropic && anisotropySupported;
+		final anisotropyLevel = anisotropyEnable ? hxd.Math.imin(texture.anisotropicMaxLevel, Math.ceil(limits.maxSamplerAnisotropy)) : 0;
+		final mipLinear = texture.mipMap == MipMap.Linear;
+		final noMips = texture.mipMap == MipMap.None;
+		final wrap = Type.enumIndex(texture.wrap);
+		final bias = @:privateAccess texture.packedLodBias;
+		// Pack only effective sampler state, excluding texture views and image identity.
+		final state = (linear ? 1 : 0) | (mipLinear ? 2 : 0) | (noMips ? 4 : 0) | (wrap << 3)
+			| (anisotropyEnable ? 32 : 0) | (anisotropyLevel << 6) | (bias << 11);
+		final cached = samplers.get(state);
+		if (cached != null) {
+			cacheHitCount++;
+			return cached;
+		}
+
 		final filter:VkFilter = linear ? VkFilter.LINEAR : VkFilter.NEAREST;
-		final mipmapMode:VkSamplerMipmapMode = texture.mipMap == MipMap.Linear ? VkSamplerMipmapMode.LINEAR : VkSamplerMipmapMode.NEAREST;
+		final mipmapMode:VkSamplerMipmapMode = mipLinear ? VkSamplerMipmapMode.LINEAR : VkSamplerMipmapMode.NEAREST;
 		final address:VkSamplerAddressMode = switch (texture.wrap) {
 		case Wrap.Clamp: VkSamplerAddressMode.CLAMP_TO_EDGE;
 		case Wrap.Repeat: VkSamplerAddressMode.REPEAT;
 		case Wrap.Mirror: VkSamplerAddressMode.MIRRORED_REPEAT;
 		};
 		final maxAnisotropy = anisotropyEnable ? Math.min(texture.anisotropicMaxLevel, limits.maxSamplerAnisotropy) : 1.0;
-		final maxLod = texture.mipMap == MipMap.None ? 0.0 : 1000.0;
+		final maxLod = noMips ? 0.0 : 1000.0;
 		final compare = VkCompareOp.NEVER;
 		final border = VkBorderColor.FLOAT_TRANSPARENT_BLACK;
 		final key = '${cast(filter, Int)}:${cast(filter, Int)}:${cast(mipmapMode, Int)}:${cast(address, Int)}:${cast(address, Int)}:${cast(address, Int)}:'
-			+ '${anisotropyEnable ? 1 : 0}:$maxAnisotropy:0:${cast(compare, Int)}:${cast(border, Int)}:${texture.lodBias}:0:$maxLod';
-		var sampler = samplers.get(key);
-		if (sampler != null) {
-			cacheHitCount++;
-			return new VulkanSamplerHandle(sampler, key);
-		}
+			+ '${anisotropyEnable ? 1 : 0}:$maxAnisotropy:0:${cast(compare, Int)}:${cast(border, Int)}:$lodBias:0:$maxLod';
 
 		final info = new VkSamplerCreateInfo();
 		info.magFilter = filter;
@@ -75,7 +85,7 @@ class VulkanSamplerCache {
 		info.addressModeU = address;
 		info.addressModeV = address;
 		info.addressModeW = address;
-		info.mipLodBias = texture.lodBias;
+		info.mipLodBias = lodBias;
 		info.anisotropyEnable = anisotropyEnable;
 		info.maxAnisotropy = maxAnisotropy;
 		info.compareEnable = false;
@@ -84,17 +94,18 @@ class VulkanSamplerCache {
 		info.maxLod = maxLod;
 		info.borderColor = border;
 		info.unnormalizedCoordinates = false;
-		sampler = context.createSampler(info);
+		final sampler = context.createSampler(info);
 		if (sampler == null)
 			throw VulkanRuntime.error('Failed to create Vulkan sampler for state $key');
-		samplers.set(key, sampler);
+		final handle = new VulkanSamplerHandle(sampler, key);
+		samplers.set(state, handle);
 		creationCount++;
-		return new VulkanSamplerHandle(sampler, key);
+		return handle;
 	}
 
 	public function dispose() {
 		for (sampler in samplers)
-			context.destroySampler(sampler);
+			context.destroySampler(sampler.sampler);
 		samplers.clear();
 	}
 }
