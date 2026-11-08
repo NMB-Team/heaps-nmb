@@ -353,10 +353,10 @@ class OpenGLDriver extends Driver {
 		#end
 		default: throw "assert";
 		};
-		var s = gl.createShader(type);
 		if( shader.code == null ){
 			shader.code = glout.run(shader.data);
 		}
+		var s = gl.createShader(type);
 		gl.shaderSource(s, shader.code);
 		var tracing = hxd.NMBTrace.enabled();
 		if( tracing ) { hxd.NMBTrace.shaderCompile(); hxd.NMBTrace.begin("heaps.shader", "Shader Compile"); }
@@ -364,6 +364,7 @@ class OpenGLDriver extends Driver {
 		if( tracing ) hxd.NMBTrace.end("heaps.shader");
 		if ( gl.getShaderParameter(s, GL.COMPILE_STATUS) != cast 1 ) {
 			var log = gl.getShaderInfoLog(s);
+			gl.deleteShader(s);
 			var lid = Std.parseInt(log.substr(9));
 			var line = lid == null ? null : shader.code.split("\n")[lid - 1];
 			if( line == null ) line = "" else line = "(" + StringTools.trim(line) + ")";
@@ -548,8 +549,13 @@ class OpenGLDriver extends Driver {
 			p = new CompiledProgram();
 			var glout = makeCompiler();
 			p.vertex = compileShader(glout,shader.vertex);
-			if( shader.fragment != null )
-				p.fragment = compileShader(glout,shader.fragment);
+			try {
+				if( shader.fragment != null )
+					p.fragment = compileShader(glout,shader.fragment);
+			} catch( e : Dynamic ) {
+				gl.deleteShader(p.vertex.s);
+				throw e;
+			}
 
 			p.p = gl.createProgram();
 			#if ((limen || usegl) && !hlmesa)
@@ -572,15 +578,17 @@ class OpenGLDriver extends Driver {
 				if( gl.getProgramParameter(p.p, GL.LINK_STATUS) != cast 1 )
 					log = gl.getProgramInfoLog(p.p);
 			} catch( e : Dynamic ) {
+				gl.deleteShader(p.vertex.s);
+				if( p.fragment != null )
+					gl.deleteShader(p.fragment.s);
+				gl.deleteProgram(p.p);
 				throw "Shader linkage error: "+Std.string(e)+" ("+getDriverName(false)+")";
 			}
 			gl.deleteShader(p.vertex.s);
 			if( p.fragment != null )
 				gl.deleteShader(p.fragment.s);
 			if( log != null ) {
-				#if js
 				gl.deleteProgram(p.p);
-				#end
 				#if limen
 				/*
 					Tentative patch on some driver that report an higher shader version that it's allowed to use.
@@ -1757,7 +1765,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function disposeInstanceBuffer(b:InstanceBuffer) {
+		if( b.data != null )
+			gl.deleteBuffer(b.data);
 		b.data = null;
+		b.cpuData = null;
 	}
 
 	override function drawInstanced( ibuf : h3d.Buffer, commands : InstanceBuffer ) {
@@ -1986,7 +1997,7 @@ class OpenGLDriver extends Driver {
 
 	override function setRenderTargets( textures : Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 		unbindTargets();
-		setRenderTarget(textures[0], depthBinding);
+		setRenderTarget(textures[0], 0, 0, depthBinding);
 		if( textures.length < 2 )
 			return;
 		numTargets = textures.length;
