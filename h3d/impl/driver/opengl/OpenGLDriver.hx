@@ -296,6 +296,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function begin(frame) {
+		#if limen
+		context.makeCurrent();
+		if (gl.isContextLost()) throw "OpenGL context lost; recovery is not implemented";
+		#end
 		this.frame = frame;
 		resetStream();
 		gl.useProgram(null);
@@ -1845,7 +1849,13 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function isDisposed() {
+		#if limen
+		context.makeCurrent();
+		if (gl.isContextLost()) throw "OpenGL context lost; recovery is not implemented";
+		return false;
+		#else
 		return gl.isContextLost();
+		#end
 	}
 
 	override function setRenderZone( x : Int, y : Int, width : Int, height : Int ) {
@@ -1925,8 +1935,17 @@ class OpenGLDriver extends Driver {
 					gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0+i,GL.TEXTURE_2D,tex.t.t,0);
 			setDrawBuffers(oldCount);
 			numTargets = oldCount;
+			validateFramebuffer("restored color targets=" + oldCount);
 		}
 		return pixels;
+	}
+
+	function validateFramebuffer(configuration:String) {
+		#if (js || limen || usegl)
+		var status = gl.checkFramebufferStatus(GL.FRAMEBUFFER);
+		if (status != GL.FRAMEBUFFER_COMPLETE)
+			throw "Incomplete OpenGL framebuffer: status=0x" + StringTools.hex(status) + " " + configuration;
+		#end
 	}
 
 	override function setRenderTarget( tex : h3d.mat.Texture, layer = 0, mipLevel = 0, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
@@ -1991,18 +2010,16 @@ class OpenGLDriver extends Driver {
 		for( i in 0...boundTextures.length )
 			boundTextures[i] = null;
 
+		#if limen
+		setDrawBuffers(1);
+		gl.readBuffer(GL.COLOR_ATTACHMENT0);
+		#end
+		validateFramebuffer("color target=" + tex + " layer=" + layer + " mip=" + mipLevel);
+
 		if( !tex.flags.has(WasCleared) ) {
 			tex.flags.set(WasCleared); // once we draw to, do not clear again
 			clear(BLACK);
 		}
-
-		#if js
-		if( glDebug ) {
-			var code = gl.checkFramebufferStatus(GL.FRAMEBUFFER);
-			if( code != GL.FRAMEBUFFER_COMPLETE )
-				throw "Invalid frame buffer: "+code;
-		}
-		#end
 	}
 
 	override function setRenderTargets( textures : Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
@@ -2029,6 +2046,7 @@ class OpenGLDriver extends Driver {
 			}
 		}
 		setDrawBuffers(textures.length);
+		validateFramebuffer("color targets=" + textures.length);
 		if( needClear ) clear(BLACK);
 	}
 
@@ -2076,13 +2094,11 @@ class OpenGLDriver extends Driver {
 		for( i in 0...boundTextures.length )
 			boundTextures[i] = null;
 
-		#if js
-		if( glDebug ) {
-			var code = gl.checkFramebufferStatus(GL.FRAMEBUFFER);
-			if( code != GL.FRAMEBUFFER_COMPLETE )
-				throw "Invalid frame buffer: "+code;
-		}
+		#if limen
+		setDrawBuffers(0);
+		gl.readBuffer(GL.NONE);
 		#end
+		validateFramebuffer("depth target layer=" + layer);
 	}
 
 	override function setDepthClamp( enabled : Bool ) {
