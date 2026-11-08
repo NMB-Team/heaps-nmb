@@ -360,7 +360,7 @@ class Upscaling {
 	}
 
 	public function getFrameGenUITarget() : h3d.mat.Texture {
-		if( frameGenUIMode != UITexture )
+		if( frameGenUIMode != UITexture || getFrameGenMode() == Off )
 			return null;
 		var engine = h3d.Engine.getCurrent();
 		var t = frameGenUITarget;

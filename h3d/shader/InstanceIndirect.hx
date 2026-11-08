@@ -10,7 +10,11 @@ class InstanceIndirectBase extends hxsl.Shader {
 		@const var ENABLE_COUNT_BUFFER : Bool;
 		@param var countBuffer : RWBuffer<Int>;
 		@param var commandBuffer : RWBuffer<Int>;
-		@param var instanceData : StoragePartialBuffer<{ modelView : Mat4 }>;
+		@param var instanceData : StorageBuffer<Vec4>;
+		@param var instanceStride : Int;
+		@param var modelViewPos : Int;
+
+		@:import h3d.shader.BufferUtils;
 		@param var instanceCount : Int;
 
 		// x : indexCount, y : indexStart, z : minScreenRatio, w : materialIndex
@@ -125,7 +129,7 @@ class InstanceIndirectBase extends hxsl.Shader {
 
 		function main() {
 			if ( invocID < instanceCount ) {
-				modelView = instanceData[invocID].modelView;
+				modelView = getMat4(instanceData, invocID * instanceStride + modelViewPos);
 				init();
 
 				var localCenter = vec4(getCenter(), 1.0);
