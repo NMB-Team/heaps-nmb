@@ -192,66 +192,7 @@ class Drawable extends Object {
 	override function emitTile( ctx : RenderContext, tile : Tile ) {
 		if( tile == null )
 			tile = new Tile(null, 0, 0, 5, 5);
-		if( !ctx.hasBuffering() ) {
-			if( !ctx.drawTile(this, tile) ) return;
-			return;
-		}
-		if( !ctx.beginDrawBatch(this, tile.getTexture()) ) return;
-
-		var alpha = color.a * ctx.globalAlpha;
-		var ax = absX + tile.dx * matA + tile.dy * matC;
-		var ay = absY + tile.dx * matB + tile.dy * matD;
-		var buf = ctx.buffer;
-		var pos = ctx.bufPos;
-		buf.grow(pos + 4 * 8);
-
-		inline function emit(v:Float) buf[pos++] = v;
-
-		emit(ax);
-		emit(ay);
-		emit(tile.u0);
-		emit(tile.v0);
-		emit(color.r);
-		emit(color.g);
-		emit(color.b);
-		emit(alpha);
-
-
-		var tw = tile.width;
-		var th = tile.height;
-		var dx1 = tw * matA;
-		var dy1 = tw * matB;
-		var dx2 = th * matC;
-		var dy2 = th * matD;
-
-		emit(ax + dx1);
-		emit(ay + dy1);
-		emit(tile.u1);
-		emit(tile.v1);
-		emit(color.r);
-		emit(color.g);
-		emit(color.b);
-		emit(alpha);
-
-		emit(ax + dx2);
-		emit(ay + dy2);
-		emit(tile.u2c);
-		emit(tile.v2c);
-		emit(color.r);
-		emit(color.g);
-		emit(color.b);
-		emit(alpha);
-
-		emit(ax + dx1 + dx2);
-		emit(ay + dy1 + dy2);
-		emit(tile.u3);
-		emit(tile.v3);
-		emit(color.r);
-		emit(color.g);
-		emit(color.b);
-		emit(alpha);
-
-		ctx.bufPos = pos;
+		ctx.drawTile(this, tile);
 	}
 
 }

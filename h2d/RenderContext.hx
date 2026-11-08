@@ -21,24 +21,13 @@ private typedef FilterStack = { spr: h2d.Object, scaleX:Float, scaleY:Float };
 @:access(h2d.Scene)
 class RenderContext extends h3d.impl.RenderContext {
 
-	static inline var BUFFERING = #if heaps_emit_tile_buffering true #else false #end;
+	static inline var MAX_BATCH_FLOATS = 4096 * 4 * 8;
 
 	/**
 		Current transparency value used for rendering objects.
 		Automatically managed by `Object`.
 	**/
 	public var globalAlpha = 1.;
-	/**
-		Temporary vertex buffer used to emit Tiles when `RenderContext.BUFFERING` is on.
-		Otherwise it's `null`. Internal usage only.
-	**/
-	@:dox(hide)
-	public var buffer : hxd.FloatBuffer;
-	/**
-		Current temporary buffer position. Internal usage only.
-	**/
-	@:dox(hide)
-	public var bufPos : Int;
 	/**
 		The 2D scene attached to this RenderContext instance.
 	**/
@@ -92,6 +81,8 @@ class RenderContext extends h3d.impl.RenderContext {
 	**/
 	public var currentCamera(default, null): Null<h2d.Camera> = null;
 
+	var buffer = new hxd.FloatBuffer();
+	var bufPos = 0;
 	var texture : h3d.mat.Texture;
 	var baseShader : h3d.shader.Base2d;
 	var output : h3d.pass.OutputShader;
@@ -133,6 +124,9 @@ class RenderContext extends h3d.impl.RenderContext {
 	var renderW : Float;
 	var renderH : Float;
 	var currentBlend : BlendMode;
+	var drawBlend : BlendMode;
+	var drawSmooth : Bool;
+	var drawWrap : Bool;
 	var baseFlipY : Float;
 	var targetFlipY : Float;
 
@@ -143,9 +137,6 @@ class RenderContext extends h3d.impl.RenderContext {
 	public function new(scene) {
 		super();
 		this.scene = scene;
-		if( BUFFERING )
-			buffer = new hxd.FloatBuffer();
-		bufPos = 0;
 		output = new h3d.pass.OutputShader();
 		pass = new h3d.mat.Pass("",null);
 		pass.depth(true, Always);
@@ -165,6 +156,7 @@ class RenderContext extends h3d.impl.RenderContext {
 
 	function set_runtimeMipMapFilter( v : Bool ) {
 		#if texture_filtering
+		flush();
 		if( baseShader != null )
 			baseShader.runtimeMipMapFilter = v ? 1.0 : 0.0;
 		#end
@@ -174,14 +166,6 @@ class RenderContext extends h3d.impl.RenderContext {
 	override function dispose() {
 		super.dispose();
 		if( fixedBuffer != null ) fixedBuffer.dispose();
-	}
-
-	/**
-		Tells if tile buffering is enabled.
-	**/
-	@:dox(hide)
-	public inline function hasBuffering() {
-		return BUFFERING;
 	}
 
 	/**
@@ -233,6 +217,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		Clears current render target with specified color.
 	**/
 	public function clear(color) {
+		flush();
 		engine.clear(color);
 	}
 
@@ -310,6 +295,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		Global shaders are present in all draw operations along with base2d shader.
 	**/
 	public function addGlobalShader( shader : hxsl.Shader ) {
+		flush();
 		var list = new hxsl.ShaderList(shader, baseShaderListTail.next);
 		baseShaderListTail.next = list;
 		baseShaderListTail = list;
@@ -327,6 +313,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		var hd = baseShaderList;
 		while ( hd != baseShaderListTail.next ) {
 			if ( hd.s == shader ) {
+				flush();
 				if ( prev != null ) prev.next = hd.next;
 				needInitShaders = true;
 				if ( hd == baseShaderListTail ) {
@@ -381,6 +368,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		@returns true if filter is allowed to render, false otherwise (see `RenderContext.onEnterFilter`)
 	**/
 	public function pushFilter( spr : h2d.Object ) {
+		flush();
 		if( filterStack.length == 0 && onEnterFilter != null )
 			if( !onEnterFilter(spr) ) return false;
 		inFilter = filterStack[filterStackIndex++];
@@ -428,6 +416,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		Finalizes Filter rendering and removes top-most Object from filter stack.
 	**/
 	public function popFilter() {
+		flush();
 		inFilter.spr = null;
 		filterStackIndex--;
 		if( filterStackIndex > 0 ) {
@@ -701,11 +690,7 @@ class RenderContext extends h3d.impl.RenderContext {
 		Flushes buffered tile data if one present.
 	**/
 	@:dox(hide)
-	public inline function flush() {
-		if( hasBuffering() ) _flush();
-	}
-
-	function _flush() {
+	public function flush() {
 		if( bufPos == 0 ) return;
 		beforeDraw();
 		var nverts = Std.int(bufPos / stride);
@@ -725,11 +710,9 @@ class RenderContext extends h3d.impl.RenderContext {
 	public function beforeDraw() {
 		if( texture == null ) texture = h3d.mat.Texture.fromColor(0xFF00FF);
 		baseShader.texture = texture;
-		texture.filter = (currentObj.smooth == null ? defaultSmooth : (currentObj.smooth:Bool)) ? Linear : Nearest;
-		texture.wrap = currentObj.tileWrap && (currentObj.filter == null || inFilter != null) ? Repeat : Clamp;
-		var blend = currentObj.blendMode;
-		if( inFilter != null && inFilter.spr == currentObj && blend == Erase ) blend = Add; // add THEN erase
-		if( inFilterBlend != null ) blend = inFilterBlend;
+		texture.filter = drawSmooth ? Linear : Nearest;
+		texture.wrap = drawWrap ? Repeat : Clamp;
+		var blend = drawBlend;
 		if( blend != currentBlend ) {
 			currentBlend = blend;
 			pass.setBlendMode(blend);
@@ -764,7 +747,8 @@ class RenderContext extends h3d.impl.RenderContext {
 	**/
 	@:access(h2d.Drawable)
 	public function beginDrawBatchState( obj : h2d.Drawable ) {
-		if ( !beginDraw(obj, null, true) ) return false;
+		if( onBeginDraw != null && !onBeginDraw(obj) ) return false;
+		beginDraw(obj, null, true);
 		setupColor(obj);
 		baseShader.absoluteMatrixA.set(obj.matA, obj.matC, obj.absX);
 		baseShader.absoluteMatrixB.set(obj.matB, obj.matD, obj.absY);
@@ -785,22 +769,13 @@ class RenderContext extends h3d.impl.RenderContext {
 	**/
 	@:access(h2d.Drawable)
 	public function beginDrawObject( obj : h2d.Drawable, texture : h3d.mat.Texture ) {
-		if ( !beginDraw(obj, texture, true) ) return false;
+		if( onBeginDraw != null && !onBeginDraw(obj) ) return false;
+		beginDraw(obj, texture, true);
 		setupColor(obj);
 		baseShader.absoluteMatrixA.set(obj.matA, obj.matC, obj.absX);
 		baseShader.absoluteMatrixB.set(obj.matB, obj.matD, obj.absY);
 		beforeDraw();
 		return true;
-	}
-
-	/**
-		Begins buffered Tile render of the Drawable object.
-		@returns true if rendering is prepared, false otherwise (see `RenderContext.onBeginDraw`)
-	**/
-	@:dox(hide)
-	@:access(h2d.Drawable)
-	public function beginDrawBatch( obj : h2d.Drawable, texture : h3d.mat.Texture ) {
-		return beginDraw(obj, texture, false);
 	}
 
 	/**
@@ -864,7 +839,42 @@ class RenderContext extends h3d.impl.RenderContext {
 				return false;
 		}
 
-		if( !beginDraw(obj, tile.getTexture(), true, !tile.rotated) ) return false;
+		if( onBeginDraw != null && !onBeginDraw(obj) ) return false;
+
+		if( obj.shaders == null && baseShaderListTail == baseShaderList ) {
+			if( bufPos == MAX_BATCH_FLOATS ) flush();
+			beginDraw(obj, tile.getTexture(), false);
+			#if sceneprof h3d.impl.SceneProf.mark(obj); #end
+			setupColor(obj);
+
+			var ax = obj.absX + tile.dx * obj.matA + tile.dy * obj.matC;
+			var ay = obj.absY + tile.dx * obj.matB + tile.dy * obj.matD;
+			var dx1 = tile.width * obj.matA, dy1 = tile.width * obj.matB;
+			var dx2 = tile.height * obj.matC, dy2 = tile.height * obj.matD;
+			var color = baseShader.color;
+			var pos = bufPos;
+			buffer.grow(pos + 4 * 8);
+
+			inline function emit(x:Float, y:Float, u:Float, v:Float) {
+				buffer[pos++] = x;
+				buffer[pos++] = y;
+				buffer[pos++] = u;
+				buffer[pos++] = v;
+				buffer[pos++] = color.r;
+				buffer[pos++] = color.g;
+				buffer[pos++] = color.b;
+				buffer[pos++] = color.a;
+			}
+
+			emit(ax, ay, tile.u0, tile.v0);
+			emit(ax + dx1, ay + dy1, tile.u1, tile.v1);
+			emit(ax + dx2, ay + dy2, tile.u2c, tile.v2c);
+			emit(ax + dx1 + dx2, ay + dy1 + dy2, tile.u3, tile.v3);
+			bufPos = pos;
+			return true;
+		}
+
+		beginDraw(obj, tile.getTexture(), true, !tile.rotated);
 
 		#if sceneprof h3d.impl.SceneProf.mark(obj); #end
 		setupColor(obj);
@@ -900,11 +910,13 @@ class RenderContext extends h3d.impl.RenderContext {
 
 	@:access(h2d.Drawable)
 	function beginDraw(	obj : h2d.Drawable, texture : h3d.mat.Texture, isRelative : Bool, hasUVPos = false ) {
-		if( onBeginDraw != null && !onBeginDraw(obj) )
-			return false;
-
 		var stride = 8;
-		if( hasBuffering() && currentObj != null && (texture != this.texture || stride != this.stride || obj.blendMode != currentObj.blendMode || obj.filter != currentObj.filter || obj.smooth != currentObj.smooth) )
+		var smooth = obj.smooth == null ? defaultSmooth : (obj.smooth:Bool);
+		var wrap = obj.tileWrap && (obj.filter == null || inFilter != null);
+		var blend = obj.blendMode;
+		if( inFilter != null && inFilter.spr == obj && blend == Erase ) blend = Add;
+		if( inFilterBlend != null ) blend = inFilterBlend;
+		if( currentObj != null && (texture != this.texture || stride != this.stride || blend != drawBlend || smooth != drawSmooth || wrap != drawWrap) )
 			flush();
 		var shaderChanged = needInitShaders, paramsChanged = false;
 		var objShaders = obj.shaders;
@@ -941,8 +953,9 @@ class RenderContext extends h3d.impl.RenderContext {
 		this.texture = texture;
 		this.stride = stride;
 		this.currentObj = obj;
-
-		return true;
+		drawBlend = blend;
+		drawSmooth = smooth;
+		drawWrap = wrap;
 	}
 
 	override function setCurrent() {
