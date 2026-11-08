@@ -175,7 +175,8 @@ class OpenGLDriver extends Driver {
 		}
 
 		#if limen
-		hasMultiIndirect = glVersion >= 4.3 || gl.hasExtension("GL_ARB_multi_draw_indirect");
+		hasMultiIndirect = gl.getConfigParameter(GL.SUPPORTS_MULTI_DRAW_INDIRECT) != 0;
+		hasDepthClamp = gl.getConfigParameter(GL.SUPPORTS_DEPTH_CLAMP) != 0;
 		maxCompressedTexturesSupport = gl.hasExtension("GL_EXT_texture_compression_s3tc") ? 3 : 0;
 		if( gl.hasExtension("GL_ARB_texture_compression_bptc") )
 			maxCompressedTexturesSupport = 7;
@@ -185,7 +186,7 @@ class OpenGLDriver extends Driver {
 		#end
 
 		#if limen
-		hasMultiIndirectCount = gl.hasExtension("GL_ARB_indirect_parameters");
+		hasMultiIndirectCount = gl.getConfigParameter(GL.SUPPORTS_INDIRECT_COUNT) != 0;
 		#end
 
 		#if hlmesa
@@ -224,8 +225,8 @@ class OpenGLDriver extends Driver {
 		}
 
 		#if limen
-		if ( computeEnabled )
-			shaderVersion = 430;
+		if( computeEnabled && gl.getConfigParameter(GL.SUPPORTS_COMPUTE) == 0 )
+			throw "Compute shaders are not supported by this OpenGL context";
 		#end
 
 		drawMode = GL.TRIANGLES;
@@ -981,6 +982,9 @@ class OpenGLDriver extends Driver {
 				gl.depthFunc(COMPARE[cmp]);
 			}
 		}
+
+		if( !hasDepthClamp && Pass.getDepthClamp(bits) != 0 )
+			throw "Depth clamp is not supported by this OpenGL context";
 
 		if ( hasDepthClamp && !useDepthClamp && diff & Pass.depthClamp_mask != 0 ) {
 			if ( Pass.getDepthClamp(bits) != 0 )
@@ -1785,6 +1789,12 @@ class OpenGLDriver extends Driver {
 			size = 2;
 		}
 		#if !js
+		if( commands.data != null && !hasMultiIndirect )
+			throw "GPU indirect drawing is not supported by this OpenGL context";
+		#if limen
+		if( commands.countBuffer != null && !hasMultiIndirectCount )
+			throw "Indirect-count drawing is not supported by this OpenGL context";
+		#end
 		if( hasMultiIndirect && commands.data != null ) {
 			#if (haxe_ver < 5)
 				var arr = new hl.NativeArray<Int>(1);
@@ -2076,8 +2086,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function setDepthClamp( enabled : Bool ) {
-		if( !hasDepthClamp )
+		if( !hasDepthClamp ) {
+			if( enabled ) throw "Depth clamp is not supported by this OpenGL context";
 			return;
+		}
 		useDepthClamp = enabled;
 		if ( useDepthClamp )
 			gl.enable(DEPTH_CLAMP);
@@ -2123,12 +2135,12 @@ class OpenGLDriver extends Driver {
 		case ResidentMips:
 			#if limen glES == null && shaderVersion >= 430 #else false #end;
 		case DepthTextureArray:
-			glES >= 3;
+			glES == null ? glVersion >= 3 : glES >= 3;
 		case DepthClamp:
 			hasDepthClamp;
 		case ComputeShaders:
 			#if (limen && hl_ver >= version("1.15.0"))
-			computeEnabled;
+			gl.getConfigParameter(GL.SUPPORTS_COMPUTE) != 0;
 			#else
 			false;
 			#end
@@ -2151,7 +2163,9 @@ class OpenGLDriver extends Driver {
 				? glES >= 3
 				: glVersion >= 2;
 		case Queries:
+			#if limen glES == null && glVersion >= 1.5; #else
 			glES != null ? glES >= 3 : glVersion >= 1.5;
+			#end
 		case SRGBTextures:
 			glES != null
 				? glES >= 3 || gl.hasExtension("GL_EXT_sRGB")
@@ -2159,9 +2173,11 @@ class OpenGLDriver extends Driver {
 		case ShaderModel3:
 			glES != null ? glES >= 3 : shaderVersion >= 130;
 		case InstancedRendering:
+			#if limen gl.getConfigParameter(GL.SUPPORTS_INSTANCING) != 0; #else
 			glES != null
 				? glES >= 3
 				: glVersion >= 3.3 || gl.hasExtension("GL_ARB_instanced_arrays") && gl.hasExtension("GL_ARB_draw_instanced");
+			#end
 		case Bindless:
 			false;
 		};
@@ -2268,6 +2284,7 @@ class OpenGLDriver extends Driver {
 	#if hl
 
 	override function computeDispatch(x:Int = 1, y:Int = 1, z:Int = 1, barrier:Bool = true) {
+		if( !hasFeature(ComputeShaders) ) throw "Compute shaders are not supported by this OpenGL context";
 		GL.dispatchCompute(x,y,z);
 		if( barrier )
 			memoryBarrier();
@@ -2278,8 +2295,14 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocQuery(kind:QueryKind) {
-		if( kind == TimeElapsed && !(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query")) )
+		if( (kind == TimeElapsed || kind == TimeStamp) && !(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query")) )
 			return null;
+		#if limen
+		if( (kind == TimeElapsed || kind == TimeStamp) && gl.getConfigParameter(GL.SUPPORTS_TIMER_QUERIES) == 0 )
+			return null;
+		if( kind == Samples && glES != null )
+			return null;
+		#end
 		return { q : GL.createQuery(), kind : kind };
 	}
 
