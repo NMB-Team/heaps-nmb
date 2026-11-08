@@ -1,3 +1,4 @@
+//TARGETS=hlvulkan
 import h3d.mat.Data.Filter;
 import h3d.mat.Data.MipMap;
 import h3d.mat.Data.Wrap;

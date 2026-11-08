@@ -1,3 +1,4 @@
+//TARGETS=hlvulkan
 private class SampleShader extends hxsl.Shader {
 	static var SRC = {
 		@param var source : Sampler2D;

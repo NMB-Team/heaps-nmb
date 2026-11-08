@@ -1,3 +1,4 @@
+//TARGETS=hlvulkan
 import h3d.impl.driver.vulkan.pipeline.VulkanGraphicsPipeline;
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
 
