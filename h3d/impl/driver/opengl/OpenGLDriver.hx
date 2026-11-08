@@ -59,6 +59,11 @@ class OpenGLDriver extends Driver {
 
 	#if limen
 	var context : OpenGL;
+	var contextFeatures : Map<Feature, Bool>;
+	var supportsTimerQueries = false;
+	#if hl
+	var readbackCancels : Array<Void -> Void> = [];
+	#end
 	#end
 
 	#if js
@@ -118,7 +123,30 @@ class OpenGLDriver extends Driver {
 	var hasDepthClamp = #if js false #else true #end;
 	static inline var DEPTH_CLAMP = #if js 0x864F #else GL.DEPTH_CLAMP #end;
 
+	#if limen
+	var supportsIndirectCount = false;
+	public static var hasMultiIndirectCount(get, set) : Bool;
+
+	static function get_hasMultiIndirectCount() : Bool {
+		var engine = h3d.Engine.getCurrent();
+		if( engine == null ) return false;
+
+		var driver = Std.downcast(engine.driver, OpenGLDriver);
+		return driver != null && driver.supportsIndirectCount;
+	}
+
+	static function set_hasMultiIndirectCount(value:Bool) : Bool {
+		var engine = h3d.Engine.getCurrent();
+		if( engine != null ) {
+			var driver = Std.downcast(engine.driver, OpenGLDriver);
+			if( driver != null ) driver.supportsIndirectCount = value;
+		}
+
+		return value;
+	}
+	#else
 	public static var hasMultiIndirectCount = false;
+	#end
 
 	var drawMode : Int;
 	var isIntelGpu : Bool;
@@ -191,7 +219,9 @@ class OpenGLDriver extends Driver {
 		#end
 
 		#if limen
-		hasMultiIndirectCount = gl.getConfigParameter(GL.SUPPORTS_INDIRECT_COUNT) != 0;
+		supportsIndirectCount = gl.getConfigParameter(GL.SUPPORTS_INDIRECT_COUNT) != 0;
+		supportsTimerQueries = gl.getConfigParameter(GL.SUPPORTS_TIMER_QUERIES) != 0 &&
+			(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query"));
 		#end
 
 		#if hlmesa
@@ -256,6 +286,9 @@ class OpenGLDriver extends Driver {
 		#end
 		gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
 		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+		#if limen
+		contextFeatures = [for( feature in Type.allEnums(Feature) ) feature => hasFeature(feature)];
+		#end
 	}
 
 	static var computeEnabled : Bool = false;
@@ -297,6 +330,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function setDebug(d) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		this.debug = d;
 	}
 
@@ -331,6 +368,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override public function getDriverName(details:Bool) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var render = #if limen gl.getString(GL.RENDERER) #else gl.getParameter(GL.RENDERER) #end;
 		if( details )
 			render = getRendererName() + " " + render;
@@ -343,6 +384,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override public function getRendererName() {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var version : String = #if limen gl.getString(GL.VERSION) #else gl.getParameter(GL.VERSION) #end;
 		var versionPattern = ~/[0-9]+\.[0-9]+/;
 		var renderer = version.indexOf("WebGL") >= 0 ? "WebGL" : version.indexOf("ES") >= 0 ? "OpenGL ES" : "OpenGL";
@@ -1162,6 +1207,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocTexture( t : h3d.mat.Texture ) : Texture {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		discardError();
 		var tt = gl.createTexture();
 		var bind = getBindType(t);
@@ -1328,6 +1377,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocDepthBuffer( t : h3d.mat.Texture ) : Texture {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var isArray = t.flags.has(IsArray);
 		var isCube = t.flags.has(Cube);
 		if( (isArray || isCube) && !hasFeature(DepthTextureArray) )
@@ -1398,6 +1451,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocBuffer( b : h3d.Buffer ) : GPUBuffer {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		discardError();
 		var vb = gl.createBuffer();
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
@@ -1433,6 +1490,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function disposeTexture( t : h3d.mat.Texture ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var tt = t.t;
 		if( tt == null ) return;
 		t.t = null;
@@ -1443,11 +1504,19 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function disposeBuffer( b : h3d.Buffer ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		gl.deleteBuffer(b.vbuf);
 	}
 
 	#if limen
 	override function setResidentMip( t : h3d.mat.Texture, mip : Int ) : Bool {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		if( !hasFeature(ResidentMips) )
 			return false;
 		var prev = t.t;
@@ -1477,6 +1546,10 @@ class OpenGLDriver extends Driver {
 	#end
 
 	override function generateMipMaps( t : h3d.mat.Texture ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var bind = getBindType(t);
 		gl.bindTexture(bind, t.t.t);
 		gl.generateMipmap(bind);
@@ -1484,6 +1557,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, side : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		#if hl
 		var pixels = bmp.getPixels();
 		uploadTexturePixels(t, pixels, mipLevel, side);
@@ -1513,6 +1590,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var cubic = t.flags.has(Cube);
 		var face = GL.TEXTURE_2D;
 		if ( cubic )
@@ -1591,6 +1672,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadBufferData( b : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var stride = b.format.strideBytes;
 		#if (hl && limen)
 		if( gl.tryNamedBufferSubData(b.vbuf, startVertex * stride, hl.Bytes.getArray(buf.getNative()), bufPos * 4, vertexCount * stride) ) return;
@@ -1608,6 +1693,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadBufferBytes( b : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var stride = b.format.strideBytes;
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
 		#if (hl && limen)
@@ -1625,6 +1714,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function readBufferBytes(b:h3d.Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var stride = b.format.strideBytes;
 		var totalSize = vertexCount*stride;
 		if( totalSize == 0 ) return;
@@ -1633,6 +1726,13 @@ class OpenGLDriver extends Driver {
 		gl.getBufferSubData(type, startVertex*stride, #if hl (buf.getData() : hl.Bytes).offset(bufPos) #else @:privateAccess buf.b #end, bufPos*STREAM_POS, totalSize);
 		gl.bindBuffer(type, null);
 		if( b.flags.has(IndexBuffer) ) curIndexBuffer = null;
+	}
+
+	override function dispose() {
+		#if (hl && limen)
+		while( readbackCancels.length > 0 ) readbackCancels.pop()();
+		#end
+		super.dispose();
 	}
 
 	override function readBufferBytesAsync(b:h3d.Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int, callback : Void -> Void) {
@@ -1645,14 +1745,34 @@ class OpenGLDriver extends Driver {
 		var request = gl.startBufferReadback(@:privateAccess context.handle, b.vbuf, startVertex * stride, size);
 		if( request != null ) {
 			var event : haxe.MainLoop.MainEvent = null;
-			event = haxe.MainLoop.add(function() {
-				if( @:privateAccess context.handle != null ) context.makeCurrent();
-				var status = gl.pollBufferReadback(request, buf.getData(), bufPos);
-				if( status == 0 ) return;
+			var cancel : Void -> Void = null;
+			var active = true;
+			cancel = function() {
+				if( !active ) return;
+				active = false;
 				event.stop();
+				readbackCancels.remove(cancel);
+				@:privateAccess context.readbackCancels.remove(cancel);
+				gl.cancelBufferReadback(request);
+			};
+			event = haxe.MainLoop.add(function() {
+				if( !active ) return;
+				var status : Int;
+				try {
+					context.makeCurrent();
+					if( !active ) return;
+					status = gl.pollBufferReadback(request, buf.getData(), bufPos);
+				} catch( e : Dynamic ) {
+					cancel();
+					throw e;
+				}
+				if( status == 0 ) return;
+				cancel();
 				if( status < 0 ) throw "OpenGL asynchronous buffer readback failed";
 				callback();
 			});
+			readbackCancels.push(cancel);
+			@:privateAccess context.readbackCancels.push(cancel);
 			return;
 		}
 		#end
@@ -1661,6 +1781,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadIndexData( i : h3d.Buffer, startIndice : Int, indiceCount : Int, buf : hxd.IndexBuffer, bufPos : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var bits = i.format.strideBytes >> 1;
 		#if (hl && limen)
 		if( gl.tryNamedBufferSubData(i.vbuf, startIndice << bits, hl.Bytes.getArray(buf.getNative()), bufPos << bits, indiceCount << bits) ) return;
@@ -1745,6 +1869,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocInstanceBuffer( b : InstanceBuffer, bytes : haxe.io.Bytes ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		#if hl
 		if( hasMultiIndirect ) {
 			var buf = gl.createBuffer();
@@ -1776,6 +1904,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function uploadInstanceBufferBytes(b : InstanceBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		var stride = 5*4;
 		#if hl
 		var type = GL.DRAW_INDIRECT_BUFFER;
@@ -1793,6 +1925,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function disposeInstanceBuffer(b:InstanceBuffer) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		if( b.data != null )
 			gl.deleteBuffer(b.data);
 		b.data = null;
@@ -1816,7 +1952,7 @@ class OpenGLDriver extends Driver {
 		if( commands.data != null && !hasMultiIndirect )
 			throw "GPU indirect drawing is not supported by this OpenGL context";
 		#if limen
-		if( commands.countBuffer != null && !hasMultiIndirectCount )
+		if( commands.countBuffer != null && !supportsIndirectCount )
 			throw "Indirect-count drawing is not supported by this OpenGL context";
 		#end
 		if( hasMultiIndirect && commands.data != null ) {
@@ -1829,7 +1965,7 @@ class OpenGLDriver extends Driver {
 			#end
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, commands.data);
 			#if limen
-			if ( commands.countBuffer != null && hasMultiIndirectCount ) {
+			if ( commands.countBuffer != null && supportsIndirectCount ) {
 				#if (haxe_ver < 5)
 					var arr = new hl.NativeArray<Int>(1);
 					arr[0] = commands.countOffset * 4;
@@ -1911,6 +2047,10 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function capturePixels(tex:h3d.mat.Texture, layer:Int, mipLevel:Int, ?region:h2d.col.IBounds) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 
 		var pixels : hxd.Pixels;
 		var x : Int, y : Int, w : Int, h : Int;
@@ -2162,6 +2302,9 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function hasFeature( f : Feature ) : Bool {
+		#if limen
+		if( contextFeatures != null ) return contextFeatures.get(f);
+		#end
 		#if js
 		return features.get(f);
 		#else
@@ -2291,6 +2434,10 @@ class OpenGLDriver extends Driver {
 	#end
 
 	override function captureRenderBuffer( pixels : hxd.Pixels ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		captureSubRenderBuffer(pixels, 0, 0);
 	}
 
@@ -2331,18 +2478,25 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function allocQuery(kind:QueryKind) {
-		if( (kind == TimeElapsed || kind == TimeStamp) && !(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query")) )
-			return null;
 		#if limen
-		if( (kind == TimeElapsed || kind == TimeStamp) && gl.getConfigParameter(GL.SUPPORTS_TIMER_QUERIES) == 0 )
+		context.makeCurrent();
+
+		if( (kind == TimeElapsed || kind == TimeStamp) && !supportsTimerQueries )
 			return null;
 		if( kind == Samples && glES != null )
+			return null;
+		#else
+		if( (kind == TimeElapsed || kind == TimeStamp) && !(glES == null ? glVersion >= 3.3 || gl.hasExtension("GL_ARB_timer_query") : gl.hasExtension("GL_EXT_disjoint_timer_query")) )
 			return null;
 		#end
 		return { q : GL.createQuery(), kind : kind };
 	}
 
 	override function deleteQuery( q : Query ) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		GL.deleteQuery(q.q);
 		q.q = null;
 	}
@@ -2370,10 +2524,18 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function queryResultAvailable(q:Query) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		return GL.queryResultAvailable(q.q);
 	}
 
 	override function queryResult(q:Query) {
+		#if limen
+		context.makeCurrent();
+		#end
+
 		return GL.queryResult(q.q);
 	}
 
