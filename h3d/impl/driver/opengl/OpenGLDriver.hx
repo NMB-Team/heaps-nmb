@@ -30,7 +30,7 @@ private typedef Uniform = limen.graphics.renderer.opengl.shader.Shaders.Uniform;
 private typedef Program = limen.graphics.renderer.opengl.shader.Shaders.Program;
 private typedef GLShader = limen.graphics.renderer.opengl.shader.Shaders.Shader;
 private typedef Framebuffer = limen.graphics.renderer.opengl.render.Framebuffers.Framebuffer;
-private typedef Texture = { t : limen.graphics.renderer.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int #if multidriver, driver : Driver #end };
+private typedef Texture = { t : limen.graphics.renderer.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int, ?uploadSizes : Map<Int, { width : Int, height : Int }> #if multidriver, driver : Driver #end };
 private typedef Query = h3d.impl.driver.Query;
 private typedef GlQuery = { q : limen.graphics.renderer.opengl.query.Queries.Query, kind : QueryKind };
 private typedef VertexArray = limen.graphics.renderer.opengl.vertex.VertexArrays.VertexArray;
@@ -301,7 +301,6 @@ class OpenGLDriver extends Driver {
 		if (gl.isContextLost()) throw "OpenGL context lost; recovery is not implemented";
 		#end
 		this.frame = frame;
-		resetStream();
 		gl.useProgram(null);
 		curShader = null;
 		curBuffer = null;
@@ -1489,50 +1488,7 @@ class OpenGLDriver extends Driver {
 		#end
 	}
 
-	/*
-		GL async model create crashes if the GC free the memory that we send it.
-		Instead, we will copy the data into a temp location before uploading.
-	*/
-
 	static inline var STREAM_POS = #if hl 0 #else 1 #end;
-	#if hl
-
-	var streamKeep : Array<{ f : Int, b : hl.Bytes }> = [];
-	var streamBytes : hl.Bytes;
-	var streamLen : Int;
-	var streamPos : Int;
-
-	function expandStream(needed:Int) {
-		GL.finish();
-
-		// too much data in our tmp buffer, let's flush it
-		if( streamPos > (needed >> 1) && needed > 16 << 20 ) {
-			needed -= streamPos;
-			streamPos = 0;
-			if( needed < streamLen )
-				return;
-		}
-
-		var newLen = streamLen == 0 ? 0x10000 : streamLen;
-		while( newLen < needed )
-			newLen = (newLen * 3) >> 1;
-		var newBytes = new hl.Bytes(newLen);
-		if( streamPos > 0 )
-			newBytes.blit(0, streamBytes, 0, streamPos);
-		streamLen = newLen;
-		if( streamBytes != null ) streamKeep.push({ f : frame, b : streamBytes });
-		streamBytes = newBytes;
-	}
-
-	#end
-
-	function resetStream() {
-		#if hl
-		streamPos = 0;
-		// keep during 2 frames
-		while( streamKeep.length > 0 && streamKeep[0].f < frame - 1 ) streamKeep.shift();
-		#end
-	}
 
 	private function streamData(data, pos:Int, length:Int) {
 		#if hl
@@ -1557,6 +1513,12 @@ class OpenGLDriver extends Driver {
 		gl.bindTexture(bind, t.t.t);
 		pixels.convert(t.format);
 		var dataLen = pixels.dataSize;
+		#if (hl && limen)
+		var storageKey = mipLevel * 6 + side;
+		var storage = t.t.uploadSizes == null ? null : t.t.uploadSizes.get(storageKey);
+		var storageWidth = storage == null ? hxd.Math.imax(1, t.t.width >> mipLevel) : storage.width;
+		var storageHeight = storage == null ? hxd.Math.imax(1, t.t.height >> mipLevel) : storage.height;
+		#end
 		#if hl
 		var stream = streamData(pixels.bytes.getData(),pixels.offset,dataLen);
 		if( t.format.match(S3TC(_)) ) {
@@ -1571,8 +1533,15 @@ class OpenGLDriver extends Driver {
 				#if limen
 				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, stream);
 				#else throw "TextureArray support requires limen 1.12+"; #end
-			else
+			else if( #if limen pixels.width == storageWidth && pixels.height == storageHeight #else false #end )
+				gl.texSubImage2D(face, mipLevel, 0, 0, pixels.width, pixels.height, getChannels(t.t), t.t.pixelFmt, stream);
+			else {
 				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, stream);
+				#if limen
+				if( t.t.uploadSizes == null ) t.t.uploadSizes = [];
+				t.t.uploadSizes.set(storageKey, { width : pixels.width, height : pixels.height });
+				#end
+			}
 		}
 		#elseif js
 		#if hxnodejs
@@ -1638,13 +1607,35 @@ class OpenGLDriver extends Driver {
 	override function readBufferBytes(b:h3d.Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int) {
 		var stride = b.format.strideBytes;
 		var totalSize = vertexCount*stride;
+		if( totalSize == 0 ) return;
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
 		gl.bindBuffer(type, b.vbuf);
-		gl.getBufferSubData(type, startVertex*stride, @:privateAccess buf.b, bufPos*STREAM_POS, totalSize);
+		gl.getBufferSubData(type, startVertex*stride, #if hl (buf.getData() : hl.Bytes).offset(bufPos) #else @:privateAccess buf.b #end, bufPos*STREAM_POS, totalSize);
 		gl.bindBuffer(type, null);
+		if( b.flags.has(IndexBuffer) ) curIndexBuffer = null;
 	}
 
 	override function readBufferBytesAsync(b:h3d.Buffer, startVertex:Int, vertexCount:Int, buf:haxe.io.Bytes, bufPos:Int, callback : Void -> Void) {
+		#if (hl && limen)
+		context.makeCurrent();
+		var stride = b.format.strideBytes;
+		var size = vertexCount * stride;
+		if( startVertex < 0 || vertexCount < 0 || startVertex > b.vertices - vertexCount || bufPos < 0 || bufPos > buf.length || vertexCount > Std.int((buf.length - bufPos) / stride) )
+			throw "Invalid buffer readback range";
+		var request = gl.startBufferReadback(@:privateAccess context.handle, b.vbuf, startVertex * stride, size);
+		if( request != null ) {
+			var event : haxe.MainLoop.MainEvent = null;
+			event = haxe.MainLoop.add(function() {
+				if( @:privateAccess context.handle != null ) context.makeCurrent();
+				var status = gl.pollBufferReadback(request, buf.getData(), bufPos);
+				if( status == 0 ) return;
+				event.stop();
+				if( status < 0 ) throw "OpenGL asynchronous buffer readback failed";
+				callback();
+			});
+			return;
+		}
+		#end
 		readBufferBytes(b, startVertex, vertexCount, buf, bufPos);
 		callback();
 	}
