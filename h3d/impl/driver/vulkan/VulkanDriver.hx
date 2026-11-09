@@ -953,17 +953,16 @@ class VulkanDriver extends Driver {
 	override function getDriverName( details : Bool ) {
 		if( !details || capabilities == null )
 			return "Vulkan";
-		var version = capabilities.apiVersion;
 		final memoryReporting = ctx != null && ctx.hasMemoryBudget() ? "VK_EXT_memory_budget" : "allocator estimate";
-		return 'Vulkan ${version >>> 22}.${(version >>> 12) & 0x3FF}.${version & 0xFFF} (vendor 0x${StringTools.hex(capabilities.vendorId, 4)}, device 0x${StringTools.hex(capabilities.deviceId, 4)}, driver ${capabilities.driverVersion}, memory $memoryReporting)';
+		return getRendererName() + ' (vendor 0x${StringTools.hex(capabilities.vendorId, 4)}, device 0x${StringTools.hex(capabilities.deviceId, 4)}, driver ${capabilities.driverVersion}, memory $memoryReporting)';
 	}
 
-	override function getRendererName() {
+	override function getRendererName(includeHardwareVersion:Bool = true) {
 		if( capabilities == null )
 			return "Vulkan";
 
 		final version = capabilities.apiVersion;
-		return 'Vulkan ${version >>> 22}.${(version >>> 12) & 0x3FF}.${version & 0xFFF}';
+		return 'Vulkan ${(version >>> 22) & 0x7F}.${(version >>> 12) & 0x3FF}.${version & 0xFFF}';
 	}
 
 	override function getMemoryUsage() {

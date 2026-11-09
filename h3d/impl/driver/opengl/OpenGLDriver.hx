@@ -381,7 +381,7 @@ class OpenGLDriver extends Driver {
 		return render;
 	}
 
-	override public function getRendererName() {
+	override public function getRendererName(includeHardwareVersion:Bool = true) {
 		#if limen
 		context.makeCurrent();
 		#end
@@ -389,9 +389,17 @@ class OpenGLDriver extends Driver {
 		var version : String = #if limen gl.getString(GL.VERSION) #else gl.getParameter(GL.VERSION) #end;
 		var versionPattern = ~/[0-9]+\.[0-9]+/;
 		var renderer = version.indexOf("WebGL") >= 0 ? "WebGL" : version.indexOf("ES") >= 0 ? "OpenGL ES" : "OpenGL";
-		return versionPattern.match(version)
-			? renderer + " " + versionPattern.matched(0)
-			: renderer;
+		if( versionPattern.match(version) )
+			renderer += " " + versionPattern.matched(0);
+
+		if( !includeHardwareVersion )
+			return renderer;
+
+		final shadingLanguageVersion : String = #if limen gl.getString(GL.SHADING_LANGUAGE_VERSION) #else gl.getParameter(GL.SHADING_LANGUAGE_VERSION) #end;
+		if( versionPattern.match(shadingLanguageVersion) )
+			renderer += " (GLSL " + versionPattern.matched(0) + ")";
+
+		return renderer;
 	}
 
 	function compileShader( glout : ShaderCompiler, shader : hxsl.RuntimeShader.RuntimeShaderData ) {

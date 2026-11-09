@@ -98,7 +98,7 @@ class Driver {
 		return "Not available";
 	}
 
-	public function getRendererName() {
+	public function getRendererName(includeHardwareVersion:Bool = true) {
 		return "Not available";
 	}
 

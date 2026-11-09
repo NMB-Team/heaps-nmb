@@ -137,8 +137,8 @@ class Engine {
 		return driver.getDriverName(details);
 	}
 
-	public function rendererName() {
-		return driver.getRendererName();
+	public function rendererName(includeHardwareVersion:Bool = true) {
+		return driver.getRendererName(includeHardwareVersion);
 	}
 
 	public function selectShader( shader : hxsl.RuntimeShader ) {

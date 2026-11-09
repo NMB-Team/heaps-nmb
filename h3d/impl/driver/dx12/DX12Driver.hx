@@ -805,8 +805,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		return desc;
 	}
 
-	override function getRendererName() {
-		return "Direct3D 12";
+	override function getRendererName(includeHardwareVersion:Bool = true) {
+		if( !includeHardwareVersion )
+			return "Direct3D 12";
+
+		final featureLevel = Driver.getFeatureLevel();
+
+		return featureLevel == 0 ? "Direct3D 12" : 'Direct3D 12 (FL ${featureLevel >>> 12}_${(featureLevel >>> 8) & 0xF})';
 	}
 
 	public function forceDeviceError() {

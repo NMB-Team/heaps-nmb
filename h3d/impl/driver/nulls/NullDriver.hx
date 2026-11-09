@@ -35,7 +35,7 @@ class NullDriver extends Driver {
 		return "NullDriver";
 	}
 
-	override function getRendererName() {
+	override function getRendererName(includeHardwareVersion:Bool = true) {
 		return "Null";
 	}
 

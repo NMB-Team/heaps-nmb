@@ -319,8 +319,16 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		return details ? getRendererName() + " " + name : name;
 	}
 
-	override function getRendererName() {
-		return "Direct3D " + Driver.getSupportedVersion();
+	override function getRendererName(includeHardwareVersion:Bool = true) {
+		final apiVersion = Driver.getApiVersion();
+		final apiName = apiVersion == Std.int(apiVersion) ? apiVersion + ".0" : Std.string(apiVersion);
+
+		if( !includeHardwareVersion )
+			return "Direct3D " + apiName;
+
+		final featureLevel = Math.round(Driver.getSupportedVersion() * 10);
+
+		return "Direct3D " + apiName + " (FL " + Std.int(featureLevel / 10) + "_" + featureLevel % 10 + ")";
 	}
 
 	public function forceDeviceError() {
