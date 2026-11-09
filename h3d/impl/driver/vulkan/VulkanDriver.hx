@@ -823,13 +823,14 @@ class VulkanDriver extends Driver {
 
 	override function isSupportedFormat( fmt : h3d.mat.Data.TextureFormat ) {
 		final mapping = try VulkanTextureFormat.resolve(fmt) catch( _ : Dynamic ) return false;
-		var required:Int = cast VkFormatFeature.SAMPLED_IMAGE;
-		required |= cast VkFormatFeature.TRANSFER_DST;
+		var flags = new haxe.EnumFlags<h3d.mat.Data.TextureFlags>();
 		if( mapping.depth )
-			required |= cast VkFormatFeature.DEPTH_STENCIL_ATTACHMENT;
-		final properties = new VkFormatProperties();
-		ctx.getPdeviceFormatProps(mapping.format, properties);
-		return mapping.uploadCompatible && mapping.sampledCompatible && (properties.optimalTilingFeatures & required) == required;
+			flags.set(Target);
+
+		final required = VulkanTextureFormat.requiredFeatures(flags, mapping.depth);
+		try resolveTextureFormat(fmt, required) catch( _ : Dynamic ) return false;
+
+		return true;
 	}
 
 	override function logImpl(str:String) {
@@ -1325,7 +1326,7 @@ class VulkanDriver extends Driver {
 			throw 'Compute shader local size ${x}x${y}x${z} exceeds device limits '
 				+ '${limits.maxComputeWorkGroupSize}x${limits.maxComputeWorkGroupSize1}x${limits.maxComputeWorkGroupSize2}';
 		final invocations = haxe.Int64.ofInt(x) * haxe.Int64.ofInt(y) * haxe.Int64.ofInt(z);
-		if( invocations > haxe.Int64.ofInt(limits.maxComputeWorkGroupInvocations) )
+		if( invocations > haxe.Int64.make(0, limits.maxComputeWorkGroupInvocations) )
 			throw 'Compute shader local size ${x}x${y}x${z} uses $invocations invocations, device limit is ${limits.maxComputeWorkGroupInvocations}';
 		if( sharedMemoryBytes > limits.maxComputeSharedMemorySize )
 			throw 'Compute shader requires $sharedMemoryBytes bytes of shared workgroup memory, device limit is ${limits.maxComputeSharedMemorySize}';
@@ -1790,9 +1791,28 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		return createTexture(t);
 	}
 
+	function resolveTextureFormat(format:hxd.PixelFormat, requiredFeatures:Int):VulkanTextureFormatInfo {
+		final candidates:Array<hxd.PixelFormat> = switch( format ) {
+		case Depth24: [Depth24, Depth32];
+		case Depth24Stencil8: [Depth24Stencil8, Depth32Stencil8];
+		default: [format];
+		};
+		final properties = new VkFormatProperties();
+
+		for( candidate in candidates ) {
+			final mapping = VulkanTextureFormat.resolve(candidate);
+			ctx.getPdeviceFormatProps(mapping.format, properties);
+			if( mapping.uploadCompatible && mapping.sampledCompatible
+				&& (properties.optimalTilingFeatures & requiredFeatures) == requiredFeatures )
+				return mapping;
+		}
+
+		throw 'Texture format $format has no Vulkan format supporting required features 0x${StringTools.hex(requiredFeatures)}';
+	}
+
 	function createTexture(t:h3d.mat.Texture, ?backing:h3d.impl.driver.vulkan.resource.VulkanAllocation, transient = false):Texture {
-		final mapping = VulkanTextureFormat.resolve(t.format);
 		final isDepth = t.isDepth();
+		final mapping = resolveTextureFormat(t.format, VulkanTextureFormat.requiredFeatures(t.flags, isDepth));
 		final formatProperties = new VkFormatProperties();
 		ctx.getPdeviceFormatProps(mapping.format, formatProperties);
 		final formatCapabilities = mapping.capabilities(formatProperties);
@@ -2147,6 +2167,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final texture:VulkanTexture = t.t;
 		if( texture == null || texture.disposed )
 			throw 'Texture ${t.id} is not allocated';
+		if( t.format.match(Depth24 | Depth24Stencil8 | Depth32Stencil8) )
+			throw 'Texture ${t.id} format ${t.format} has no exact hxd.Pixels depth upload representation';
+
 		pixels.convert(t.format);
 		final uploadPixels = if (t.format == ARGB) {
 			final converted = pixels.clone();
@@ -2361,13 +2384,15 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	function validateVertexAttributes(attributes:Array<VulkanVertexAttribute>, bindings:Array<VulkanVertexBinding>) {
 		if( attributes.length != currentShader.vertexInterface.inputs.length )
 			throw 'Vulkan vertex layout resolved ${attributes.length} attributes, shader requires ${currentShader.vertexInterface.inputs.length}';
-		if( attributes.length > limits.maxVertexInputAttributes || bindings.length > limits.maxVertexInputBindings )
+		// uint32 limits above INT_MAX exceed every valid nonnegative Haxe Int
+		if( (limits.maxVertexInputAttributes >= 0 && attributes.length > limits.maxVertexInputAttributes)
+			|| (limits.maxVertexInputBindings >= 0 && bindings.length > limits.maxVertexInputBindings) )
 			throw "Vulkan vertex layout exceeds device attribute or binding limits";
 		for( binding in bindings )
-			if( binding.stride <= 0 || binding.stride > limits.maxVertexInputBindingStride )
+			if( binding.stride <= 0 || (limits.maxVertexInputBindingStride >= 0 && binding.stride > limits.maxVertexInputBindingStride) )
 				throw 'Vulkan vertex binding ${binding.binding} has unsupported stride ${binding.stride}';
 		for( attribute in attributes )
-			if( attribute.offset < 0 || attribute.offset > limits.maxVertexInputAttributeOffset )
+			if( attribute.offset < 0 || (limits.maxVertexInputAttributeOffset >= 0 && attribute.offset > limits.maxVertexInputAttributeOffset) )
 				throw 'Vulkan vertex attribute ${attribute.location} has unsupported offset ${attribute.offset}';
 	}
 
@@ -2734,8 +2759,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	function validateBufferDescriptorRange(name:String, range:haxe.Int64, limit:Int) {
 		if( haxe.Int64.compare(range, haxe.Int64.ofInt(0)) <= 0 )
 			throw 'Vulkan descriptor range for $name must be positive, got $range';
-		if( limit >= 0 && haxe.Int64.compare(range, haxe.Int64.ofInt(limit)) > 0 )
-			throw 'Vulkan descriptor range $range for $name exceeds device limit $limit';
+		final unsignedLimit = haxe.Int64.make(0, limit);
+		if( haxe.Int64.compare(range, unsignedLimit) > 0 )
+			throw 'Vulkan descriptor range $range for $name exceeds device limit $unsignedLimit';
 	}
 
 	function uploadStageTextures(allBuffers:h3d.shader.Buffers, buffers:h3d.shader.Buffers.ShaderBuffers, shader:hxsl.RuntimeShader.RuntimeShaderData):Bool {
