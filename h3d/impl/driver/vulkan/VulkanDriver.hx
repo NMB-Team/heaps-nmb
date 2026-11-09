@@ -212,6 +212,8 @@ class VulkanDriver extends Driver {
 	var disposed = false;
 	var swapchainReady = false;
 	var recreatePending = false;
+	var swapchainWidth = 0;
+	var swapchainHeight = 0;
 	var currentShader : VulkanCompiledShader;
 	var programs : Map<String,VulkanCompiledShader> = new Map();
 	var shaderKeys : Map<Int,String> = new Map();
@@ -427,6 +429,7 @@ class VulkanDriver extends Driver {
 		var images = new hl.NativeArray(8);
 		var requestedMode = hxd.Window.getInstance().presentMode;
 		var info = new VkSwapchainInfo(width, height, cast requestedMode);
+		info.scaling = resizePending ? 1 : 0;
 		var status = ctx.initSwapchain(info, images);
 		if( status == Deferred ) {
 			swapchainReady = false;
@@ -435,6 +438,10 @@ class VulkanDriver extends Driver {
 		if( status != Success )
 			throw VulkanRuntime.error('Failed to initialize Vulkan swapchain (status $status)');
 		swapchainPresentMode = requestedMode;
+		swapchainScaling = info.scaling != 0;
+		resizePending = false;
+		swapchainWidth = width;
+		swapchainHeight = height;
 		width = info.actualWidth;
 		height = info.actualHeight;
 		var format = info.format;
@@ -1147,8 +1154,11 @@ class VulkanDriver extends Driver {
 		endFrame();
 		submit();
 		var window = hxd.Window.getInstance();
-		if( recreatePending || window.presentMode != swapchainPresentMode )
+		if( (recreatePending && !resizePending) || (swapchainScaling && haxe.Timer.stamp() - resizeTime >= 0.05)
+			|| window.presentMode != swapchainPresentMode ) {
+			resizePending = false;
 			recreateSwapchain(window.width, window.height);
+		}
 		if( swapchainReady )
 			beginFrame();
 	}
@@ -1156,9 +1166,20 @@ class VulkanDriver extends Driver {
 	override function resize( width : Int, height : Int ) {
 		if( disposed )
 			return;
+		if( swapchainReady && !recreatePending && width == swapchainWidth && height == swapchainHeight
+			&& hxd.Window.getInstance().presentMode == swapchainPresentMode )
+			return;
+		if( swapchainReady && width > 0 && height > 0 ) {
+			resizePending = true;
+			resizeTime = haxe.Timer.stamp();
+			if( swapchainScaling )
+				return;
+		}
+
 		if( frameStarted ) {
 			endFrame();
-			submit();
+			// finish queued work without presenting an empty frame before the resize
+			submit(false);
 		}
 		if( recreateSwapchain(width, height) )
 			beginFrame();
@@ -1201,19 +1222,21 @@ class VulkanDriver extends Driver {
 		this.slopeScaledDepthBias = slopeScaledBias;
 	}
 
-	function submit() {
+	function submit( present = true ) {
 		var frame = frames[currentFrameIndex];
 		var image = outImages[currentImageIndex];
-		if( ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, image.renderFinished, frame.fence) != 0 )
+		if( ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, present ? image.renderFinished : null, frame.fence) != 0 )
 			throw VulkanRuntime.error("Failed to submit Vulkan frame");
 		frame.imageAvailableConsumed = true;
 		frame.submissionSerial = currentSubmissionSerial++;
 		queryManager.submitted(currentFrameIndex, frame.submissionSerial);
-		var presentStatus = ctx.present(image.renderFinished, currentImageIndex);
-		if( presentStatus != Success && presentStatus != Suboptimal && presentStatus != OutOfDate )
-			throw VulkanRuntime.error('Failed to present Vulkan frame (status $presentStatus)');
-		image.initialized = true;
-		recreatePending = presentStatus == Suboptimal || presentStatus == OutOfDate;
+		if( present ) {
+			var presentStatus = ctx.present(image.renderFinished, currentImageIndex);
+			if( presentStatus != Success && presentStatus != Suboptimal && presentStatus != OutOfDate )
+				throw VulkanRuntime.error('Failed to present Vulkan frame (status $presentStatus)');
+			image.initialized = true;
+			recreatePending = recreatePending || presentStatus == Suboptimal || presentStatus == OutOfDate;
+		}
 		currentFrameIndex++;
 		currentFrameIndex %= frames.length;
 	}
@@ -3985,6 +4008,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					(haxe.Int64.ofInt(indirectOffset + index * VulkanInstanceBuffer.COMMAND_STRIDE) : hl.I64), 1, VulkanInstanceBuffer.COMMAND_STRIDE);
 	}
 
+	// keep resize state after the frequently accessed rendering fields
+	var swapchainScaling = false;
+	var resizePending = false;
+	var resizeTime = 0.;
 }
 
 #end
