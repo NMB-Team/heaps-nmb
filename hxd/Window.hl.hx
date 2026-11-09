@@ -843,6 +843,16 @@ class Window {
 		return m;
 	}
 
+	#if limen
+	public function setIconICO(bytes:haxe.io.Bytes) : Void {
+		window.setIconICO(bytes);
+	}
+
+	public function setIconFile(path:String) : Void {
+		window.setIconFile(path);
+	}
+	#end
+
 	public function setIcon(icon: hxd.BitmapData) : Void {
 		#if limen
 		var pixels = icon.getPixels();

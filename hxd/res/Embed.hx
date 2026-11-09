@@ -57,6 +57,14 @@ class Embed {
 
 	#end
 
+	public static macro function windowIcon() {
+		var path = Context.resolvePath(Context.definedValue("windowIcon"));
+		Context.registerModuleDependency(Context.getLocalModule(), path);
+		Context.addResource("hxd.windowIcon", sys.io.File.getBytes(path));
+
+		return macro haxe.Resource.getBytes("hxd.windowIcon");
+	}
+
 	public static macro function getFileContent( file : String ) {
 		var file = Context.resolvePath(file);
 		var m = Context.getLocalClass().get().module;

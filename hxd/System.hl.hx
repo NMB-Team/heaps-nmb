@@ -148,7 +148,12 @@ class System {
 			width = Std.parseInt(p[0]);
 			height = Std.parseInt(p[1]);
 		}
-		return new Window(title, width, height, { fixed: fixed, hidden: delayWindowUntilFirstFrame });
+		var window = new Window(title, width, height, { fixed: fixed, hidden: delayWindowUntilFirstFrame });
+		#if (limen && windowIcon)
+		window.setIconICO(hxd.res.Embed.windowIcon());
+		#end
+
+		return window;
 	}
 
 	public static function isDisplayReady() {
