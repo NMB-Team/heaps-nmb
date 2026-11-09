@@ -472,12 +472,12 @@ class System {
 	}
 
 	public static function getDefaultFrameRate() : Float {
-		#if (limen && (gfx_dx11 || gfx_dx12))
+		#if limen
 		var win = HWindow.getInstance();
 		if( win != null ) {
-			var refreshRate = LPlatform.getRefreshRate(win.platformWindow);
-			if( refreshRate > 0 )
-				return refreshRate;
+			var mode = win.getCurrentDisplaySetting();
+			if( mode != null && mode.refreshRate > 0 )
+				return mode.refreshRate;
 		}
 		#end
 		return 60.;

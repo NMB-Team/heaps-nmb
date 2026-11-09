@@ -890,8 +890,9 @@ class Window {
 	// If registry is set, return the default DisplaySetting when it's currently modified by the application.
 	public function getCurrentDisplaySetting(?monitorId : Int, registry : Bool = false) : DisplaySetting {
 		#if limen
-		var mon = LPlatform.getDisplays()[monitorId == null ? 0 : monitorId];
-		var mode = LPlatform.getCurrentDisplayMode(mon.id, registry);
+		var mode = monitorId == null
+			? window.getCurrentDisplayMode(registry)
+			: LPlatform.getCurrentDisplayMode(LPlatform.getDisplays()[monitorId].id, registry);
 		return mode == null ? null : { width: mode.width, height: mode.height, refreshRate: mode.refreshRate };
 		#else
 		return null;
@@ -963,12 +964,7 @@ class Window {
 
 	function get_currentMonitorIndex() : Int {
 		#if limen
-		var current = window.currentMonitor;
-		for(i => m in LPlatform.getDisplays()) {
-			if(m.id == current)
-				return i;
-		}
-		return 0;
+		return window.currentMonitor;
 		#else
 		return 0;
 		#end
