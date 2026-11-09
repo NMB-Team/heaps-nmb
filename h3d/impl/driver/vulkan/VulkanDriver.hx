@@ -215,6 +215,25 @@ class VulkanDriver extends Driver {
 	var swapchainWidth = 0;
 	var swapchainHeight = 0;
 	var currentShader : VulkanCompiledShader;
+	final formatProperties:Map<Int, VkFormatProperties> = new Map();
+	final targetSets:Array<VulkanRenderingTargetSet> = [];
+	final attachments:Array<VulkanRenderingAttachment> = [];
+	final targetTextures:Array<h3d.mat.Texture> = [];
+	final targetAttachments:Array<VulkanRenderingAttachment> = [];
+	final colorAspect = haxe.EnumFlags.ofInt(1 << Type.enumIndex(VkImageAspectFlag.COLOR));
+	final depthAspect = haxe.EnumFlags.ofInt(1 << Type.enumIndex(VkImageAspectFlag.DEPTH));
+
+	function getFormatProperties(format:VkFormat):VkFormatProperties {
+		var properties = formatProperties.get(cast format);
+		if( properties == null ) {
+			properties = new VkFormatProperties();
+			ctx.getPdeviceFormatProps(format, properties);
+			formatProperties.set(cast format, properties);
+		}
+
+		return properties;
+	}
+
 	var programs : Map<String,VulkanCompiledShader> = new Map();
 	var shaderKeys : Map<Int,String> = new Map();
 	var shaderCompiler : VulkanShaderCompilerService;
@@ -325,10 +344,12 @@ class VulkanDriver extends Driver {
 	var boundDepthBias:Float;
 	var boundSlopeScaledDepthBias:Float;
 	var renderingResume = false;
-	var textureBindings:Map<String, h3d.mat.Texture> = new Map();
+	final textureBindingEntries:Array<{texture:h3d.mat.Texture}> = [];
+	var textureBindings:Map<String, {texture:h3d.mat.Texture}> = new Map();
 	var resolvedTextureScratch:Map<String, Array<VulkanResolvedTexture>> = new Map();
 	var textureBindingsShaderKey:String;
 	var bufferBindings:Map<String, h3d.Buffer> = new Map();
+	var bufferBindingKeys:Array<String> = [];
 	var bufferBindingKinds:Map<String, hxsl.Ast.BufferKind> = new Map();
 	var bufferBindingsShaderKey:String;
 	var fallbackTextures:Map<String, h3d.mat.Texture> = new Map();
@@ -608,8 +629,7 @@ class VulkanDriver extends Driver {
 
 	function selectDepthFormat() {
 		for( format in [D24_UNORM_S8_UINT, D32_SFLOAT_S8_UINT, D32_SFLOAT] ) {
-			var props = new VkFormatProperties();
-			ctx.getPdeviceFormatProps(format, props);
+			final props = getFormatProperties(format);
 			final required = (cast VkFormatFeature.DEPTH_STENCIL_ATTACHMENT : Int) | (cast VkFormatFeature.TRANSFER_SRC : Int);
 			if( (props.optimalTilingFeatures & required) == required )
 				return format;
@@ -649,7 +669,7 @@ class VulkanDriver extends Driver {
 			else if( status != 1 )
 				return false;
 		}
-		deferredDestroy.collect(completedSubmissionSerial);
+		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		for( index => frame in frames )
 			uploadManager.reclaimUnused(index, index != currentFrameIndex && frame.submissionSerial <= completedSubmissionSerial);
 		readbackManager.reclaimUnused();
@@ -665,14 +685,14 @@ class VulkanDriver extends Driver {
 		if( frame.submissionSerial > completedSubmissionSerial )
 			completedSubmissionSerial = frame.submissionSerial;
 		queryManager.completeFrame(currentFrameIndex);
-		deferredDestroy.collect(completedSubmissionSerial);
+		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		readbackManager.beginFrame();
 		readbackManager.completeFrame(currentFrameIndex);
 		uploadManager.beginFrame(currentFrameIndex);
 		frame.reclaimDescriptors();
 		if( bindlessDescriptors != null )
 			bindlessDescriptors.sync(frame.bindlessGeneration);
-		frame.shaderConstants.clear();
+		frame.resetShaderConstants();
 		var acquiredImage = 0;
 		var acquireStatus = ctx.acquireNextImage(frame.imageAvailable, acquiredImage);
 		if( acquireStatus == OutOfDate ) {
@@ -877,7 +897,7 @@ class VulkanDriver extends Driver {
 				}
 				readbackManager = null;
 			}
-			deferredDestroy.drain();
+			deferredDestroy.drain(ctx);
 			if( pipelineManager != null ) {
 				pipelineManager.dispose();
 				pipelineManager = null;
@@ -965,6 +985,7 @@ class VulkanDriver extends Driver {
 		return 'Vulkan ${(version >>> 22) & 0x7F}.${(version >>> 12) & 0x3FF}.${version & 0xFFF}';
 	}
 
+
 	override function getMemoryUsage() {
 		if( ctx == null || allocator == null )
 			return null;
@@ -1000,8 +1021,7 @@ class VulkanDriver extends Driver {
 		if (!image.usage.has(TRANSFER_SRC))
 			throw 'Texture ${tex.id} was not created with Vulkan transfer-source usage required for capture';
 		final mapping = VulkanTextureFormat.resolve(tex.format);
-		final properties = new VkFormatProperties();
-		ctx.getPdeviceFormatProps(image.format, properties);
+		final properties = getFormatProperties(image.format);
 		if (!mapping.capabilities(properties).transferSource)
 			throw 'Texture ${tex.id} format ${tex.format} does not support Vulkan transfer-source capture';
 		if (tex.format.match(Depth24 | Depth24Stencil8 | Depth32Stencil8))
@@ -1119,7 +1139,7 @@ class VulkanDriver extends Driver {
 		if (ctx.waitForFence(frames[submittedFrame].fence, -1) != 0)
 			throw VulkanRuntime.error("Failed to wait for synchronous Vulkan image readback");
 		completedSubmissionSerial = hxd.Math.imax(completedSubmissionSerial, frames[submittedFrame].submissionSerial);
-		deferredDestroy.collect(completedSubmissionSerial);
+		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		readbackManager.completeFrame(submittedFrame);
 		if (swapchainReady)
 			beginFrame();
@@ -1272,9 +1292,10 @@ class VulkanDriver extends Driver {
 		if( p.compute != null && !capabilities.graphicsQueueCompute )
 			throw 'Vulkan compute is unavailable because graphics queue family ${capabilities.graphicsQueueFamily} lacks VK_QUEUE_COMPUTE_BIT; ${capabilities.diagnostics}';
 		currentShader = p;
-		textureBindings.clear();
+		for( binding in textureBindingEntries ) binding.texture = null;
 		textureBindingsShaderKey = p.cacheKey;
 		bufferBindings.clear();
+		bufferBindingKeys.resize(0);
 		bufferBindingKinds.clear();
 		bufferBindingsShaderKey = p.cacheKey;
 		if( p.compute != null ) {
@@ -1419,7 +1440,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final reclaimed = pipelineManager.reclaimedCount + computePipelineManager.reclaimedCount;
 		pipelineManager.reclaimUnused(frame - keepFrames, completedSubmissionSerial, deferredDestroy);
 		computePipelineManager.reclaimUnused(frame - keepFrames, completedSubmissionSerial, deferredDestroy);
-		deferredDestroy.collect(completedSubmissionSerial);
+		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		if (reclaimed != pipelineManager.reclaimedCount + computePipelineManager.reclaimedCount) {
 			boundPipeline = null;
 			boundComputePipeline = null;
@@ -1529,8 +1550,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw 'Texture ${texture.id} target layer $layer is outside 0...${image.layerCount - 1}';
 		if( depth ? !image.usage.has(DEPTH_STENCIL_ATTACHMENT) : !image.usage.has(COLOR_ATTACHMENT) )
 			throw 'Texture ${texture.id} does not have Vulkan ${depth ? "depth/stencil" : "color"} attachment usage';
-		final properties = new VkFormatProperties();
-		ctx.getPdeviceFormatProps(image.format, properties);
+		image.lastSubmission = currentSubmissionSerial;
+		@:privateAccess texture.lastFrame = hxd.Timer.frameCount;
+		for( attachment in attachments )
+			if( attachment.texture == texture && attachment.resource == image && attachment.mipLevel == mipLevel && attachment.layer == layer )
+				return attachment;
+
+		final properties = getFormatProperties(image.format);
 		final feature:Int = cast (depth ? VkFormatFeature.DEPTH_STENCIL_ATTACHMENT : VkFormatFeature.COLOR_ATTACHMENT);
 		if( (properties.optimalTilingFeatures & feature) == 0 )
 			throw 'Texture ${texture.id} format ${texture.format} is not ${depth ? "depth/stencil" : "color"} renderable on this device';
@@ -1539,9 +1565,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( depth && texture.hasStencil() )
 			aspect.set(STENCIL);
 		final view = getImageView(texture, image, depth ? TYPE_2D : TYPE_2D, image.format, aspect, mipLevel, 1, layer, 1);
-		image.lastSubmission = currentSubmissionSerial;
-		@:privateAccess texture.lastFrame = hxd.Timer.frameCount;
-		return new VulkanRenderingAttachment(texture, image, image.image, view.view, image.format, aspect, mipLevel, layer);
+		final attachment = new VulkanRenderingAttachment(texture, image, image.image, view.view, image.format, aspect, mipLevel, layer);
+		attachments.push(attachment);
+
+		return attachment;
 	}
 
 	function resolveDepthAttachment(texture:h3d.mat.Texture, width:Int, height:Int, depthBinding:h3d.Engine.DepthBinding):VulkanRenderingAttachment {
@@ -1558,7 +1585,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Vulkan MRT requires at least one color attachment";
 		if( textures.length > limits.maxColorAttachments )
 			throw 'Vulkan MRT requested ${textures.length} color attachments, device limit is ${limits.maxColorAttachments}';
-		final resolved = [for( texture in textures ) resolveTextureAttachment(texture, mipLevel, layer, false)];
+		final resolved = targetAttachments;
+		resolved.resize(0);
+		for( texture in textures )
+			resolved.push(resolveTextureAttachment(texture, mipLevel, layer, false));
 		final width = hxd.Math.imax(1, textures[0].width >> mipLevel);
 		final height = hxd.Math.imax(1, textures[0].height >> mipLevel);
 		for( index in 1...textures.length ) {
@@ -1570,11 +1600,28 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				throw 'Vulkan MRT attachment $index depth association does not match attachment 0';
 		}
 		final depth = resolveDepthAttachment(textures[0].depthBuffer, width, height, depthBinding);
-		final colors = depthBinding == DepthOnly ? [] : resolved;
+		for( cached in targetSets ) {
+			if( cached.depth != depth || cached.depthBinding != depthBinding || cached.width != width || cached.height != height
+				|| cached.colors.length != (depthBinding == DepthOnly ? 0 : resolved.length) )
+				continue;
+			var matches = true;
+			if( depthBinding != DepthOnly )
+				for( index in 0...resolved.length )
+					if( cached.colors[index] != resolved[index] ) {
+						matches = false;
+						break;
+					}
+			if( matches ) return cached;
+		}
+
+		final colors = depthBinding == DepthOnly ? [] : resolved.copy();
 		final keyParts = [for( color in colors ) '${color.resource.identity}:${cast(color.format, Int)}:${color.mipLevel}:${color.layer}'];
 		final depthKey = depth == null ? "none" : '${depth.resource.identity}:${cast(depth.format, Int)}';
-		return new VulkanRenderingTargetSet(colors, depth, depth != null && formatHasStencil(depth.format) ? depth : null,
+		final target = new VulkanRenderingTargetSet(colors, depth, depth != null && formatHasStencil(depth.format) ? depth : null,
 			width, height, 1, depthBinding, false, '${keyParts.join(",")}|$depthKey:${Type.enumIndex(depthBinding)}');
+		targetSets.push(target);
+
+		return target;
 	}
 
 	function changeTarget(next:VulkanRenderingTargetSet) {
@@ -1610,7 +1657,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			changeTarget(resolveDefaultTarget(depthBinding));
 			return;
 		}
-		changeTarget(makeTextureTargetSet([texture], mipLevel, layer, depthBinding));
+		targetTextures[0] = texture;
+		changeTarget(makeTextureTargetSet(targetTextures, mipLevel, layer, depthBinding));
+		targetTextures[0] = null;
 	}
 
 	override function setRenderTargets(textures:Array<h3d.mat.Texture>, depthBinding:h3d.Engine.DepthBinding = ReadWrite) {
@@ -1621,9 +1670,18 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( texture == null )
 			throw "Vulkan depth-only rendering requires a depth texture";
 		final depth = resolveTextureAttachment(texture, 0, 0, true);
+		for( cached in targetSets )
+			if( cached.depth == depth && cached.depthBinding == DepthOnly && cached.colors.length == 0
+				&& cached.width == texture.width && cached.height == texture.height ) {
+				changeTarget(cached);
+				return;
+			}
+
 		final key = 'depth:${depth.resource.identity}:${cast(depth.format, Int)}:${depth.layer}';
-		changeTarget(new VulkanRenderingTargetSet([], depth, formatHasStencil(depth.format) ? depth : null,
-			texture.width, texture.height, 1, DepthOnly, false, key));
+		final target = new VulkanRenderingTargetSet([], depth, formatHasStencil(depth.format) ? depth : null,
+			texture.width, texture.height, 1, DepthOnly, false, key);
+		targetSets.push(target);
+		changeTarget(target);
 	}
 
 	override function allocDepthBuffer(texture:h3d.mat.Texture):Texture {
@@ -1796,11 +1854,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		case Depth24Stencil8: [Depth24Stencil8, Depth32Stencil8];
 		default: [format];
 		};
-		final properties = new VkFormatProperties();
 
 		for( candidate in candidates ) {
 			final mapping = VulkanTextureFormat.resolve(candidate);
-			ctx.getPdeviceFormatProps(mapping.format, properties);
+			final properties = getFormatProperties(mapping.format);
 			if( mapping.uploadCompatible && mapping.sampledCompatible
 				&& (properties.optimalTilingFeatures & requiredFeatures) == requiredFeatures )
 				return mapping;
@@ -1812,8 +1869,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	function createTexture(t:h3d.mat.Texture, ?backing:h3d.impl.driver.vulkan.resource.VulkanAllocation, transient = false):Texture {
 		final isDepth = t.isDepth();
 		final mapping = resolveTextureFormat(t.format, VulkanTextureFormat.requiredFeatures(t.flags, isDepth));
-		final formatProperties = new VkFormatProperties();
-		ctx.getPdeviceFormatProps(mapping.format, formatProperties);
+		final formatProperties = getFormatProperties(mapping.format);
 		final formatCapabilities = mapping.capabilities(formatProperties);
 		final automaticMipmaps = t.mipLevels > 1 && !t.flags.has(ManualMipMapGen);
 		final mipmapMode:VulkanMipmapMode = if (t.mipLevels <= 1) None else if (formatCapabilities.supportsLinearMipmapBlit()) LinearBlit
@@ -1947,6 +2003,19 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	function destroyTextureResource(texture:VulkanTexture, immediate = false) {
+		var index = targetSets.length;
+		while( index-- > 0 ) {
+			final target = targetSets[index];
+			var usesResource = target.depth != null && target.depth.resource == texture;
+			for( color in target.colors )
+				if( color.resource == texture ) usesResource = true;
+			if( usesResource ) targetSets.splice(index, 1);
+		}
+		index = attachments.length;
+		while( index-- > 0 )
+			if( attachments[index].resource == texture ) attachments.splice(index, 1);
+		targetAttachments.resize(0);
+
 		if( texture.disposed )
 			return;
 		final index = texture.liveIndex;
@@ -2064,7 +2133,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final savedStencilState = currentStencilState;
 		currentStencilState = null;
 		final savedMaterialSelected = materialSelected;
-		final savedTextureBindings = [for (key => value in textureBindings) {key: key, value: value}];
+		final savedTextureBindings = [for (key => value in textureBindings) {key: key, value: value.texture}];
 		final savedTextureBindingsShaderKey = textureBindingsShaderKey;
 		final savedStartingMip = t.startingMip;
 		final savedMipMap = t.mipMap;
@@ -2118,8 +2187,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		currentColorMasks = savedColorMasks;
 		currentStencilState = savedStencilState;
 		materialSelected = savedMaterialSelected;
-		textureBindings.clear();
-		for (binding in savedTextureBindings) textureBindings.set(binding.key, binding.value);
+		for( binding in textureBindingEntries ) binding.texture = null;
+		for (binding in savedTextureBindings) textureBindings.get(binding.key).texture = binding.value;
 		textureBindingsShaderKey = savedTextureBindingsShaderKey;
 		boundPipeline = null;
 		boundDescriptorState = null;
@@ -2373,8 +2442,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			default: UNDEFINED;
 			}
 		}
-		final properties = new VkFormatProperties();
-		ctx.getPdeviceFormatProps(format, properties);
+		final properties = getFormatProperties(format);
 		if( (properties.bufferFeatures & cast VkFormatFeature.VERTEX_BUFFER) == 0 )
 			throw 'Physical Vulkan vertex format $format is not supported by this device';
 		return format;
@@ -2490,14 +2558,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			}
 		}
 		@:privateAccess buffer.markDisposed();
-		final destroy = () -> {
+		if( immediate || buffer.lastSubmission <= completedSubmissionSerial ) {
 			ctx.destroyBuffer(buffer.buffer);
 			buffer.allocation.dispose();
-		};
-		if( immediate || buffer.lastSubmission <= completedSubmissionSerial )
-			destroy();
-		else
-			deferredDestroy.retire(buffer.lastSubmission, destroy);
+		} else
+			deferredDestroy.retireBuffer(buffer);
 	}
 
 	function updateBuffer( buffer:VulkanBuffer, bytes:hl.Bytes, offset:Int, size:Int ) {
@@ -2688,7 +2753,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( currentShader.shader.mode != hxsl.RuntimeShader.LinkMode.Compute )
 				uploadStageConstants(buf.fragment, currentShader.shader.fragment, VulkanShaderStage.Fragment, VulkanConstantFrequency.Params);
 		case Textures:
-			textureBindings.clear();
+			for( binding in textureBindingEntries ) binding.texture = null;
 			textureBindingsShaderKey = currentShader.cacheKey;
 			if( uploadStageTextures(buf, buf.vertex, currentShader.shader.vertex) )
 				return;
@@ -2700,6 +2765,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				boundComputeDescriptorState = null;
 		case Buffers:
 			bufferBindings.clear();
+			bufferBindingKeys.resize(0);
 			bufferBindingKinds.clear();
 			bufferBindingsShaderKey = currentShader.cacheKey;
 			if( uploadStageBuffers(buf.vertex, currentShader.shader.mode == hxsl.RuntimeShader.LinkMode.Compute ? currentShader.shader.compute : currentShader.shader.vertex) )
@@ -2747,6 +2813,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			final existing = bufferBindings.get(key);
 			if( existing != null && existing != buffer )
 				throw 'HxSL resource $key resolves to different vertex and fragment buffers';
+			if( existing == null ) bufferBindingKeys.push(key);
 			bufferBindings.set(key, buffer);
 			bufferBindingKinds.set(key, kind);
 			@:privateAccess buffer.lastFrame = hxd.Timer.frameCount;
@@ -2803,9 +2870,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				validateTextureType(texture, elementType, allocation.name);
 				final key = allocationIds[slot - 1];
 				final existing = textureBindings.get(key);
-				if( existing != null && existing != texture )
+				if( existing != null && existing.texture != null && existing.texture != texture )
 					throw 'HxSL resource $key resolves to different vertex and fragment textures';
-				textureBindings.set(key, texture);
+				if( existing == null ) {
+					final binding = {texture: texture};
+					textureBindings.set(key, binding);
+					textureBindingEntries.push(binding);
+				} else
+					existing.texture = texture;
 				@:privateAccess texture.lastFrame = hxd.Timer.frameCount;
 			}
 			allocation = allocation.next;
@@ -2913,11 +2985,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final blockId = currentShader.constantBlockIds.get(block);
 		var upload = frame.shaderConstants.get(blockId);
 		if( upload == null ) {
-			upload = new VulkanConstantUpload();
+			if( frame.usedConstantUploads == frame.constantUploads.length )
+				frame.constantUploads.push(new VulkanConstantUpload());
+			upload = frame.constantUploads[frame.usedConstantUploads++];
 			frame.shaderConstants.set(blockId, upload);
 		}
 		final previousBuffer = upload.buffer;
-		if( frequency != VulkanConstantFrequency.Params || upload.paramsCache.update(source, block.sourceSize >> 2) )
+		if( frequency != VulkanConstantFrequency.Params || upload.paramsCache.update(source, block.sourceSize >> 2, upload.buffer == null) )
 			uploadManager.uploadConstants(command, bytes, 0, block.sourceSize, alignment, upload, !renderingStarted);
 		if( previousBuffer != upload.buffer )
 			currentShader.descriptorSets[block.set].revision++;
@@ -2957,8 +3031,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				final format:Int = cast attachment.format;
 				var supported = blendFormatSupport.get(format);
 				if( supported == null ) {
-					final properties = new VkFormatProperties();
-					ctx.getPdeviceFormatProps(attachment.format, properties);
+					final properties = getFormatProperties(attachment.format);
 					supported = (properties.optimalTilingFeatures & cast VkFormatFeature.COLOR_ATTACHMENT_BLEND) != 0;
 					blendFormatSupport.set(format, supported);
 				}
@@ -3155,7 +3228,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					for( blockIndex in 0...metadata.blocks.length ) {
 						final block = metadata.blocks[blockIndex];
 						final buffer = frame.shaderConstants.get(metadata.blockIds[blockIndex]).buffer;
-						if( !entry.matchesBuffer(bufferIndex, buffer, haxe.Int64.ofInt(block.size)) ) {
+						if( !entry.matchesBuffer(bufferIndex, buffer, (haxe.Int64.ofInt(block.size) : hl.I64)) ) {
 							matches = false;
 							break;
 						}
@@ -3173,7 +3246,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 							for( allocationId in resource.allocationIds ) {
 								final buffer = bufferBindings.get(allocationId);
 								final native:VulkanBuffer = @:privateAccess buffer.vbuf;
-								if( !entry.matchesBuffer(bufferIndex, native, native.size) ) matches = false;
+								if( !entry.matchesBuffer(bufferIndex, native, (native.size : hl.I64)) ) matches = false;
 								bufferIndex++;
 							}
 						default:
@@ -3189,18 +3262,32 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( set == null ) {
 				frame.descriptorCacheMissCount++;
 				set = frame.descriptorArena.allocate(currentShader.descriptorSetLayouts[setIndex], metadata.descriptorCount);
-				final buffers:Array<VulkanBuffer> = [];
-				final bufferHandles:Array<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer> = [];
-				final bufferRanges:Array<haxe.Int64> = [];
-				final images:Array<VulkanTexture> = [];
-				final views:Array<VkImageView> = [];
-				final samplers:Array<VkSampler> = [];
+				var bufferCount = metadata.blocks.length;
+				var imageCount = 0;
+				for( resource in metadata.resources )
+					switch( resource.descriptorType ) {
+					case VulkanDescriptorType.UniformBuffer, VulkanDescriptorType.StorageBuffer:
+						bufferCount += resource.allocationIds.length;
+					case VulkanDescriptorType.CombinedImageSampler, VulkanDescriptorType.StorageImage:
+						imageCount += resolvedTextures.get(resource.logicalId).length;
+					default:
+					}
+
+				final buffers = bufferCount == 0 ? null : new hl.NativeArray<VulkanBuffer>(bufferCount);
+				final bufferHandles = bufferCount == 0 ? null : new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(bufferCount);
+				final bufferRanges = bufferCount == 0 ? null : new hl.NativeArray<hl.I64>(bufferCount);
+				final images = imageCount == 0 ? null : new hl.NativeArray<VulkanTexture>(imageCount);
+				final views = imageCount == 0 ? null : new hl.NativeArray<VkImageView>(imageCount);
+				final samplers = imageCount == 0 ? null : new hl.NativeArray<VkSampler>(imageCount);
+				var bufferIndex = 0;
+				var imageIndex = 0;
+
 				for( blockIndex in 0...metadata.blocks.length ) {
 					final block = metadata.blocks[blockIndex];
 					final upload = frame.shaderConstants.get(metadata.blockIds[blockIndex]);
-					buffers.push(upload.buffer);
-					bufferHandles.push(upload.buffer.buffer);
-					bufferRanges.push(haxe.Int64.ofInt(block.size));
+					buffers[bufferIndex] = upload.buffer;
+					bufferHandles[bufferIndex] = upload.buffer.buffer;
+					bufferRanges[bufferIndex++] = (haxe.Int64.ofInt(block.size) : hl.I64);
 					descriptorWrite(writeCount, set, block.binding, 0, VkDescriptorType.UNIFORM_BUFFER_DYNAMIC);
 					final info = descriptorBufferScratch[writeCount++];
 					info.buffer = upload.buffer.buffer;
@@ -3213,9 +3300,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					case VulkanDescriptorType.CombinedImageSampler:
 						final values = resolvedTextures.get(resource.logicalId);
 						for( element => value in values ) {
-							images.push(value.image);
-							views.push(value.view);
-							samplers.push(value.sampler);
+							images[imageIndex] = value.image;
+							views[imageIndex] = value.view;
+							samplers[imageIndex++] = value.sampler;
 							descriptorWrite(writeCount, set, resource.binding, element, VkDescriptorType.COMBINED_IMAGE_SAMPLER);
 							final info = descriptorImageScratch[writeCount++];
 							info.imageView = value.view;
@@ -3226,9 +3313,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					case VulkanDescriptorType.StorageImage:
 						final values = resolvedTextures.get(resource.logicalId);
 						for( element => value in values ) {
-							images.push(value.image);
-							views.push(value.view);
-							samplers.push(null);
+							images[imageIndex] = value.image;
+							views[imageIndex] = value.view;
+							samplers[imageIndex++] = null;
 							descriptorWrite(writeCount, set, resource.binding, element, VkDescriptorType.STORAGE_IMAGE);
 							final info = descriptorImageScratch[writeCount++];
 							info.imageView = value.view;
@@ -3240,9 +3327,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 						for( element => allocationId in resource.allocationIds ) {
 							final buffer = bufferBindings.get(allocationId);
 							final native:VulkanBuffer = @:privateAccess buffer.vbuf;
-							buffers.push(native);
-							bufferHandles.push(native.buffer);
-							bufferRanges.push(native.size);
+							buffers[bufferIndex] = native;
+							bufferHandles[bufferIndex] = native.buffer;
+							bufferRanges[bufferIndex++] = (native.size : hl.I64);
 							descriptorWrite(writeCount, set, resource.binding, element,
 								resource.descriptorType == VulkanDescriptorType.UniformBuffer ? VkDescriptorType.UNIFORM_BUFFER : VkDescriptorType.STORAGE_BUFFER);
 							final info = descriptorBufferScratch[writeCount++];
@@ -3300,7 +3387,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 
 
 	function prepareShaderBuffers(compute:Bool) {
-		for( allocationId => buffer in bufferBindings ) {
+		for( allocationId in bufferBindingKeys ) {
+			final buffer = bufferBindings.get(allocationId);
 			final native:VulkanBuffer = @:privateAccess buffer.vbuf;
 			if( native == null || native.disposed )
 				throw 'Vulkan shader buffer $allocationId was disposed before ${compute ? "dispatch" : "draw"}';
@@ -3345,7 +3433,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			}
 			var valueIndex = 0;
 			for( allocationId in resource.allocationIds ) {
-				final texture = textureBindings.get(allocationId);
+				final binding = textureBindings.get(allocationId);
+				final texture = binding == null ? null : binding.texture;
 				if( texture == null )
 					throw 'Vulkan ${compute ? "dispatch" : "draw"} requires uploaded texture resource $allocationId';
 				final image:VulkanTexture = texture.t;
@@ -3368,8 +3457,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					if( currentTargetSet.depth != null && currentTargetSet.depth.overlaps(image, baseMip, levelCount, baseLayer, layerCount) )
 						throw 'Texture ${texture.id} mip/layer range is simultaneously bound as a depth/stencil attachment and sampled texture';
 				}
-				var sampleAspect = new haxe.EnumFlags<VkImageAspectFlag>();
-				sampleAspect.set(texture.isDepth() ? DEPTH : COLOR);
+				final sampleAspect = texture.isDepth() ? depthAspect : colorAspect;
 				final targetState = storage ? VulkanImageState.ShaderStorageReadWrite
 					: compute ? VulkanImageState.ComputeShaderRead : VulkanImageState.ShaderRead;
 				for( layer in baseLayer...baseLayer + layerCount )
@@ -3385,8 +3473,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				final flags = texture.flags.toInt();
 				if( value.texture != texture || value.image != image || value.bits != bits || value.flags != flags || value.filterable != image.filterable || value.storage != storage ) {
 					if( storage ) {
-						final properties = new VkFormatProperties();
-						ctx.getPdeviceFormatProps(image.format, properties);
+						final properties = getFormatProperties(image.format);
 						if( (properties.optimalTilingFeatures & cast VkFormatFeature.STORAGE_IMAGE) == 0 )
 							throw 'Texture ${texture.id} format ${texture.format} does not support Vulkan storage images';
 					}
@@ -3427,8 +3514,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final defaultView = texture.slice == 0 && baseMip == 0 && levelCount == image.mipCount && baseLayer == 0 && layerCount == image.layerCount && !texture.hasStencil();
 		if( defaultView )
 			return image.defaultViewEntry;
-		var aspect = new haxe.EnumFlags<VkImageAspectFlag>();
-		aspect.set(texture.isDepth() ? DEPTH : COLOR);
+		final aspect = texture.isDepth() ? depthAspect : colorAspect;
 		return getImageView(texture, image, type, image.format, aspect, baseMip, levelCount, baseLayer, layerCount);
 	}
 
@@ -3463,13 +3549,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				if( textureBindingsShaderKey != currentShader.cacheKey )
 					throw 'Vulkan ${compute ? "dispatch" : "draw"} requires texture uploads for shader ${currentShader.cacheKey}';
 				for( allocationId in resource.allocationIds )
-					if( !textureBindings.exists(allocationId) )
+					if( (textureBindings.get(allocationId) == null || textureBindings.get(allocationId).texture == null) )
 						throw 'Vulkan ${compute ? "dispatch requires texture-resource" : "draw requires sampled-resource"} binding for $allocationId';
 			case VulkanDescriptorType.StorageImage:
 				if( textureBindingsShaderKey != currentShader.cacheKey )
 					throw 'Vulkan ${compute ? "dispatch" : "draw"} requires texture uploads for shader ${currentShader.cacheKey}';
 				for( allocationId in resource.allocationIds )
-					if( !textureBindings.exists(allocationId) )
+					if( (textureBindings.get(allocationId) == null || textureBindings.get(allocationId).texture == null) )
 						throw 'Vulkan ${compute ? "dispatch" : "draw"} requires storage-image binding for $allocationId';
 			case VulkanDescriptorType.UniformBuffer, VulkanDescriptorType.StorageBuffer:
 				if( bufferBindingsShaderKey != currentShader.cacheKey )
@@ -3623,8 +3709,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				throw 'Texture ${texture.id} is simultaneously bound as a depth/stencil attachment and bindless sampled texture';
 		}
 		final targetState = compute ? VulkanImageState.ComputeShaderRead : VulkanImageState.ShaderRead;
-		var aspect = new haxe.EnumFlags<VkImageAspectFlag>();
-		aspect.set(texture.isDepth() ? DEPTH : COLOR);
+		final aspect = texture.isDepth() ? depthAspect : colorAspect;
 		for( layer in resolved.baseLayer...resolved.baseLayer + resolved.layerCount )
 			for( mip in resolved.baseMip...resolved.baseMip + resolved.levelCount )
 				if( resolved.image.getState(mip, layer, texture.isDepth() ? DEPTH : COLOR) != targetState ) {
@@ -3830,11 +3915,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		frame.submissionSerial = currentSubmissionSerial++;
 		queryManager.submitted(submittedFrame, frame.submissionSerial);
 		waitForQuerySubmission(query.current);
-		deferredDestroy.collect(completedSubmissionSerial);
+		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		readbackManager.completeFrame(submittedFrame);
 		uploadManager.beginFrame(submittedFrame);
 		frame.reclaimDescriptors();
-		frame.shaderConstants.clear();
+		frame.resetShaderConstants();
 		if (ctx.resetFence(frame.fence) != 0)
 			throw VulkanRuntime.error("Failed to reset Vulkan query submission fence");
 		if (frame.command.reset() != 0)

@@ -83,9 +83,23 @@ private class GraphicsContent extends h3d.prim.Primitive {
 	override function alloc( engine : h3d.Engine ) {
 		if (index.length <= 0) return ;
 		var alloc = Allocator.get();
-		buffer = alloc.ofFloats(tmp, hxd.BufferFormat.H2D);
-		@:privateAccess buffer.allocPos = allocPos;
-		indexes = alloc.ofIndexes(index);
+		var vertices = tmp.length >> 3;
+		if( buffer == null || buffer.isDisposed() || buffer.vertices < vertices ) {
+			if( buffer != null ) alloc.disposeBuffer(buffer);
+			buffer = alloc.allocBuffer(Allocator.roundPOT(vertices), hxd.BufferFormat.H2D);
+			@:privateAccess buffer.allocPos = allocPos;
+			bufferDirty = true;
+		}
+
+		if( indexes == null || indexes.isDisposed() || indexes.count < index.length ) {
+			if( indexes != null ) alloc.disposeIndexBuffer(indexes);
+			indexes = alloc.allocIndexBuffer(Allocator.roundPOT(index.length));
+			indexDirty = true;
+		}
+
+		if( bufferDirty ) buffer.uploadFloats(tmp, 0, vertices);
+		if( indexDirty ) indexes.uploadIndexes(index, 0, index.length);
+
 		for( b in buffers ) {
 			if( b.vbuf == null || b.vbuf.isDisposed() ) b.vbuf = alloc.ofFloats(b.buf, hxd.BufferFormat.H2D);
 			if( b.ibuf == null || b.ibuf.isDisposed() ) b.ibuf = alloc.ofIndexes(b.idx);
@@ -102,21 +116,7 @@ private class GraphicsContent extends h3d.prim.Primitive {
 	}
 
 	public function flush() {
-		if( buffer == null || buffer.isDisposed() ) {
-			alloc(h3d.Engine.getCurrent());
-		} else {
-			var allocator = Allocator.get();
-			if ( bufferDirty ) {
-				allocator.disposeBuffer(buffer);
-				buffer = allocator.ofFloats(tmp, hxd.BufferFormat.H2D);
-				bufferDirty = false;
-			}
-			if ( indexDirty ) {
-				allocator.disposeIndexBuffer(indexes);
-				indexes = allocator.ofIndexes(index);
-				indexDirty = false;
-			}
-		}
+		if( index.length > 0 ) alloc(h3d.Engine.getCurrent());
 	}
 
 	override function dispose() {
@@ -143,7 +143,15 @@ private class GraphicsContent extends h3d.prim.Primitive {
 
 
 	public function clear() {
-		dispose();
+		for( b in buffers ) {
+			if( b.vbuf != null ) Allocator.get().disposeBuffer(b.vbuf);
+			if( b.ibuf != null ) Allocator.get().disposeIndexBuffer(b.ibuf);
+			b.state.clear();
+		}
+
+		state.clear();
+		bufferDirty = true;
+		indexDirty = true;
 		if( tmp == null ) tmp = new hxd.FloatBuffer() else tmp.resize(0);
 		if( index == null ) index = new hxd.IndexBuffer() else index.resize(0);
 		buffers.resize(0);
@@ -220,6 +228,7 @@ class Graphics extends Drawable {
 
 	override function onRemove() {
 		super.onRemove();
+		content.dispose();
 		clear();
 	}
 

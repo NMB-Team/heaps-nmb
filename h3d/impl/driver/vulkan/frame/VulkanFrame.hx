@@ -20,15 +20,15 @@ class VulkanDescriptorCacheEntry {
 	public final metadata:VulkanDescriptorSetMetadata;
 	public final layout:VkDescriptorSetLayout;
 	public final set:VkDescriptorSet;
-	public final buffers:Array<VulkanBuffer>;
-	public final bufferHandles:Array<VkBuffer>;
-	public final bufferRanges:Array<haxe.Int64>;
-	public final images:Array<VulkanTexture>;
-	public final views:Array<VkImageView>;
-	public final samplers:Array<VkSampler>;
+	public final buffers:hl.NativeArray<VulkanBuffer>;
+	public final bufferHandles:hl.NativeArray<VkBuffer>;
+	public final bufferRanges:hl.NativeArray<hl.I64>;
+	public final images:hl.NativeArray<VulkanTexture>;
+	public final views:hl.NativeArray<VkImageView>;
+	public final samplers:hl.NativeArray<VkSampler>;
 
-	public function new(metadata:VulkanDescriptorSetMetadata, layout:VkDescriptorSetLayout, set:VkDescriptorSet, buffers:Array<VulkanBuffer>,
-		bufferHandles:Array<VkBuffer>, bufferRanges:Array<haxe.Int64>, images:Array<VulkanTexture>, views:Array<VkImageView>, samplers:Array<VkSampler>) {
+	public function new(metadata:VulkanDescriptorSetMetadata, layout:VkDescriptorSetLayout, set:VkDescriptorSet, buffers:hl.NativeArray<VulkanBuffer>,
+		bufferHandles:hl.NativeArray<VkBuffer>, bufferRanges:hl.NativeArray<hl.I64>, images:hl.NativeArray<VulkanTexture>, views:hl.NativeArray<VkImageView>, samplers:hl.NativeArray<VkSampler>) {
 		this.metadata = metadata;
 		this.layout = layout;
 		this.set = set;
@@ -44,7 +44,7 @@ class VulkanDescriptorCacheEntry {
 		return metadata == candidate && layout == candidateLayout;
 	}
 
-	public inline function matchesBuffer(index:Int, buffer:VulkanBuffer, range:haxe.Int64):Bool {
+	public inline function matchesBuffer(index:Int, buffer:VulkanBuffer, range:hl.I64):Bool {
 		return buffers[index] == buffer && bufferHandles[index] == buffer.buffer && bufferRanges[index] == range && !buffer.disposed;
 	}
 
@@ -62,6 +62,8 @@ class VulkanFrame {
 	public var submissionSerial = 0;
 	public var descriptorArena : VulkanDescriptorArena;
 	public var bindlessGeneration : VulkanBindlessGeneration;
+	public final constantUploads:Array<VulkanConstantUpload> = [];
+	public var usedConstantUploads = 0;
 	public final shaderConstants:Map<Int, VulkanConstantUpload> = new Map();
 	public final descriptorSets:Map<Int, Array<VulkanDescriptorCacheEntry>> = new Map();
 	public final resolvedDescriptorSets:Map<Int, {revision:Int, entry:VulkanDescriptorCacheEntry}> = new Map();
@@ -71,6 +73,14 @@ class VulkanFrame {
 	public var descriptorCacheHitCount = 0;
 	public var descriptorCacheMissCount = 0;
 	public var descriptorUpdateCount = 0;
+
+	public function resetShaderConstants() {
+		shaderConstants.clear();
+		for( index in 0...usedConstantUploads )
+			constantUploads[index].buffer = null;
+		usedConstantUploads = 0;
+	}
+
 
 	public function reclaimDescriptors() {
 		if (!shouldReclaimDescriptors()) return;

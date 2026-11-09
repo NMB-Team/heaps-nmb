@@ -67,6 +67,15 @@ class VulkanAllocation {
 		return mapped.offset(relativeOffset);
 	}
 
+	public function writeMapped(relativeOffset:Int, source:hl.Bytes, sourceOffset:Int, length:Int):Void {
+		if (released || relativeOffset < 0 || length < 0 || Int64.ofInt(relativeOffset) + length > size
+			|| Int64.ofInt(relativeOffset) + length > 0x7FFFFFFF)
+			throw 'Invalid HashLink mapped range for Vulkan allocation $debugName';
+		if (mapped == null)
+			throw 'Vulkan allocation $debugName is not host visible';
+		mapped.blit(relativeOffset, source, sourceOffset, length);
+	}
+
 	public function flush(relativeOffset:Int, length:Int) {
 		allocator.flush(this, Int64.ofInt(relativeOffset), Int64.ofInt(length));
 	}

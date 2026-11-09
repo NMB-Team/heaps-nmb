@@ -112,7 +112,7 @@ class VulkanUploadManager {
 		allocate(size, 16);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.mappedBytes(offset, size).blit(0, source, sourceOffset, size);
+		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
 		page.buffer.allocation.flush(offset, size);
 		uploadedBytes += size;
 		VulkanResourceState.transitionBuffer(command, destination, TransferDestination, Int64.ofInt(destinationOffset), Int64.ofInt(size));
@@ -125,7 +125,7 @@ class VulkanUploadManager {
 		allocate(size, alignment);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.mappedBytes(offset, size).blit(0, source, sourceOffset, size);
+		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
 		page.buffer.allocation.flush(offset, size);
 		uploadedBytes += size;
 		if (recordBarrier) {
@@ -145,7 +145,7 @@ class VulkanUploadManager {
 		allocate(size, 16);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.mappedBytes(offset, size).blit(0, source, sourceOffset, size);
+		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
 		page.buffer.allocation.flush(offset, size);
 		uploadedBytes += size;
 		VulkanResourceState.transitionImage(command, destination, mipLevel, layer, TransferDestination);
