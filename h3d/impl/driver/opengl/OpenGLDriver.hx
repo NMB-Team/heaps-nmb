@@ -330,14 +330,12 @@ class OpenGLDriver extends Driver {
 	}
 
 	override function setDebug(d) {
-		#if limen
-		context.makeCurrent();
-		#end
-
 		this.debug = d;
 	}
 
 	override function begin(frame) {
+		drawBufferCount = -1;
+
 		#if limen
 		context.makeCurrent();
 		if (gl.isContextLost()) throw "OpenGL context lost; recovery is not implemented";
@@ -2025,7 +2023,12 @@ class OpenGLDriver extends Driver {
 		}
 	}
 
+	var drawBufferCount = -1;
+
 	function setDrawBuffers( k : Int ) {
+		if( drawBufferCount == k ) return;
+
+		drawBufferCount = k;
 		#if js
 		if( glES >= 3 )
 			gl.drawBuffers(CBUFFERS[k]);
@@ -2095,11 +2098,14 @@ class OpenGLDriver extends Driver {
 					gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0+i,GL.TEXTURE_2D,tex.t.t,0);
 			setDrawBuffers(oldCount);
 			numTargets = oldCount;
+			#if gl_validation
 			validateFramebuffer("restored color targets=" + oldCount);
+			#end
 		}
 		return pixels;
 	}
 
+	#if gl_validation
 	function validateFramebuffer(configuration:String) {
 		#if (js || limen || usegl)
 		var status = gl.checkFramebufferStatus(GL.FRAMEBUFFER);
@@ -2107,6 +2113,7 @@ class OpenGLDriver extends Driver {
 			throw "Incomplete OpenGL framebuffer: status=0x" + StringTools.hex(status) + " " + configuration;
 		#end
 	}
+	#end
 
 	override function setRenderTarget( tex : h3d.mat.Texture, layer = 0, mipLevel = 0, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 		// check before changing the current state
@@ -2174,7 +2181,9 @@ class OpenGLDriver extends Driver {
 		setDrawBuffers(1);
 		gl.readBuffer(GL.COLOR_ATTACHMENT0);
 		#end
+		#if gl_validation
 		validateFramebuffer("color target=" + tex + " layer=" + layer + " mip=" + mipLevel);
+		#end
 
 		if( !tex.flags.has(WasCleared) ) {
 			tex.flags.set(WasCleared); // once we draw to, do not clear again
@@ -2206,7 +2215,9 @@ class OpenGLDriver extends Driver {
 			}
 		}
 		setDrawBuffers(textures.length);
+		#if gl_validation
 		validateFramebuffer("color targets=" + textures.length);
+		#end
 		if( needClear ) clear(BLACK);
 	}
 
@@ -2258,7 +2269,9 @@ class OpenGLDriver extends Driver {
 		setDrawBuffers(0);
 		gl.readBuffer(GL.NONE);
 		#end
+		#if gl_validation
 		validateFramebuffer("depth target layer=" + layer);
+		#end
 	}
 
 	override function setDepthClamp( enabled : Bool ) {
