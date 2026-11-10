@@ -786,7 +786,6 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@const var ENABLE_FRUSTUM_CULLING : Bool;
 		@const var ENABLE_DISTANCE_CLIPPING : Bool;
 		@const var ENABLE_HZB_CULLING : Bool;
-		@const(4) var CASCADE_COUNT : Int;
 
 		@global var camera : {
 			var position : Vec3;
@@ -817,6 +816,7 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		final subMeshInfosStride : Int = 2;
 
 		final MAX_CASCADES : Int = 4;
+		@param var cascadeCount : Int;
 		@param var cascadeView : Mat4;
 		@param var cascadeMin : Array<Vec4, MAX_CASCADES>;
 		@param var cascadeMax : Array<Vec4, MAX_CASCADES>;
@@ -872,8 +872,9 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			if ( instanceID >= instanceCount )
 				return;
 
-			@unroll for ( slot in 0...CASCADE_COUNT + 1 )
-				instanceSlots[(slot * instanceCount + instanceID) * 2] = -1;
+			@unroll for ( slot in 0...MAX_CASCADES + 1 )
+				if ( slot <= cascadeCount )
+					instanceSlots[(slot * instanceCount + instanceID) * 2] = -1;
 
 			var modelViewPos = instanceID * instanceStride + modelViewOffset;
 			var modelView = mat4(
@@ -997,16 +998,16 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			instanceSlots[instanceID * 2] = bucket;
 			instanceSlots[instanceID * 2 + 1] = atomicAdd(buckets, bucket * 2, 1);
 
-			if ( CASCADE_COUNT > 0 ) {
+			if ( cascadeCount > 0 ) {
 				var posLs = position * cascadeView.mat3x4();
 				var lightRot = cascadeView.mat3();
 				var extentsLs = abs(boxAxes[0] * lightRot) + abs(boxAxes[1] * lightRot) + abs(boxAxes[2] * lightRot);
 				var dimension = 2.0 * max(extentsLs.x, max(extentsLs.y, extentsLs.z));
 				var inCascade = false;
-				@unroll for ( c in 0...CASCADE_COUNT ) {
+				@unroll for ( c in 0...MAX_CASCADES ) {
 					var cMin = cascadeMin[c];
 					var cMax = cascadeMax[c];
-					if ( dimension >= cMin.w && insideOBB(posLs, extentsLs, cMin.xyz, cMax.xyz) ) {
+					if ( c < cascadeCount && dimension >= cMin.w && insideOBB(posLs, extentsLs, cMin.xyz, cMax.xyz) ) {
 						var cascadeBucket = (c + 1) * bucketCount + bucket;
 						var instanceSlot = ((c + 1) * instanceCount + instanceID) * 2;
 						instanceSlots[instanceSlot] = cascadeBucket;
@@ -1388,7 +1389,7 @@ private class BatchPass {
 
 		builderShader.frustum = ctx.getCameraFrustumBuffer();
 
-		builderShader.CASCADE_COUNT = cascades;
+		builderShader.cascadeCount = cascades;
 		builderShader.cascadeView = batcher.cascadeView;
 		builderShader.cascadeMin = batcher.cascadeMin;
 		builderShader.cascadeMax = batcher.cascadeMax;
