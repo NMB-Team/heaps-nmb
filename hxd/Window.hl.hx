@@ -39,6 +39,9 @@ class Window {
 
 	var resizeEvents : List<Void -> Void>;
 	var eventTargets : List<Event -> Void>;
+	#if limen
+	var eventWatchListeners : Array<{ listener : LEvent -> Void, callback : LEvent -> Void }> = [];
+	#end
 	var dropTargets : List<DropFileEvent -> Void>;
 	var dropFiles : Array<hxd.DropFileEvent.DroppedFile>;
 	var closeRequested = false;
@@ -165,6 +168,11 @@ class Window {
 	public function close() {
 		if( !windowList.remove(this) )
 			return;
+		#if limen
+		for( entry in eventWatchListeners )
+			LPlatform.removeEventWatchListener(entry.callback);
+		eventWatchListeners = [];
+		#end
 		#if (multidriver && limen)
 		window.destroy();
 		#end
@@ -186,6 +194,27 @@ class Window {
 				break;
 			}
 	}
+
+	#if limen
+	/** listeners run on the SDL event producer thread */
+	public function addEventWatchListener( listener : LEvent -> Void ) : Void {
+		var callback = function( event : LEvent ) {
+			if( event.windowId == id || event.windowId == 0 )
+				listener(event);
+		};
+
+		eventWatchListeners.push({ listener : listener, callback : callback });
+		LPlatform.addEventWatchListener(callback);
+	}
+
+	public function removeEventWatchListener( listener : LEvent -> Void ) : Void {
+		for( entry in eventWatchListeners.copy() )
+			if( Reflect.compareMethods(entry.listener, listener) ) {
+				LPlatform.removeEventWatchListener(entry.callback);
+				eventWatchListeners.remove(entry);
+			}
+	}
+	#end
 
 	public function addResizeEvent( f : Void -> Void ) : Void {
 		resizeEvents.push(f);

@@ -49,6 +49,7 @@ class System {
 	static var displayReadyCallbacks : Array<Void -> Void> = [];
 	#if limen
 	static var processingWindowEvent = false;
+	static var eventWatchThread : sys.thread.Thread;
 	#end
 
 	public static var delayWindowUntilFirstFrame = true;
@@ -78,6 +79,15 @@ class System {
 
 	#if limen
 	static function processWindowEvent( event : LEvent ) {
+		if( sys.thread.Thread.current() != eventWatchThread || event.type != WindowState )
+			return;
+
+		switch( event.state ) {
+		case Expose, Move, Resize, PixelResize:
+		default:
+			return;
+		}
+
 		if( processingWindowEvent )
 			return;
 
@@ -224,8 +234,9 @@ class System {
 
 		@:privateAccess Window.inst = createWindow();
 		#if limen
+		eventWatchThread = sys.thread.Thread.current();
 		if( Sys.systemName() == "Windows" )
-			LPlatform.watchWindowEvents(processWindowEvent);
+			LPlatform.addEventWatchListener(processWindowEvent);
 		#end
 
 		init();
