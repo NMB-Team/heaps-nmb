@@ -89,12 +89,16 @@ private class GraphicsContent extends h3d.prim.Primitive {
 			buffer = alloc.allocBuffer(Allocator.roundPOT(vertices), hxd.BufferFormat.H2D);
 			@:privateAccess buffer.allocPos = allocPos;
 			bufferDirty = true;
+		} else if( bufferDirty ) {
+			engine.driver.discardBuffer(buffer);
 		}
 
 		if( indexes == null || indexes.isDisposed() || indexes.count < index.length ) {
 			if( indexes != null ) alloc.disposeIndexBuffer(indexes);
 			indexes = alloc.allocIndexBuffer(Allocator.roundPOT(index.length));
 			indexDirty = true;
+		} else if( indexDirty ) {
+			engine.driver.discardBuffer(indexes);
 		}
 
 		if( bufferDirty ) buffer.uploadFloats(tmp, 0, vertices);

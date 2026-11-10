@@ -197,6 +197,10 @@ class Driver {
 	public function disposeBuffer( b : Buffer ) {
 	}
 
+	// previous contents are undefined after this call; pending draws keep their data
+	public function discardBuffer( b : Buffer ) {
+	}
+
 	public function disposeInstanceBuffer( b : h3d.impl.InstanceBuffer ) {
 	}
 

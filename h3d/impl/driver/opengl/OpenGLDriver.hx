@@ -1677,6 +1677,15 @@ class OpenGLDriver extends Driver {
 		restoreBind();
 	}
 
+	override function discardBuffer( b : h3d.Buffer ) {
+		// retire the native buffer without allocating another managed buffer
+		if( curBuffer == b ) curBuffer = null;
+		if( curIndexBuffer == b ) curIndexBuffer = null;
+
+		b.dispose();
+		@:privateAccess b.engine.mem.allocBuffer(b);
+	}
+
 	override function uploadBufferData( b : h3d.Buffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
 		#if limen
 		context.makeCurrent();
