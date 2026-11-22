@@ -1,16 +1,16 @@
 package h3d.impl.driver.vulkan.descriptor;
 
 #if (limen && gfx_vulkan)
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPool;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPool;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.Context;
 
 private class VulkanDescriptorPoolPage {
 	public final pool:VkDescriptorPool;
@@ -27,7 +27,7 @@ private class VulkanDescriptorPoolPage {
 }
 
 class VulkanDescriptorArena {
-	final context:VkContext;
+	final context:Context;
 	final pools:Array<VulkanDescriptorPoolPage> = [];
 	final layouts = new hl.NativeArray<VkDescriptorSetLayout>(1);
 	final sets = new hl.NativeArray<VkDescriptorSet>(1);
@@ -42,7 +42,7 @@ class VulkanDescriptorArena {
 
 	function get_pageCount():Int return pools.length;
 
-	public function new(context:VkContext) {
+	public function new(context:Context) {
 		this.context = context;
 		allocationInfo.descriptorSetCount = 1;
 

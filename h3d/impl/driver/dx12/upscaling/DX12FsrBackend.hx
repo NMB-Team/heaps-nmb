@@ -4,22 +4,22 @@ package h3d.impl.driver.dx12.upscaling;
 
 import h3d.impl.Upscaling;
 import h3d.impl.driver.dx12.DX12Driver;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.SwapChain;
-import limen.graphics.renderer.d3d12.resource.Resources;
-import limen.graphics.postprocess.fsr.FSR;
-import limen.graphics.postprocess.PostProcessDevice;
-import limen.graphics.postprocess.TextureResource;
-import limen.graphics.postprocess.fsr.FSRContext;
-import limen.graphics.postprocess.fsr.FSRDebugLevel;
-import limen.graphics.postprocess.fsr.FSRResult;
-import limen.graphics.postprocess.fsr.frame.FSRDispatchParams;
-import limen.graphics.postprocess.fsr.frame.FSRDispatchFlag;
-import limen.graphics.postprocess.fsr.upscaling.FSRCreateFlag;
-import limen.graphics.postprocess.fsr.upscaling.FSRQuality;
-import limen.graphics.postprocess.fsr.FSREffect;
-import limen.graphics.postprocess.fsr.framegen.*;
-import limen.graphics.renderer.d3d12.DX12Core.DxgiFormat;
+import limen.d3d12.internal.D3D12Bindings;
+import limen.d3d12.Types.SwapChain;
+import limen.d3d12.resource.Resources;
+import limen.fsr.FSR as LimenFsr;
+import limen.postprocess.PostProcessDevice;
+import limen.postprocess.TextureResource;
+import limen.fsr.FSRContext;
+import limen.fsr.FSRDebugLevel;
+import limen.fsr.FSRResult;
+import limen.fsr.frame.FSRDispatchParams;
+import limen.fsr.frame.FSRDispatchFlag;
+import limen.fsr.upscaling.FSRCreateFlag;
+import limen.fsr.upscaling.FSRQuality;
+import limen.fsr.FSREffect;
+import limen.fsr.framegen.*;
+import limen.d3d12.Types.DxgiFormat;
 
 @:access(h3d.impl.driver.dx12.DX12Driver)
 @:access(h3d.impl.Upscaling)
@@ -98,20 +98,20 @@ class DX12FsrBackend extends UpscalingBackend {
 		supported = new haxe.EnumFlags();
 		var device = driver.nativeDevice;
 		postProcessDevice = new PostProcessDevice(D3D12, device);
-		if( !FSR.isAvailable() ) return;
+		if( !LimenFsr.isAvailable() ) return;
 		if( wanted.has(Upscaler) || wanted.has(FrameGen) ) {
-			initResult = FSR.init(postProcessDevice, Upscaling.DEBUG ? FSRDebugLevel.WARNINGS : FSRDebugLevel.ERRORS);
+			initResult = LimenFsr.init(postProcessDevice, Upscaling.DEBUG ? FSRDebugLevel.WARNINGS : FSRDebugLevel.ERRORS);
 			loaded = initResult == FSRResult.Ok;
 			if( loaded ) {
-				if( wanted.has(Upscaler) && FSR.isEffectAvailable(postProcessDevice, FSREffect.UPSCALE) )
+				if( wanted.has(Upscaler) && LimenFsr.isEffectAvailable(postProcessDevice, FSREffect.UPSCALE) )
 					supported.set(Upscaler);
-				if( wanted.has(FrameGen) && FSR.isEffectAvailable(postProcessDevice, FSREffect.FRAME_GENERATION) )
+				if( wanted.has(FrameGen) && LimenFsr.isEffectAvailable(postProcessDevice, FSREffect.FRAME_GENERATION) )
 					supported.set(FrameGen);
 			} else
 				trace('FSR unavailable ($initResult)');
 		}
 		if( wanted.has(LowLatency) ) {
-			antiLag2Result = FSR.antiLag2Init(device);
+			antiLag2Result = LimenFsr.antiLag2Init(device);
 			antiLag2Ready = antiLag2Result == 0;
 			if( antiLag2Ready )
 				supported.set(LowLatency);
@@ -120,7 +120,7 @@ class DX12FsrBackend extends UpscalingBackend {
 
 	override function release( unused : haxe.EnumFlags<UpscalingFeature> ) {
 		if( unused.has(LowLatency) && antiLag2Ready ) {
-			FSR.antiLag2DeInit();
+			LimenFsr.antiLag2DeInit();
 			antiLag2Ready = false;
 		}
 	}
@@ -129,7 +129,7 @@ class DX12FsrBackend extends UpscalingBackend {
 		if( !supported.has(FrameGen) )
 			return;
 		var res = 0;
-		proxy = FSR.createSwapChain(driver.window, driver.nativeFactory, driver.nativeQueue, driver.window.width, driver.window.height, DX12Driver.BUFFER_COUNT, R8G8B8A8_UNORM, res);
+		proxy = LimenFsr.createSwapChain(driver.window, driver.nativeFactory, driver.nativeQueue, driver.window.width, driver.window.height, DX12Driver.BUFFER_COUNT, R8G8B8A8_UNORM, res);
 		swapChainResult = res;
 		if( proxy == null ) {
 			trace('FSR frame generation swapchain unavailable ($res)');
@@ -137,7 +137,7 @@ class DX12FsrBackend extends UpscalingBackend {
 			return;
 		}
 		driver.setSwapChain(proxy);
-		var version = FSR.getEffectVersion(postProcessDevice, FSREffect.FRAME_GENERATION);
+		var version = LimenFsr.getEffectVersion(postProcessDevice, FSREffect.FRAME_GENERATION);
 		fgName = version == null ? "FSR FG" : "FSR FG " + version;
 	}
 
@@ -148,7 +148,7 @@ class DX12FsrBackend extends UpscalingBackend {
 
 	override function beforeQueuePresent() {
 		if( antiLag2Ready && proxy != null )
-			antiLag2Result = FSR.antiLag2Present(proxy, antiLag2Mode != Off);
+			antiLag2Result = LimenFsr.antiLag2Present(proxy, antiLag2Mode != Off);
 	}
 
 	override function afterQueuePresent() {
@@ -170,22 +170,22 @@ class DX12FsrBackend extends UpscalingBackend {
 		if( proxy != null ) {
 			driver.waitGpu();
 			destroyFgContext();
-			FSR.waitForPresents();
-			FSR.destroySwapChainContext();
+			LimenFsr.waitForPresents();
+			LimenFsr.destroySwapChainContext();
 			var swapChain = driver.swapChain;
 			driver.setSwapChain(null);
-			var refsLeft = FSR.releaseSwapChain(swapChain);
+			var refsLeft = LimenFsr.releaseSwapChain(swapChain);
 			if( Upscaling.DEBUG || refsLeft != 0 )
 				trace('FSR frame generation swapchain released ($refsLeft refs left)');
 			proxy = null;
 		}
 		destroyContext();
 		if( antiLag2Ready ) {
-			FSR.antiLag2DeInit();
+			LimenFsr.antiLag2DeInit();
 			antiLag2Ready = false;
 		}
 		if( loaded ) {
-			FSR.shutdown();
+			LimenFsr.shutdown();
 			loaded = false;
 		}
 		uiRegistered = false;
@@ -194,7 +194,7 @@ class DX12FsrBackend extends UpscalingBackend {
 
 	override function getName( f : UpscalingFeature ) : String {
 		return switch( f ) {
-			case Upscaler: context != null ? "FSR " + FSR.getVersion(context) : "FSR";
+			case Upscaler: context != null ? "FSR " + LimenFsr.getVersion(context) : "FSR";
 			case FrameGen: fgName != null ? fgName : "FSR FG";
 			case LowLatency: "Anti-Lag 2";
 		}
@@ -241,7 +241,7 @@ class DX12FsrBackend extends UpscalingBackend {
 			return settings;
 		var renderWidth = targetWidth;
 		var renderHeight = targetHeight;
-		var res = FSR.getRenderResolution(postProcessDevice, getQuality(mode), targetWidth, targetHeight, renderWidth, renderHeight);
+		var res = LimenFsr.getRenderResolution(postProcessDevice, getQuality(mode), targetWidth, targetHeight, renderWidth, renderHeight);
 		if( res != FSRResult.Ok ) {
 			trace('FSR render resolution query failed ($res)');
 			renderWidth = targetWidth;
@@ -282,14 +282,14 @@ class DX12FsrBackend extends UpscalingBackend {
 		if( output.width != contextWidth || output.height != contextHeight || flags != contextFlags ) {
 			destroyContext();
 			var res = 0;
-			context = FSR.createContext(postProcessDevice, flags, output.width, output.height, output.width, output.height, res);
+			context = LimenFsr.createContext(postProcessDevice, flags, output.width, output.height, output.width, output.height, res);
 			contextWidth = output.width;
 			contextHeight = output.height;
 			contextFlags = flags;
 			if( context == null )
 				trace('FSR context creation failed ($res)');
 			else
-				trace('FSR ${FSR.getVersion(context)} context ${output.width}x${output.height}');
+				trace('FSR ${LimenFsr.getVersion(context)} context ${output.width}x${output.height}');
 		}
 		if( context == null )
 			return;
@@ -334,7 +334,7 @@ class DX12FsrBackend extends UpscalingBackend {
 		d.flags = dispatchFlags;
 
 		driver.beginEvent("FSR");
-		var res = FSR.dispatch(context, cmd, d);
+		var res = LimenFsr.dispatch(context, cmd, d);
 		driver.endEvent();
 		driver.endExternalCommands();
 		if( res != lastResult ) {
@@ -356,7 +356,7 @@ class DX12FsrBackend extends UpscalingBackend {
 	function destroyContext() {
 		if( context != null ) {
 			driver.waitGpu();
-			FSR.destroyContext(context);
+			LimenFsr.destroyContext(context);
 			context = null;
 		}
 		contextWidth = -1;
@@ -405,10 +405,10 @@ class DX12FsrBackend extends UpscalingBackend {
 		if( proxy == null )
 			return;
 		if( ui != null ) {
-			FSR.registerUiResource(ui.t.res, ui.t.state, FSRUiCompositionFlag.USE_PREMUL_ALPHA | FSRUiCompositionFlag.ENABLE_INTERNAL_UI_DOUBLE_BUFFERING);
+			LimenFsr.registerUiResource(ui.t.res, ui.t.state, FSRUiCompositionFlag.USE_PREMUL_ALPHA | FSRUiCompositionFlag.ENABLE_INTERNAL_UI_DOUBLE_BUFFERING);
 			uiRegistered = true;
 		} else if( uiRegistered ) {
-			FSR.registerUiResource(null, COMMON, 0);
+			LimenFsr.registerUiResource(null, COMMON, 0);
 			uiRegistered = false;
 		}
 	}
@@ -428,15 +428,15 @@ class DX12FsrBackend extends UpscalingBackend {
 		cfg.enabled = enabled;
 		cfg.allowAsyncWorkloads = FRAME_GEN_ASYNC;
 		cfg.onlyPresentGenerated = false;
-		return FSR.configureFrameGen(fgContext, cfg);
+		return LimenFsr.configureFrameGen(fgContext, cfg);
 	}
 
 	function destroyFgContext() {
 		if( fgContext != null ) {
 			driver.waitGpu();
 			configureFrameGen(false);
-			FSR.waitForPresents();
-			FSR.destroyContext(fgContext);
+			LimenFsr.waitForPresents();
+			LimenFsr.destroyContext(fgContext);
 			fgContext = null;
 		}
 		fgContextWidth = -1;
@@ -465,7 +465,7 @@ class DX12FsrBackend extends UpscalingBackend {
 			if( driver.currentWidth != fgContextWidth || driver.currentHeight != fgContextHeight || flags != fgContextFlags ) {
 				destroyFgContext();
 				var res = 0;
-				fgContext = FSR.createFrameGenContext(driver.nativeDevice, flags, driver.currentWidth, driver.currentHeight, driver.currentWidth, driver.currentHeight, DxgiFormat.R8G8B8A8_UNORM, DxgiFormat.UNKNOWN, res);
+				fgContext = LimenFsr.createFrameGenContext(driver.nativeDevice, flags, driver.currentWidth, driver.currentHeight, driver.currentWidth, driver.currentHeight, DxgiFormat.R8G8B8A8_UNORM, DxgiFormat.UNKNOWN, res);
 				fgContextResult = res;
 				fgContextWidth = driver.currentWidth;
 				fgContextHeight = driver.currentHeight;
@@ -519,7 +519,7 @@ class DX12FsrBackend extends UpscalingBackend {
 		d.flags = FRAME_GEN_DEBUG_FLAGS;
 
 		driver.beginEvent("FSR FG Prepare");
-		fgPrepareResult = FSR.dispatchFrameGenPrepare(fgContext, cmd, d);
+		fgPrepareResult = LimenFsr.dispatchFrameGenPrepare(fgContext, cmd, d);
 		driver.endEvent();
 		driver.endExternalCommands();
 		fgPreparedFrame = fgFrameId;
@@ -564,7 +564,7 @@ class DX12FsrBackend extends UpscalingBackend {
 
 	override function lowLatencySleep() {
 		if( antiLag2Ready )
-			antiLag2Result = FSR.antiLag2Update(antiLag2Mode != Off, antiLag2MaxFps);
+			antiLag2Result = LimenFsr.antiLag2Update(antiLag2Mode != Off, antiLag2MaxFps);
 	}
 
 	function debugFsr() : String {
@@ -590,9 +590,9 @@ class DX12FsrBackend extends UpscalingBackend {
 		buf.add('framesPresentedPerFrame=${fgSettings.framesPresented}\n');
 		var total = 0.;
 		var aliasable = 0.;
-		if( fgContext != null && FSR.queryFrameGenMemory(fgContext, total, aliasable) == FSRResult.Ok )
+		if( fgContext != null && LimenFsr.queryFrameGenMemory(fgContext, total, aliasable) == FSRResult.Ok )
 			buf.add('memory: frameGen=${Std.int(total / 1048576)}MB (aliasable ${Std.int(aliasable / 1048576)}MB)');
-		if( FSR.querySwapChainMemory(total, aliasable) == FSRResult.Ok )
+		if( LimenFsr.querySwapChainMemory(total, aliasable) == FSRResult.Ok )
 			buf.add(' swapchain=${Std.int(total / 1048576)}MB');
 		buf.add('\n');
 		var status = fgSettings.status;

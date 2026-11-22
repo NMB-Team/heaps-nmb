@@ -3,11 +3,11 @@ package h3d.impl.driver.vulkan.resource;
 #if (limen && gfx_vulkan)
 import haxe.Int64;
 import h3d.impl.driver.vulkan.memory.VulkanMemoryAllocator;
-import limen.graphics.renderer.vulkan.memory.Memory.VkDeviceMemory;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator as Vma;
-import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator.AllocationHandle;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.vulkan.memory.Memory.VkDeviceMemory;
+import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.vulkan.memory.VmaMemoryAllocator as Vma;
+import limen.vulkan.memory.VmaMemoryAllocator.AllocationHandle;
+import limen.vulkan.Context;
 
 enum abstract VulkanMemoryClass(Int) {
 	var DeviceBuffer;
@@ -35,7 +35,7 @@ class VulkanAllocation {
 	var owners = 1;
 
 	public function new(allocator:VulkanMemoryAllocator, handle:AllocationHandle,
-		context:VkContext, debugId:Int, debugName:String) {
+		context:Context, debugId:Int, debugName:String) {
 		this.allocator = allocator;
 		this.handle = handle;
 		this.debugId = debugId;

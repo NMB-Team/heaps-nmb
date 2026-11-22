@@ -1,12 +1,12 @@
 package h3d.impl.driver.vulkan.swapchain;
 
 #if (limen && gfx_vulkan)
-import limen.graphics.renderer.vulkan.command.Commands.VkFence;
-import limen.graphics.renderer.vulkan.command.Commands.VkSemaphore;
+import limen.vulkan.command.Commands.VkFence;
+import limen.vulkan.command.Commands.VkSemaphore;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
+import limen.vulkan.memory.Memory.VkImage;
+import limen.vulkan.memory.Memory.VkImageView;
+import limen.vulkan.memory.Memory.VkImageLayout;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
 import h3d.impl.driver.vulkan.attachment.VulkanRenderingTargetSet;
 

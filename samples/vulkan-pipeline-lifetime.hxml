@@ -1,6 +1,7 @@
 -cp samples
 -lib heaps
 -lib limen
+-D hl-ver=1.15.0
 -D gfx_vulkan
 -main VulkanPipelineLifetimeDiagnostic
 -hl tests/pipeline-lifetime.hl

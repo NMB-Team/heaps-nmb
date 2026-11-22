@@ -9,46 +9,46 @@ import h3d.impl.driver.Texture;
 import h3d.impl.driver.dx11.CompiledShader;
 import h3d.impl.driver.dx11.ShaderContext;
 
-import limen.graphics.renderer.d3d11.DX11Core.Format;
-import limen.graphics.renderer.d3d11.resource.Resources.MapType;
-import limen.graphics.renderer.d3d11.resource.Resources.Resource;
-import limen.graphics.renderer.d3d11.resource.Resources.ResourceBind;
-import limen.graphics.renderer.d3d11.resource.Resources.ResourceBox;
-import limen.graphics.renderer.d3d11.resource.Resources.ResourceMisc;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews.RenderTargetDesc;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews.RenderTargetView;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceView;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews.ShaderResourceViewDesc;
-import limen.graphics.renderer.d3d11.resource.Resources.Texture2dDesc;
-import limen.graphics.renderer.d3d11.pipeline.InputLayout.Layout;
-import limen.graphics.renderer.d3d11.pipeline.InputLayout.LayoutElement;
-import limen.graphics.renderer.d3d11.shader.Shaders.Shader;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.AddressMode;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.Blend;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.BlendOp;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.BlendState;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.ComparisonFunc;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.CullMode;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.DepthStencilDesc;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.DepthStencilState;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews.DepthStencilView;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.FillMode;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.Filter;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.RasterizerDesc;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.RasterState;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.RenderTargetBlendDesc;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.SamplerDesc;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.SamplerState;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline.StencilOp;
-import limen.graphics.renderer.d3d11.internal.D3D11Bindings as Driver;
-import limen.graphics.renderer.d3d11.command.Commands as DX11Commands;
-import limen.graphics.renderer.d3d11.descriptor.ResourceViews as DX11ResourceViews;
-import limen.graphics.renderer.d3d11.pipeline.InputLayout as DX11InputLayout;
-import limen.graphics.renderer.d3d11.pipeline.Pipeline as DX11Pipeline;
-import limen.graphics.renderer.d3d11.resource.Resources as DX11Resources;
-import limen.graphics.renderer.d3d11.shader.ShaderCompiler as DX11ShaderCompiler;
-import limen.graphics.renderer.d3d11.shader.Shaders as DX11Shaders;
-import limen.graphics.renderer.d3d11.DX11Core.Dx11DriverInitFlags;
+import limen.d3d11.Types.Format;
+import limen.d3d11.resource.Resources.MapType;
+import limen.d3d11.resource.Resources.Resource;
+import limen.d3d11.resource.Resources.ResourceBind;
+import limen.d3d11.resource.Resources.ResourceBox;
+import limen.d3d11.resource.Resources.ResourceMisc;
+import limen.d3d11.descriptor.ResourceViews.RenderTargetDesc;
+import limen.d3d11.descriptor.ResourceViews.RenderTargetView;
+import limen.d3d11.descriptor.ResourceViews.ShaderResourceView;
+import limen.d3d11.descriptor.ResourceViews.ShaderResourceViewDesc;
+import limen.d3d11.resource.Resources.Texture2dDesc;
+import limen.d3d11.pipeline.InputLayout.Layout;
+import limen.d3d11.pipeline.InputLayout.LayoutElement;
+import limen.d3d11.shader.Shaders.Shader;
+import limen.d3d11.pipeline.Pipeline.AddressMode;
+import limen.d3d11.pipeline.Pipeline.Blend;
+import limen.d3d11.pipeline.Pipeline.BlendOp;
+import limen.d3d11.pipeline.Pipeline.BlendState;
+import limen.d3d11.pipeline.Pipeline.ComparisonFunc;
+import limen.d3d11.pipeline.Pipeline.CullMode;
+import limen.d3d11.pipeline.Pipeline.DepthStencilDesc;
+import limen.d3d11.pipeline.Pipeline.DepthStencilState;
+import limen.d3d11.descriptor.ResourceViews.DepthStencilView;
+import limen.d3d11.pipeline.Pipeline.FillMode;
+import limen.d3d11.pipeline.Pipeline.Filter;
+import limen.d3d11.pipeline.Pipeline.RasterizerDesc;
+import limen.d3d11.pipeline.Pipeline.RasterState;
+import limen.d3d11.pipeline.Pipeline.RenderTargetBlendDesc;
+import limen.d3d11.pipeline.Pipeline.SamplerDesc;
+import limen.d3d11.pipeline.Pipeline.SamplerState;
+import limen.d3d11.pipeline.Pipeline.StencilOp;
+import limen.d3d11.internal.D3D11Bindings as Driver;
+import limen.d3d11.command.Commands as DX11Commands;
+import limen.d3d11.descriptor.ResourceViews as DX11ResourceViews;
+import limen.d3d11.pipeline.InputLayout as DX11InputLayout;
+import limen.d3d11.pipeline.Pipeline as DX11Pipeline;
+import limen.d3d11.resource.Resources as DX11Resources;
+import limen.d3d11.shader.ShaderCompiler as DX11ShaderCompiler;
+import limen.d3d11.shader.Shaders as DX11Shaders;
+import limen.d3d11.DriverFlags;
 
 private typedef DX11Texture = {
 	res : Resource,
@@ -67,7 +67,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	static inline var BLEND_FACTORS = NTARGETS;
 
 	var driver : Dynamic;
-	final memoryInfo = new limen.graphics.renderer.d3d11.internal.D3D11Bindings.QueryVideoMemoryInfo();
+	final memoryInfo = new limen.d3d11.internal.D3D11Bindings.QueryVideoMemoryInfo();
 	var shaders : Map<Int,CompiledShader>;
 
 	var hasDeviceError = false;
@@ -121,7 +121,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	var depthBiasBits = 0;
 	var shaderVersion : String;
 
-	var window : limen.platform.window.Window;
+	var window : limen.Window;
 	var curTexture : h3d.mat.Texture;
 
 	var mapCount : Int;
@@ -132,13 +132,13 @@ class DX11Driver extends h3d.impl.driver.Driver {
 	public var depthStencilFormat : Format = D24_UNORM_S8_UINT;
 
 	public function new() {
-		window = @:privateAccess limen.platform.window.Window.windows[0];
+		window = @:privateAccess limen.Window.windows[0];
 		Driver.setErrorHandler(onDXError);
 		reset();
 	}
 
-	public dynamic function getDriverFlags() : Dx11DriverInitFlags {
-		var options : Dx11DriverInitFlags = None;
+	public dynamic function getDriverFlags() : DriverFlags {
+		var options : DriverFlags = None;
 		#if debug
 		options |= DebugLayer;
 		#end

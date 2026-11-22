@@ -25,15 +25,15 @@ private typedef Program = js.html.webgl.Program;
 private typedef GLShader = js.html.webgl.Shader;
 private typedef Framebuffer = js.html.webgl.Framebuffer;
 #elseif limen
-import limen.graphics.renderer.opengl.OpenGL;
-private typedef Uniform = limen.graphics.renderer.opengl.shader.Shaders.Uniform;
-private typedef Program = limen.graphics.renderer.opengl.shader.Shaders.Program;
-private typedef GLShader = limen.graphics.renderer.opengl.shader.Shaders.Shader;
-private typedef Framebuffer = limen.graphics.renderer.opengl.render.Framebuffers.Framebuffer;
-private typedef Texture = { t : limen.graphics.renderer.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int, ?uploadSizes : Map<Int, { width : Int, height : Int }> #if multidriver, driver : Driver #end };
+import limen.opengl.OpenGL;
+private typedef Uniform = limen.opengl.shader.Shaders.Uniform;
+private typedef Program = limen.opengl.shader.Shaders.Program;
+private typedef GLShader = limen.opengl.shader.Shaders.Shader;
+private typedef Framebuffer = limen.opengl.render.Framebuffers.Framebuffer;
+private typedef Texture = { t : limen.opengl.resource.Textures.Texture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int, ?uploadSizes : Map<Int, { width : Int, height : Int }> #if multidriver, driver : Driver #end };
 private typedef Query = h3d.impl.driver.Query;
-private typedef GlQuery = { q : limen.graphics.renderer.opengl.query.Queries.Query, kind : QueryKind };
-private typedef VertexArray = limen.graphics.renderer.opengl.vertex.VertexArrays.VertexArray;
+private typedef GlQuery = { q : limen.opengl.query.Queries.Query, kind : QueryKind };
+private typedef VertexArray = limen.opengl.vertex.VertexArrays.VertexArray;
 #elseif usegl
 import haxe.GLTypes;
 private typedef Uniform = haxe.GLTypes.Uniform;
@@ -190,7 +190,7 @@ class OpenGLDriver extends Driver {
 		commonFB = gl.createFramebuffer();
 		#if (hl && limen)
 		gl.bindFramebuffer(GL.FRAMEBUFFER, commonFB);
-		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x8D40, cast commonFB, "Heaps framebuffer");
+		limen.opengl.internal.OpenGLBindings.objectLabel(0x8D40, cast commonFB, "Heaps framebuffer");
 		gl.bindFramebuffer(GL.FRAMEBUFFER, null);
 		#end
 		programs = new Map();
@@ -304,7 +304,7 @@ class OpenGLDriver extends Driver {
 	static function onFeatureRequested( f : Feature ) : Bool {
 		#if limen
 		if( f != ComputeShaders ) return false;
-		if( @:privateAccess limen.platform.window.Window.windows.length > 0 )
+		if( @:privateAccess limen.Window.windows.length > 0 )
 			throw "Driver.requestFeature(ComputeShaders) must be called before the window is created";
 		computeEnabled = true;
 		return true;
@@ -1308,7 +1308,7 @@ class OpenGLDriver extends Driver {
 		t.flags.unset(WasCleared);
 		gl.bindTexture(bind, tt.t);
 		#if (hl && limen)
-		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
+		limen.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
 		#end
 		var outOfMem = false;
 
@@ -1415,7 +1415,7 @@ class OpenGLDriver extends Driver {
 		t.flags.unset(WasCleared);
 		gl.bindTexture(tt.bind, tt.t);
 		#if (hl && limen)
-		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
+		limen.opengl.internal.OpenGLBindings.objectLabel(0x1702, cast tt.t, t.name == null ? "Heaps texture" : t.name);
 		#end
 
 		#if (js || limen)
@@ -1466,7 +1466,7 @@ class OpenGLDriver extends Driver {
 		var type = b.flags.has(IndexBuffer) ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER;
 		gl.bindBuffer(type, vb);
 		#if (hl && limen)
-		limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast vb, "Heaps buffer");
+		limen.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast vb, "Heaps buffer");
 		#end
 		if( b.vertices * b.format.stride == 0 ) throw "assert";
 		#if js
@@ -1893,7 +1893,7 @@ class OpenGLDriver extends Driver {
 			var buf = gl.createBuffer();
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, buf);
 			#if limen
-			limen.graphics.renderer.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast buf, "Heaps indirect buffer");
+			limen.opengl.internal.OpenGLBindings.objectLabel(0x82E0, cast buf, "Heaps indirect buffer");
 			#end
 			gl.bufferData(GL.DRAW_INDIRECT_BUFFER, b.commandCount * 20, streamData(bytes.getData(),0, b.commandCount * 20), GL.DYNAMIC_DRAW);
 			gl.bindBuffer(GL.DRAW_INDIRECT_BUFFER, null);

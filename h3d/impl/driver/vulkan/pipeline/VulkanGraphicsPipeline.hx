@@ -3,31 +3,31 @@ package h3d.impl.driver.vulkan.pipeline;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
 import h3d.impl.driver.vulkan.resource.VulkanDeferredDestroyQueue;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.VulkanCore.IntArray;
-import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendFactor;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkDynamicState;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkGraphicsPipelineCreateInfo;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineColorBlend;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineColorBlendAttachmentState;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineDepthStencil;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineDynamic;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineInputAssembly;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineMultisample;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineRasterization;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineRenderingCreateInfo;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineVertexInput;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineViewport;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPolygonMode;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkStencilOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkVertexInputAttributeDescription;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkVertexInputBindingDescription;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.Types.IntArray;
+import limen.vulkan.format.Formats.VkFormat;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.Context;
+import limen.vulkan.pipeline.Pipeline.VkBlendFactor;
+import limen.vulkan.pipeline.Pipeline.VkBlendOp;
+import limen.vulkan.pipeline.Pipeline.VkDynamicState;
+import limen.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
+import limen.vulkan.pipeline.Pipeline.VkGraphicsPipelineCreateInfo;
+import limen.vulkan.pipeline.Pipeline.VkPipelineColorBlend;
+import limen.vulkan.pipeline.Pipeline.VkPipelineColorBlendAttachmentState;
+import limen.vulkan.pipeline.Pipeline.VkPipelineDepthStencil;
+import limen.vulkan.pipeline.Pipeline.VkPipelineDynamic;
+import limen.vulkan.pipeline.Pipeline.VkPipelineInputAssembly;
+import limen.vulkan.pipeline.Pipeline.VkPipelineMultisample;
+import limen.vulkan.pipeline.Pipeline.VkPipelineRasterization;
+import limen.vulkan.pipeline.Pipeline.VkPipelineRenderingCreateInfo;
+import limen.vulkan.pipeline.Pipeline.VkPipelineVertexInput;
+import limen.vulkan.pipeline.Pipeline.VkPipelineViewport;
+import limen.vulkan.pipeline.Pipeline.VkPolygonMode;
+import limen.vulkan.pipeline.Pipeline.VkCompareOp;
+import limen.vulkan.pipeline.Pipeline.VkStencilOp;
+import limen.vulkan.pipeline.Pipeline.VkVertexInputAttributeDescription;
+import limen.vulkan.pipeline.Pipeline.VkVertexInputBindingDescription;
 
 class VulkanVertexBinding {
 	public final binding:Int;
@@ -301,13 +301,13 @@ private class VulkanGraphicsPipelineEntry {
 }
 
 class VulkanGraphicsPipelineManager {
-	final context:VkContext;
+	final context:Context;
 	final buckets:Map<Int, Array<VulkanGraphicsPipelineEntry>> = new Map();
 	public var createdCount(default, null) = 0;
 	public var hitCount(default, null) = 0;
 	public var reclaimedCount(default, null) = 0;
 
-	public function new(context:VkContext) {
+	public function new(context:Context) {
 		this.context = context;
 	}
 

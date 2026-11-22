@@ -12,16 +12,16 @@ class EventTimestamp extends hxd.App {
 		if( event.timestamp == 0 )
 			return;
 		checkTimestamp(event.timestamp);
-		trace('${event.kind}: timestamp=${event.timestamp}, ageNs=${limen.platform.Platform.getTimestamp() - event.timestamp}, repeat=${event.isRepeat}');
+		trace('${event.kind}: timestamp=${event.timestamp}, ageNs=${limen.Platform.getTimestamp() - event.timestamp}, repeat=${event.isRepeat}');
 	}
 
 	private function onPadEvent(event : hxd.Pad.PadEvent) {
 		checkTimestamp(event.timestamp);
-		trace('${event.kind}: timestamp=${event.timestamp}, ageNs=${limen.platform.Platform.getTimestamp() - event.timestamp}');
+		trace('${event.kind}: timestamp=${event.timestamp}, ageNs=${limen.Platform.getTimestamp() - event.timestamp}');
 	}
 
 	private function checkTimestamp(timestamp : haxe.Int64) {
-		if( timestamp > limen.platform.Platform.getTimestamp() )
+		if( timestamp > limen.Platform.getTimestamp() )
 			throw "Native event timestamp is ahead of the SDL clock";
 	}
 	#end

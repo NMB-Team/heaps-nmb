@@ -3,16 +3,16 @@ package h3d.impl.driver.vulkan.pipeline;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader;
 import h3d.impl.driver.vulkan.resource.VulkanDeferredDestroyQueue;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkComputePipeline;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkComputePipelineCreateInfo;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
-import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.Context;
+import limen.vulkan.pipeline.Pipeline.VkComputePipeline;
+import limen.vulkan.pipeline.Pipeline.VkComputePipelineCreateInfo;
+import limen.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
+import limen.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 class VulkanComputePipeline {
 	public final program:VulkanCompiledShader;
-	public final layout:limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayout;
+	public final layout:limen.vulkan.pipeline.Pipeline.VkPipelineLayout;
 	public final handle:VkComputePipeline;
 	public final cacheKey:String;
 	public final debugName:String;
@@ -31,13 +31,13 @@ class VulkanComputePipeline {
 class VulkanComputePipelineManager {
 	static final ENTRY_POINT = @:privateAccess "main".toUtf8();
 
-	final context:VkContext;
+	final context:Context;
 	final pipelines:Map<String, VulkanComputePipeline> = new Map();
 	public var createdCount(default, null) = 0;
 	public var hitCount(default, null) = 0;
 	public var reclaimedCount(default, null) = 0;
 
-	public function new(context:VkContext) {
+	public function new(context:Context) {
 		this.context = context;
 	}
 

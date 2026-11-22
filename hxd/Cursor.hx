@@ -1,8 +1,8 @@
 package hxd;
 
 #if (limen && !macro)
-import limen.platform.Surface as LSurface;
-import limen.platform.cursor.Cursor as LCursor;
+import limen.Surface as LSurface;
+import limen.cursor.Cursor as LCursor;
 #end
 
 enum Cursor {

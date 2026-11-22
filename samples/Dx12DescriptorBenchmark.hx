@@ -64,7 +64,7 @@ class Dx12DescriptorBenchmark extends hxd.App {
 		if (++tick < 180) return;
 		final created = DescriptorHeapBase.totalCreations;
 		final cache = new h3d.impl.driver.dx12.descriptor.ScratchHeapArray(CBV_SRV_UAV, 16);
-		final released:Array<limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource> = [];
+		final released:Array<limen.d3d12.resource.Resources.Dx12Resource> = [];
 		final started = haxe.Timer.stamp();
 		var reserved = 0.;
 		for (size in 17...257) {
@@ -76,7 +76,7 @@ class Dx12DescriptorBenchmark extends hxd.App {
 			reserved = cache.getSize();
 		}
 		final growth = {creations:DescriptorHeapBase.totalCreations-created, ms:(haxe.Timer.stamp()-started)*1000, reserved_bytes:reserved};
-		@:privateAccess for (h in cache.heaps) (h.heap : limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource).release();
+		@:privateAccess for (h in cache.heaps) (h.heap : limen.d3d12.resource.Resources.Dx12Resource).release();
 		sys.io.File.saveContent(Sys.args()[0], haxe.Json.stringify({samples:samples, growth: growth}, null, "\t"));
 		engine.driver.dispose();
 		Sys.exit(0);

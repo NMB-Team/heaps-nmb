@@ -55,7 +55,7 @@ class VulkanPipelineLifetimeDiagnostic extends hxd.App {
 			d.ctx.waitIdle();
 			graphics.reclaimUnused(hxd.Timer.frameCount + 1, d.currentSubmissionSerial, d.deferredDestroy);
 			compute.reclaimUnused(hxd.Timer.frameCount + 1, d.currentSubmissionSerial, d.deferredDestroy);
-			d.deferredDestroy.collect(d.currentSubmissionSerial);
+			d.deferredDestroy.collect(d.currentSubmissionSerial, d.ctx);
 			check(compute.reclaimedCount == count, 'compute reclamation');
 			final before = graphics.createdCount;
 			graphics.get(desc, d.currentSubmissionSerial);
@@ -73,7 +73,7 @@ class VulkanPipelineLifetimeDiagnostic extends hxd.App {
 	}
 	static function main() {
 		hxd.GraphicsDriverConfig.setCurrent(Vulkan);
-		limen.graphics.renderer.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = Sys.args().indexOf('--validation') >= 0;
+		limen.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = Sys.args().indexOf('--validation') >= 0;
 		new VulkanPipelineLifetimeDiagnostic();
 	}
 }

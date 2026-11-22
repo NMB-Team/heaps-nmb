@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.descriptor;
 
 #if (limen && gfx_dx12)
-import limen.graphics.renderer.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
+import limen.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
 
 class ScratchHeapArray {
 	#if dx12_descriptor_profile
@@ -31,7 +31,7 @@ class ScratchHeapArray {
 		#end
 	}
 
-	public function checkSize(minSize:Int, toRelease:Array<limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource>) {
+	public function checkSize(minSize:Int, toRelease:Array<limen.d3d12.resource.Resources.Dx12Resource>) {
 		if(minSize <= size) return;
 		if(type == SAMPLER && minSize > 2048)
 			throw 'Shader-visible sampler heap exhausted (requested=$minSize, limit=2048)';

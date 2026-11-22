@@ -32,13 +32,20 @@ In order to compile the samples, go to the `samples` directory and run `haxe gen
 
 To compile:
 - For JS/WebGL: run `haxe [sample]_js.hxml`, then open `index.html` to run
-- For [HashLink](https://github.com/NMB-Team/hashlink-nmb): run `haxe [sample]_hl.hxml` then run `hl <sample>.hl` to run
+- For [HashLink](https://github.com/NMB-Team/hashlink-nmb), compile the generated
+  `[sample]_hl.hxml` (OpenGL), `[sample]_hlvulkan.hxml`, `[sample]_hldx11.hxml`,
+  or `[sample]_hldx12.hxml`, then run the resulting `.hl` file with `hl`.
 - For Consoles, contact us: nicolas@haxe.org
 
 HashLink graphics backends
 --------------------------
 
-HashLink-NMB builds use `-lib limen`. Enable the graphics backends that should be compiled into the build with these defines:
+HashLink-NMB builds use the current [Limen](https://github.com/NMB-Team/Limen)
+API, including `limen.Window` and backend packages such as `limen.vulkan`.
+Register a local checkout with `haxelib dev limen /path/to/Limen` and build
+against the native binaries from the same revision.
+
+Enable the graphics backends that should be compiled into the build with these defines:
 
 ```hxml
 -D gfx_dx11
@@ -51,6 +58,7 @@ Only compiled backends can be selected at runtime. A full Windows Limen build ca
 
 ```hxml
 -lib limen
+-D hl-ver=1.15.0
 -D gfx_dx11
 -D gfx_dx12
 -D gfx_vulkan

@@ -4,13 +4,13 @@ package h3d.impl.driver.vulkan.memory;
 import haxe.Int64;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation;
 import h3d.impl.driver.vulkan.resource.VulkanAllocation.VulkanMemoryClass;
-import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator as Vma;
-import limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator.AllocatorHandle;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.vulkan.memory.VmaMemoryAllocator as Vma;
+import limen.vulkan.memory.VmaMemoryAllocator.AllocatorHandle;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.Context;
+import limen.vulkan.memory.Memory.VkBuffer;
+import limen.vulkan.memory.Memory.VkImage;
+import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
 
 class VulkanMemoryAllocator {
 	public var cleanupCallback:Void->Bool;
@@ -18,14 +18,14 @@ class VulkanMemoryAllocator {
 	public var usedBytes(get, never):Int64;
 	public var allocationCount(get, never):Int;
 
-	final context:VkContext;
+	final context:Context;
 	final handle:AllocatorHandle;
 	var liveAllocationCount = 0;
 	var nextAllocationId = 1;
 	var disposed = false;
 	var recovering = false;
 
-	public function new(context:VkContext) {
+	public function new(context:Context) {
 		this.context = context;
 		var result = 0;
 		handle = Vma.create(context, result);

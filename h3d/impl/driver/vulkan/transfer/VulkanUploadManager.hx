@@ -10,15 +10,15 @@ import h3d.impl.driver.vulkan.resource.VulkanBuffer.VulkanUploadBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImageState;
 import h3d.impl.driver.vulkan.resource.VulkanResourceState;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.renderer.vulkan.command.Commands.VkPipelineStage2;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.command.Commands.VkCommandBuffer;
+import limen.vulkan.command.Commands.VkPipelineStage2;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.Context;
+import limen.vulkan.memory.Memory.VkAccess2;
+import limen.vulkan.memory.Memory.VkBufferImageCopy;
+import limen.vulkan.memory.Memory.VkBufferUsageFlag;
+import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
 
 private class VulkanUploadPage {
 	public var buffer:VulkanUploadBuffer;
@@ -44,7 +44,7 @@ class VulkanConstantUpload {
 }
 
 class VulkanUploadManager {
-	final context:VkContext;
+	final context:Context;
 	final allocator:VulkanMemoryAllocator;
 	final pageSize:Int;
 	final frames:Array<Array<VulkanUploadPage>>;
@@ -65,7 +65,7 @@ class VulkanUploadManager {
 	static final HOST_VISIBLE = 1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_VISIBLE);
 	static final HOST_COHERENT = 1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_COHERENT);
 
-	public function new(context:VkContext, allocator:VulkanMemoryAllocator, frameCount:Int, pageSize = 8 << 20) {
+	public function new(context:Context, allocator:VulkanMemoryAllocator, frameCount:Int, pageSize = 8 << 20) {
 		this.context = context;
 		this.allocator = allocator;
 		this.pageSize = pageSize;

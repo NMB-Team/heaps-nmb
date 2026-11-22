@@ -74,7 +74,7 @@ class VulkanTransientScopes extends hxd.App {
 	}
 
 	static function main() {
-		limen.graphics.renderer.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
+		limen.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
 		new VulkanTransientScopes();
 	}
 }

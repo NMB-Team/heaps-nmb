@@ -9,14 +9,14 @@ import h3d.impl.driver.vulkan.resource.VulkanBuffer.VulkanReadbackBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImage;
 import h3d.impl.driver.vulkan.resource.VulkanResourceState;
 import hxd.PixelFormat;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBufferImageCopy;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImage;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.command.Commands.VkCommandBuffer;
+import limen.vulkan.format.Formats.VkFormat;
+import limen.vulkan.Context;
+import limen.vulkan.memory.Memory.VkBufferImageCopy;
+import limen.vulkan.memory.Memory.VkImage;
+import limen.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
 
 class VulkanImageReadbackRequest {
 	public final source:VkImage;
@@ -114,7 +114,7 @@ private class VulkanCachedReadback {
 }
 
 class VulkanReadbackManager {
-	final context:VkContext;
+	final context:Context;
 	final allocator:VulkanMemoryAllocator;
 	final pending:Array<Array<VulkanPendingReadback>>;
 	final available:Array<VulkanCachedReadback> = [];
@@ -136,7 +136,7 @@ class VulkanReadbackManager {
 	static final HOST_VISIBLE = 1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_VISIBLE);
 	static final HOST_CACHED = 1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_CACHED);
 
-	public function new(context:VkContext, allocator:VulkanMemoryAllocator, frameCount:Int) {
+	public function new(context:Context, allocator:VulkanMemoryAllocator, frameCount:Int) {
 		this.context = context;
 		this.allocator = allocator;
 		pending = [for (_ in 0...frameCount) []];
@@ -174,7 +174,7 @@ class VulkanReadbackManager {
 		region.imageHeight = request.height;
 		region.imageDepth = 1;
 		command.copyImageToBuffer2(request.source, TRANSFER_SRC_OPTIMAL, readback.buffer, 1,
-			limen.graphics.renderer.vulkan.internal.VulkanBindings.makeRef(region));
+			limen.vulkan.internal.VulkanBindings.makeRef(region));
 		VulkanResourceState.transitionBuffer(command, readback, HostRead, Int64.ofInt(0), Int64.ofInt(size));
 		pending[frameIndex].push(new VulkanPendingReadback(readback, request.destination, request.destinationOffset, size,
 			request.sourceRowStride, request.destinationRowStride, request.rowCount(), request.callback));
@@ -261,7 +261,7 @@ class VulkanReadbackManager {
 	}
 
 	function createBuffer(size:Int):VulkanReadbackBuffer {
-		var usage = new haxe.EnumFlags<limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag>();
+		var usage = new haxe.EnumFlags<limen.vulkan.memory.Memory.VkBufferUsageFlag>();
 		usage.set(TRANSFER_DST);
 		final handle = context.createBuffer64((Int64.ofInt(size) : hl.I64), usage);
 		if (handle == null)

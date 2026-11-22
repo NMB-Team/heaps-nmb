@@ -1,7 +1,7 @@
 package hxd;
 
 #if limen
-import limen.graphics.GraphicsDriver as LimenGraphicsDriver;
+import limen.GraphicsDriver as LimenGraphicsDriver;
 #end
 
 final class GraphicsDriverConfig {

@@ -4,10 +4,10 @@ import haxe.Int64;
 
 #if hl
 #if limen
-import limen.platform.event.Event;
-import limen.platform.input.gamepad.Gamepad as GameController;
-import limen.platform.Platform as LPlatform;
-import limen.platform.event.EventType;
+import limen.Event;
+import limen.input.Gamepad as GameController;
+import limen.Platform as LPlatform;
+import limen.EventType;
 #elseif (usesys && !hlmesa)
 import haxe.GameController;
 #else
@@ -462,11 +462,11 @@ class Pad {
 	}
 
 	private static function onEvent( e : Event ){
-		var p = pads.get( e.controller ) ?? pads.get(0);
+		var p = pads.get( e.reference ) ?? pads.get(0);
 		switch( e.type ){
 			case GamepadAdded:
 				if( initDone )
-					initPad(e.controller, e.timestamp);
+					initPad(e.reference, e.timestamp);
 			case GamepadRemoved:
 				if( p != null ){
 					if (p.onPadEvent != null)

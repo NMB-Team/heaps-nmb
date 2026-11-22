@@ -4,13 +4,13 @@ package h3d.impl.driver.vulkan.query;
 import haxe.Int64;
 import hxd.Math;
 import h3d.impl.driver.QueryKind;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.query.Queries.VkQueryPool;
-import limen.graphics.renderer.vulkan.query.Queries.VkQueryPoolCreateInfo;
-import limen.graphics.renderer.vulkan.query.Queries.VkQueryResultFlag;
-import limen.graphics.renderer.vulkan.query.Queries.VkQueryType;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.command.Commands.VkCommandBuffer;
+import limen.vulkan.Context;
+import limen.vulkan.query.Queries.VkQueryPool;
+import limen.vulkan.query.Queries.VkQueryPoolCreateInfo;
+import limen.vulkan.query.Queries.VkQueryResultFlag;
+import limen.vulkan.query.Queries.VkQueryType;
 
 enum abstract VulkanQueryState(Int) {
 	final Idle;
@@ -81,13 +81,13 @@ class VulkanQueryManager {
 	static inline final VK_NOT_READY = 1;
 	static inline final UINT64_HIGH_BIT = 9223372036854775808.;
 
-	final context:VkContext;
+	final context:Context;
 	final timestampValidBits:Int;
 	final timestampPeriod:Float;
 	final preciseOcclusion:Bool;
 	final frames:Array<VulkanQueryFrame>;
 
-	public function new(context:VkContext, frameCount:Int, timestampValidBits:Int, timestampPeriod:Float, preciseOcclusion:Bool) {
+	public function new(context:Context, frameCount:Int, timestampValidBits:Int, timestampPeriod:Float, preciseOcclusion:Bool) {
 		this.context = context;
 		this.timestampValidBits = timestampValidBits;
 		this.timestampPeriod = timestampPeriod;

@@ -1,7 +1,7 @@
 package h3d.impl.driver.vulkan.resource;
 
 #if (limen && gfx_vulkan)
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
+import limen.vulkan.Context;
 
 private class VulkanRetiredResource {
 	public var serial:Int;
@@ -33,7 +33,7 @@ class VulkanDeferredDestroyQueue {
 		buffers.push(buffer);
 	}
 
-	public function collect(completedSerial:Int, context:VkContext) {
+	public function collect(completedSerial:Int, context:Context) {
 		var readIndex = 0;
 		var writeIndex = 0;
 		while (readIndex < retired.length) {
@@ -57,7 +57,7 @@ class VulkanDeferredDestroyQueue {
 		buffers.resize(writeIndex);
 	}
 
-	public function drain(context:VkContext) {
+	public function drain(context:Context) {
 		for (resource in retired)
 			resource.destroy();
 		retired.resize(0);

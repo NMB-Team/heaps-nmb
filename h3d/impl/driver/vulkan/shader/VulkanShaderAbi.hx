@@ -13,7 +13,7 @@ import hxsl.VulkanGlslLayout.VulkanGlslBinding;
 import hxsl.VulkanGlslLayout.VulkanGlslBindlessLayout;
 import hxsl.VulkanGlslLayout.VulkanGlslConstantBlock;
 import hxsl.VulkanGlslLayout.VulkanGlslConstantMember;
-import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
 
 enum abstract VulkanShaderStage(Int) from Int to Int {
 	final Vertex = 0x00000001;

@@ -1,11 +1,11 @@
 package hxd;
 
 #if limen
-import limen.platform.event.EventType;
-import limen.platform.event.Event as LEvent;
-import limen.platform.Platform as LPlatform;
-import limen.platform.Surface as LSurface;
-import limen.platform.cursor.Cursor as LCursor;
+import limen.EventType;
+import limen.Event as LEvent;
+import limen.Platform as LPlatform;
+import limen.Surface as LSurface;
+import limen.cursor.Cursor as LCursor;
 #end
 
 enum Platform {

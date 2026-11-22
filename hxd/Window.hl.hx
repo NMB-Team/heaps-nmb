@@ -6,12 +6,12 @@ import hxd.Key.KeyCode.*;
 import hxd.impl.MouseMode;
 
 #if limen
-import limen.platform.event.EventType;
-import limen.platform.event.Event as LEvent;
-import limen.platform.window.Window as LWindow;
-import limen.platform.window.WindowFlags;
-import limen.platform.Platform as LPlatform;
-import limen.platform.Surface as LSurface;
+import limen.EventType;
+import limen.Event as LEvent;
+import limen.Window as LWindow;
+import limen.window.WindowFlags;
+import limen.Platform as LPlatform;
+import limen.Surface as LSurface;
 #end
 
 typedef Monitor = {

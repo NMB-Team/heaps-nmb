@@ -5,16 +5,16 @@ import h3d.mat.Texture;
 import h3d.mat.Data.Filter;
 import h3d.mat.Data.MipMap;
 import h3d.mat.Data.Wrap;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkFilter;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkBorderColor;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerAddressMode;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerCreateInfo;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSamplerMipmapMode;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.vulkan.Context;
+import limen.vulkan.pipeline.Pipeline.VkCompareOp;
+import limen.vulkan.pipeline.Pipeline.VkFilter;
+import limen.vulkan.sampler.Samplers.VkBorderColor;
+import limen.vulkan.sampler.Samplers.VkSampler;
+import limen.vulkan.sampler.Samplers.VkSamplerAddressMode;
+import limen.vulkan.sampler.Samplers.VkSamplerCreateInfo;
+import limen.vulkan.sampler.Samplers.VkSamplerMipmapMode;
 
 class VulkanSamplerHandle {
 	public final sampler:VkSampler;
@@ -27,14 +27,14 @@ class VulkanSamplerHandle {
 }
 
 class VulkanSamplerCache {
-	final context:VkContext;
+	final context:Context;
 	final limits:VkPhysicalDeviceLimits;
 	final anisotropySupported:Bool;
 	final samplers:Map<Int, VulkanSamplerHandle> = new Map();
 	public var creationCount(default, null) = 0;
 	public var cacheHitCount(default, null) = 0;
 
-	public function new(context:VkContext, limits:VkPhysicalDeviceLimits, anisotropySupported:Bool) {
+	public function new(context:Context, limits:VkPhysicalDeviceLimits, anisotropySupported:Bool) {
 		this.context = context;
 		this.limits = limits;
 		this.anisotropySupported = anisotropySupported;

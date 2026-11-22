@@ -3,11 +3,11 @@ package h3d.impl.driver.vulkan.shader;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.ShaderKind;
-import limen.graphics.renderer.vulkan.shader.ShaderCompiler;
-import limen.graphics.renderer.vulkan.shader.ShaderCompiler.ShaderCompileRequest;
-import limen.graphics.renderer.vulkan.shader.ShaderCompiler.ShaderOptimizationMode;
-import limen.graphics.renderer.vulkan.shader.SpirvReflection;
+import limen.vulkan.internal.VulkanBindings.ShaderKind;
+import limen.vulkan.shader.ShaderCompiler;
+import limen.vulkan.shader.ShaderCompiler.ShaderCompileRequest;
+import limen.vulkan.shader.ShaderCompiler.ShaderOptimizationMode;
+import limen.vulkan.shader.SpirvReflection;
 
 class VulkanCompiledStageSource {
 	public final stage:VulkanShaderStage;
@@ -192,11 +192,11 @@ class VulkanShaderCompilerService {
 		return value == null ? 0. : 32. + 2. * (value.length + 1);
 	}
 
-	static function numericBytes(value:limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvNumericTraits):Float {
+	static function numericBytes(value:limen.vulkan.shader.SpirvReflection.SpirvNumericTraits):Float {
 		return 128. + 8. * value.arrayDimensions.length;
 	}
 
-	static function blockBytes(value:limen.graphics.renderer.vulkan.shader.SpirvReflection.SpirvBlockVariable):Float {
+	static function blockBytes(value:limen.vulkan.shader.SpirvReflection.SpirvBlockVariable):Float {
 		var bytes = 160. + stringBytes(value.name) + stringBytes(value.typeName) + numericBytes(value.numeric) + 16. * value.members.length;
 		for (member in value.members)
 			bytes += blockBytes(member);

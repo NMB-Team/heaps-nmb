@@ -52,7 +52,7 @@ class VulkanMemoryDiagnostic extends hxd.App {
 		final args = Sys.args();
 		if (args.indexOf("--stress") >= 0)
 			frameCount = 2048;
-		limen.graphics.renderer.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = args.indexOf("--validation") >= 0;
+		limen.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = args.indexOf("--validation") >= 0;
 		try {
 			new VulkanMemoryDiagnostic();
 		} catch (error:Dynamic) {

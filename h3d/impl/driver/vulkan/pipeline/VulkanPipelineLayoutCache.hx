@@ -3,16 +3,16 @@ package h3d.impl.driver.vulkan.pipeline;
 #if (limen && gfx_vulkan)
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi;
 import h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayout;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineLayoutCreateInfo;
-import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.Context;
+import limen.vulkan.pipeline.Pipeline.VkPipelineLayout;
+import limen.vulkan.pipeline.Pipeline.VkPipelineLayoutCreateInfo;
+import limen.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 class VulkanPipelineLayoutResource {
 	public final signature:String;
@@ -30,13 +30,13 @@ class VulkanPipelineLayoutResource {
 }
 
 class VulkanPipelineLayoutCache {
-	final context:VkContext;
+	final context:Context;
 	final layouts:Map<String, VulkanPipelineLayoutResource> = new Map();
 	final bindlessLayout:VkDescriptorSetLayout;
 	public var createdCount(default, null) = 0;
 	public var hitCount(default, null) = 0;
 
-	public function new(context:VkContext, bindlessLayout:VkDescriptorSetLayout = null) {
+	public function new(context:Context, bindlessLayout:VkDescriptorSetLayout = null) {
 		this.context = context;
 		this.bindlessLayout = bindlessLayout;
 	}

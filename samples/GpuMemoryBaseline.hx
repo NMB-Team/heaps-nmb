@@ -49,7 +49,7 @@ class GpuMemoryBaseline extends hxd.App {
 				budget = 0.;
 				for (i in 0...ctx.getMemoryHeapCount()) {
 					if ((ctx.getMemoryHeapFlags(i) & 1) == 0) continue;
-					final info = new limen.graphics.renderer.vulkan.memory.Memory.VkMemoryHeapBudgetInfo();
+					final info = new limen.vulkan.memory.Memory.VkMemoryHeapBudgetInfo();
 					ctx.getMemoryHeapBudget(i, info);
 					os += hxd.Math.int64ToFloat((info.usage : haxe.Int64));
 					budget += hxd.Math.int64ToFloat((info.budget : haxe.Int64));
@@ -79,8 +79,8 @@ class GpuMemoryBaseline extends hxd.App {
 			#end
 			#if !xbox
 			if (queryOs) {
-				final info = new limen.graphics.renderer.d3d12.internal.D3D12Bindings.QueryVideoMemoryInfo();
-				limen.graphics.renderer.d3d12.internal.D3D12Bindings.queryVideoMemoryInfo(0, info);
+				final info = new limen.d3d12.internal.D3D12Bindings.QueryVideoMemoryInfo();
+				limen.d3d12.internal.D3D12Bindings.queryVideoMemoryInfo(0, info);
 				os = hxd.Math.int64ToFloat(info.currentUsage);
 				budget = hxd.Math.int64ToFloat(info.budget);
 			}

@@ -48,7 +48,7 @@ class VulkanSamplerCacheDiagnostic extends hxd.App {
 
 	static function main() {
 		hxd.GraphicsDriverConfig.setCurrent(Vulkan);
-		limen.graphics.renderer.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
+		limen.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
 		new VulkanSamplerCacheDiagnostic();
 	}
 }

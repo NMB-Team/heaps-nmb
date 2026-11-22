@@ -2,26 +2,26 @@ package h3d.impl.driver.vulkan.descriptor;
 
 #if (limen && gfx_vulkan)
 import haxe.Int64;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorBindingFlag;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPool;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBindingFlagsCreateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.renderer.vulkan.device.Capabilities;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorBindingFlag;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPool;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPoolCreateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorPoolSize;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetAllocateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBinding;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutBindingFlagsCreateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayoutCreateInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.vulkan.device.Capabilities;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.Context;
+import limen.vulkan.memory.Memory.VkBuffer;
+import limen.vulkan.memory.Memory.VkImageLayout;
+import limen.vulkan.memory.Memory.VkImageView;
+import limen.vulkan.sampler.Samplers.VkSampler;
+import limen.vulkan.shader.ShaderModule.VkShaderStageFlag;
 
 private class VulkanBindlessImageSlot {
 	public var view:VkImageView;
@@ -106,7 +106,7 @@ class VulkanBindlessDescriptors {
 	public static inline final SAMPLER_BINDING = 1;
 	public static inline final BUFFER_BINDING = 2;
 
-	final context:VkContext;
+	final context:Context;
 	final generations:Array<VulkanBindlessGeneration> = [];
 	final imageSlots:Array<VulkanBindlessImageSlot>;
 	final samplerSlots:Array<VulkanBindlessSamplerSlot>;
@@ -133,7 +133,7 @@ class VulkanBindlessDescriptors {
 			&& capabilities.maxDescriptorSetUpdateAfterBindStorageBuffers > 0;
 	}
 
-	public function new(context:VkContext, capabilities:Capabilities, generationCount:Int) {
+	public function new(context:Context, capabilities:Capabilities, generationCount:Int) {
 		if (!supported(capabilities, generationCount))
 			throw "Vulkan bindless descriptors require the descriptor-indexing capability set";
 		this.context = context;

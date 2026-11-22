@@ -24,7 +24,7 @@ class MacroHelper {
 		if( Context.defined("limen") ) {
 			members = new Map();
 			for( module in ["command.Commands", "device.Capabilities", "format.Formats", "pipeline.State", "query.Queries", "render.Framebuffers", "resource.Buffers", "resource.Textures", "shader.Shaders", "vertex.VertexArrays"] ) {
-				var path = "limen.graphics.renderer.opengl." + module;
+				var path = "limen.opengl." + module;
 				switch( Context.getType(path) ) {
 				case TInst(c, _):
 					for( field in c.get().statics.get() ) members.set(field.name, path);

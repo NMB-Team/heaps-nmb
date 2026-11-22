@@ -2,28 +2,28 @@ package h3d.impl.driver.dx12;
 
 #if (limen && gfx_dx12)
 
-import limen.graphics.renderer.d3d12.DX12Core.Address;
-import limen.graphics.renderer.d3d12.DX12Core.ClearColor;
-import limen.graphics.renderer.d3d12.DX12Core.ClearValue;
-import limen.graphics.renderer.d3d12.DX12Core.Rect;
-import limen.graphics.renderer.d3d12.DX12Core.Viewport;
-import limen.graphics.renderer.d3d12.command.Commands.VertexBufferView;
-import limen.graphics.renderer.d3d12.descriptor.DescriptorHeap.DescriptorHeap;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.BufferSRV;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.ConstantBufferViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.DepthStencilViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.Tex2DSRV;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.UAVBufferViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.UAVTextureViewDesc;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings as Driver;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Constant;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
-import limen.graphics.renderer.d3d12.resource.Resources.HeapProperties;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceBarrier;
-import limen.graphics.renderer.d3d12.resource.Resources.SubResourceData;
-import limen.graphics.renderer.d3d12.resource.Resources.TextureCopyLocation;
+import limen.d3d12.Types.Address;
+import limen.d3d12.Types.ClearColor;
+import limen.d3d12.Types.ClearValue;
+import limen.d3d12.Types.Rect;
+import limen.d3d12.Types.Viewport;
+import limen.d3d12.command.Commands.VertexBufferView;
+import limen.d3d12.descriptor.DescriptorHeap.DescriptorHeap;
+import limen.d3d12.descriptor.ResourceViews.BufferSRV;
+import limen.d3d12.descriptor.ResourceViews.ConstantBufferViewDesc;
+import limen.d3d12.descriptor.ResourceViews.DepthStencilViewDesc;
+import limen.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
+import limen.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
+import limen.d3d12.descriptor.ResourceViews.Tex2DSRV;
+import limen.d3d12.descriptor.ResourceViews.UAVBufferViewDesc;
+import limen.d3d12.descriptor.ResourceViews.UAVTextureViewDesc;
+import limen.d3d12.internal.D3D12Bindings as Driver;
+import limen.d3d12.internal.D3D12Bindings.Constant;
+import limen.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
+import limen.d3d12.resource.Resources.HeapProperties;
+import limen.d3d12.resource.Resources.ResourceBarrier;
+import limen.d3d12.resource.Resources.SubResourceData;
+import limen.d3d12.resource.Resources.TextureCopyLocation;
 
 import h3d.impl.driver.dx12.resource.ResourceData;
 

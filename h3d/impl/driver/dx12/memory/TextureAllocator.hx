@@ -1,10 +1,10 @@
 package h3d.impl.driver.dx12.memory;
 
 #if (limen && gfx_dx12)
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings as Dx12;
-import limen.graphics.renderer.d3d12.resource.Resources.Heap;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceAllocationInfo;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceDesc;
+import limen.d3d12.internal.D3D12Bindings as Dx12;
+import limen.d3d12.resource.Resources.Heap;
+import limen.d3d12.resource.Resources.ResourceAllocationInfo;
+import limen.d3d12.resource.Resources.ResourceDesc;
 
 import h3d.impl.allocator.FreeListAllocator;
 import h3d.impl.allocator.ScalePolicy;

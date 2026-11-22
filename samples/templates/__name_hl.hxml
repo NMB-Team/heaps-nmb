@@ -1,5 +1,6 @@
 -lib heaps
 -lib limen
+-D hl-ver=1.15.0
 -hl ::name::.hl
 -main ::main::
 -D windowSize=1024x768

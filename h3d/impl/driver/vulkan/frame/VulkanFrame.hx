@@ -7,14 +7,14 @@ import h3d.impl.driver.vulkan.descriptor.VulkanBindlessDescriptors.VulkanBindles
 import h3d.impl.driver.vulkan.resource.VulkanBuffer;
 import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanTexture;
 import h3d.impl.driver.vulkan.shader.VulkanCompiledShader.VulkanDescriptorSetMetadata;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBuffer;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.renderer.vulkan.command.Commands.VkFence;
-import limen.graphics.renderer.vulkan.command.Commands.VkSemaphore;
+import limen.vulkan.command.Commands.VkCommandBuffer;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSetLayout;
+import limen.vulkan.memory.Memory.VkBuffer;
+import limen.vulkan.memory.Memory.VkImageView;
+import limen.vulkan.sampler.Samplers.VkSampler;
+import limen.vulkan.command.Commands.VkFence;
+import limen.vulkan.command.Commands.VkSemaphore;
 
 class VulkanDescriptorCacheEntry {
 	public final metadata:VulkanDescriptorSetMetadata;

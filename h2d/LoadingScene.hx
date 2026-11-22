@@ -19,7 +19,7 @@ class LoadingScene extends h2d.Scene {
 	#if usesys
 		haxe.System.emitEvents(@:privateAccess hxd.Window.inst.event);
 	#elseif limen
-		limen.platform.Platform.processEvents(@:privateAccess hxd.Window.inst.onEvent);
+		limen.Platform.processEvents(@:privateAccess hxd.Window.inst.onEvent);
 	#end
 
 		if ( renderTarget.width != engine.width || renderTarget.height != engine.height) {

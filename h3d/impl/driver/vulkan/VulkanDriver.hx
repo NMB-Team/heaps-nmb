@@ -61,61 +61,61 @@ import h3d.impl.driver.vulkan.shader.VulkanShaderCompilerService;
 import h3d.impl.driver.vulkan.shader.VulkanShaderCompilerService.VulkanCompiledProgramData;
 import h3d.impl.driver.vulkan.shader.VulkanShaderStageData;
 import h3d.impl.driver.vulkan.swapchain.VulkanSwapchainImage;
-import limen.graphics.renderer.vulkan.VulkanCore.ArrayStruct;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBuffer;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBufferAllocateInfo;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandBufferBeginInfo;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandPool;
-import limen.graphics.renderer.vulkan.command.Commands.VkCommandPoolCreateInfo;
-import limen.graphics.renderer.vulkan.command.Commands.VkDynamicRenderingClearInfo;
-import limen.graphics.renderer.vulkan.command.Commands.VkIndexType;
-import limen.graphics.renderer.vulkan.command.Commands.VkFilter;
-import limen.graphics.renderer.vulkan.command.Commands.VkImageBlitRegion;
-import limen.graphics.renderer.vulkan.command.Commands.VkPipelineStage2;
-import limen.graphics.renderer.vulkan.command.Commands.VkFenceCreateInfo;
-import limen.graphics.renderer.vulkan.command.Commands.VkSemaphore;
-import limen.graphics.renderer.vulkan.command.Commands.VkSemaphoreCreateInfo;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkWriteDescriptorSet;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorImageInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorBufferInfo;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorSet;
-import limen.graphics.renderer.vulkan.descriptor.Descriptors.VkDescriptorType;
-import limen.graphics.renderer.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
-import limen.graphics.renderer.vulkan.device.Capabilities;
-import limen.graphics.renderer.vulkan.format.Formats.VkFormat;
-import limen.graphics.renderer.vulkan.format.Formats.VkFormatFeature;
-import limen.graphics.renderer.vulkan.format.Formats.VkFormatProperties;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings as Vulkan;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkContext;
-import limen.graphics.renderer.vulkan.internal.VulkanBindings.VkSwapchainInfo;
-import limen.graphics.renderer.vulkan.memory.Memory.VkBufferUsageFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkAccess2;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageCreateInfo;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageLayout;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageView;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewCreateInfo;
-import limen.graphics.renderer.vulkan.memory.Memory.VkImageViewType;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryHeapBudgetInfo;
-import limen.graphics.renderer.vulkan.memory.Memory.VkMemoryPropertyFlag;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendFactor;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkBlendOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCompareOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkCullModeFlags;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkFrontFace;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPrimitiveTopology;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkStencilOp;
-import limen.graphics.renderer.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
-import limen.graphics.renderer.vulkan.render.RenderPass.VkClearAttachment;
-import limen.graphics.renderer.vulkan.render.RenderPass.VkClearRect;
-import limen.graphics.renderer.vulkan.query.Queries.VkQueryControlFlag;
-import limen.graphics.renderer.vulkan.Vulkan as VulkanRuntime;
-import limen.graphics.renderer.vulkan.shader.ShaderModule;
-import limen.graphics.renderer.vulkan.shader.ShaderModule.VkShaderStageFlag;
-import limen.graphics.renderer.vulkan.sampler.Samplers.VkSampler;
-import limen.graphics.renderer.vulkan.Surface;
+import limen.vulkan.Types.ArrayStruct;
+import limen.vulkan.command.Commands.VkCommandBuffer;
+import limen.vulkan.command.Commands.VkCommandBufferAllocateInfo;
+import limen.vulkan.command.Commands.VkCommandBufferBeginInfo;
+import limen.vulkan.command.Commands.VkCommandPool;
+import limen.vulkan.command.Commands.VkCommandPoolCreateInfo;
+import limen.vulkan.command.Commands.VkDynamicRenderingClearInfo;
+import limen.vulkan.command.Commands.VkIndexType;
+import limen.vulkan.command.Commands.VkFilter;
+import limen.vulkan.command.Commands.VkImageBlitRegion;
+import limen.vulkan.command.Commands.VkPipelineStage2;
+import limen.vulkan.command.Commands.VkFenceCreateInfo;
+import limen.vulkan.command.Commands.VkSemaphore;
+import limen.vulkan.command.Commands.VkSemaphoreCreateInfo;
+import limen.vulkan.internal.VulkanBindings;
+import limen.vulkan.descriptor.Descriptors.VkWriteDescriptorSet;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorImageInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorBufferInfo;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorSet;
+import limen.vulkan.descriptor.Descriptors.VkDescriptorType;
+import limen.vulkan.device.DeviceLimits.VkPhysicalDeviceLimits;
+import limen.vulkan.device.Capabilities;
+import limen.vulkan.format.Formats.VkFormat;
+import limen.vulkan.format.Formats.VkFormatFeature;
+import limen.vulkan.format.Formats.VkFormatProperties;
+import limen.vulkan.internal.VulkanBindings as Vulkan;
+import limen.vulkan.Context;
+import limen.vulkan.Context.VkSwapchainInfo;
+import limen.vulkan.memory.Memory.VkBufferUsageFlag;
+import limen.vulkan.memory.Memory.VkAccess2;
+import limen.vulkan.memory.Memory.VkImageAspectFlag;
+import limen.vulkan.memory.Memory.VkImageCreateInfo;
+import limen.vulkan.memory.Memory.VkImageLayout;
+import limen.vulkan.memory.Memory.VkImageView;
+import limen.vulkan.memory.Memory.VkImageViewCreateInfo;
+import limen.vulkan.memory.Memory.VkImageViewType;
+import limen.vulkan.memory.Memory.VkMemoryHeapBudgetInfo;
+import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
+import limen.vulkan.pipeline.Pipeline.VkBlendFactor;
+import limen.vulkan.pipeline.Pipeline.VkBlendOp;
+import limen.vulkan.pipeline.Pipeline.VkCompareOp;
+import limen.vulkan.pipeline.Pipeline.VkCullModeFlags;
+import limen.vulkan.pipeline.Pipeline.VkFrontFace;
+import limen.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
+import limen.vulkan.pipeline.Pipeline.VkPrimitiveTopology;
+import limen.vulkan.pipeline.Pipeline.VkStencilOp;
+import limen.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
+import limen.vulkan.render.RenderPass.VkClearAttachment;
+import limen.vulkan.render.RenderPass.VkClearRect;
+import limen.vulkan.query.Queries.VkQueryControlFlag;
+import limen.vulkan.Vulkan as VulkanRuntime;
+import limen.vulkan.shader.ShaderModule;
+import limen.vulkan.shader.ShaderModule.VkShaderStageFlag;
+import limen.vulkan.sampler.Samplers.VkSampler;
+import limen.vulkan.Surface;
 
 import hxd.Math;
 
@@ -206,7 +206,7 @@ private class VulkanMipmapShader extends hxsl.Shader {
 
 class VulkanDriver extends Driver {
 
-	var ctx : VkContext;
+	var ctx : Context;
 	var surface : Surface;
 	var capabilities : Capabilities;
 	var disposed = false;
@@ -245,7 +245,7 @@ class VulkanDriver extends Driver {
 	var commandPool : VkCommandPool;
 	var savedPointers : Array<Dynamic> = [];
 	var colorViewScratch = new hl.NativeArray<VkImageView>(0);
-	var vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(0);
+	var vertexBufferScratch = new hl.NativeArray<limen.vulkan.memory.Memory.VkBuffer>(0);
 	var vertexOffsetScratch = new hl.NativeArray<hl.I64>(0);
 	var descriptorWriteScratch = new hl.NativeArray<VkWriteDescriptorSet>(0);
 	final descriptorImageScratch:Array<VkDescriptorImageInfo> = [];
@@ -371,7 +371,7 @@ class VulkanDriver extends Driver {
 
 	public function new() {
 		var win = hxd.Window.getInstance();
-		final requirements = new limen.graphics.renderer.vulkan.VulkanRequirements();
+		final requirements = new limen.vulkan.VulkanRequirements();
 		#if renderdoc
 		requirements.renderdoc = true;
 		#end
@@ -1096,7 +1096,7 @@ class VulkanDriver extends Driver {
 		raw.dispose();
 	}
 
-	function captureImageSynchronous(source:limen.graphics.renderer.vulkan.memory.Memory.VkImage, resource:VulkanTexture,
+	function captureImageSynchronous(source:limen.vulkan.memory.Memory.VkImage, resource:VulkanTexture,
 		aspect:haxe.EnumFlags<VkImageAspectFlag>, mipLevel:Int, layer:Int, x:Int, y:Int, width:Int, height:Int,
 		vulkanFormat:VkFormat, heapsFormat:hxd.PixelFormat, blockWidth:Int, blockHeight:Int, bytesPerBlock:Int, pixels:hxd.Pixels,
 		rawRestoreLayout:VkImageLayout = UNDEFINED) {
@@ -1917,7 +1917,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		};
 
 		var bound = transient
-			? limen.graphics.renderer.vulkan.memory.VmaMemoryAllocator.bind_transient_image(@:privateAccess allocation.handle, img) == 0
+			? limen.vulkan.memory.VmaMemoryAllocator.bind_transient_image(@:privateAccess allocation.handle, img) == 0
 			: ctx.bindImageMemory64(img, allocation.memory, (allocation.offset : hl.I64));
 		if (!bound && transient) {
 			allocation.dispose();
@@ -1955,7 +1955,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final viewName = '$debugName-view';
 		ctx.setImageViewName(view, @:privateAccess viewName.toUtf8());
 
-		var aspect = new haxe.EnumFlags<limen.graphics.renderer.vulkan.memory.Memory.VkImageAspectFlag>();
+		var aspect = new haxe.EnumFlags<limen.vulkan.memory.Memory.VkImageAspectFlag>();
 		if( isDepth ) {
 			aspect.set(DEPTH);
 			if( t.hasStencil() )
@@ -2384,7 +2384,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			currentVertexBuffers[0] = vbuf;
 			return;
 		}
-		if( vertexBufferScratch.length < bindingCount ) vertexBufferScratch = new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(bindingCount);
+		if( vertexBufferScratch.length < bindingCount ) vertexBufferScratch = new hl.NativeArray<limen.vulkan.memory.Memory.VkBuffer>(bindingCount);
 		if( vertexOffsetScratch.length < bindingCount ) vertexOffsetScratch = new hl.NativeArray<hl.I64>(bindingCount);
 		for( binding in layout.bindings ) {
 			final vbuf:VulkanBuffer = @:privateAccess buffers[binding.sourceBuffer].vbuf;
@@ -3274,7 +3274,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					}
 
 				final buffers = bufferCount == 0 ? null : new hl.NativeArray<VulkanBuffer>(bufferCount);
-				final bufferHandles = bufferCount == 0 ? null : new hl.NativeArray<limen.graphics.renderer.vulkan.memory.Memory.VkBuffer>(bufferCount);
+				final bufferHandles = bufferCount == 0 ? null : new hl.NativeArray<limen.vulkan.memory.Memory.VkBuffer>(bufferCount);
 				final bufferRanges = bufferCount == 0 ? null : new hl.NativeArray<hl.I64>(bufferCount);
 				final images = imageCount == 0 ? null : new hl.NativeArray<VulkanTexture>(imageCount);
 				final views = imageCount == 0 ? null : new hl.NativeArray<VkImageView>(imageCount);

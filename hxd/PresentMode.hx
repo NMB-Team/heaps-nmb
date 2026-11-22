@@ -1,7 +1,7 @@
 package hxd;
 
 #if limen
-typedef PresentMode = limen.graphics.PresentMode;
+typedef PresentMode = limen.PresentMode;
 #else
 // litteraly from Limen
 enum abstract PresentMode(Int) from Int to Int {

@@ -17,66 +17,65 @@ import h3d.impl.driver.QueryKind;
 import h3d.impl.driver.Texture;
 import h3d.impl.Upscaling;
 
-import limen.graphics.renderer.d3d12.DX12Core.Address;
-import limen.graphics.renderer.d3d12.DX12Core.Box;
-import limen.graphics.renderer.d3d12.DX12Core.ClearValue;
-import limen.graphics.renderer.d3d12.DX12Core.DxgiFormat;
-import limen.graphics.renderer.d3d12.command.Commands.CommandAllocator;
-import limen.graphics.renderer.d3d12.command.Commands.CommandList;
-import limen.graphics.renderer.d3d12.command.Commands.CommandQueue;
-import limen.graphics.renderer.d3d12.command.Commands.CommandSignature;
-import limen.graphics.renderer.d3d12.command.Commands.CommandSignatureDesc;
-import limen.graphics.renderer.d3d12.command.Commands.Fence;
-import limen.graphics.renderer.d3d12.command.Commands.IndexBufferView;
-import limen.graphics.renderer.d3d12.command.Commands.IndirectArgumentDesc;
-import limen.graphics.renderer.d3d12.command.Commands.VertexBufferView;
-import limen.graphics.renderer.d3d12.command.Commands.WaitEvent;
-import limen.graphics.renderer.d3d12.descriptor.DescriptorHeap.DescriptorRange;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.Dx12ShaderResourceViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.Tex2DArraySRV;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.Tex2DSRV;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.Tex3DSRV;
-import limen.graphics.renderer.d3d12.descriptor.ResourceViews.TexCubeSRV;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings as Driver;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Constant;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Device;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Factory;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.SwapChain;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Dx12DriverInitFlag;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Dx12DriverInitFlags;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.Dx12DriverInstance;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.InfoQueueFilter;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.QueryVideoMemoryInfo;
-import limen.graphics.renderer.d3d12.pipeline.InputLayout.InputElementDesc;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.ComputePipelineStateDesc;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12Blend;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12BlendOp;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12ComparisonFunc;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12CullMode;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.Dx12StencilOp;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
-import limen.graphics.renderer.d3d12.pipeline.Pipeline.PipelineState;
-import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootParameterConstants;
-import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootParameterDescriptorTable;
-import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootSignature;
-import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootSignatureDesc;
-import limen.graphics.renderer.d3d12.pipeline.RootSignature.RootSignatureFlag;
-import limen.graphics.renderer.d3d12.query.Queries.QueryHeapDesc;
-import limen.graphics.renderer.d3d12.resource.Resources.Dx12Resource;
-import limen.graphics.renderer.d3d12.resource.Resources.GpuResource;
-import limen.graphics.renderer.d3d12.resource.Resources.HeapProperties;
-import limen.graphics.renderer.d3d12.resource.Resources.HeapFlag.CREATE_NOT_ZEROED;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceBarrier;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceDesc;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceFlag;
-import limen.graphics.renderer.d3d12.resource.Resources.ResourceState;
-import limen.graphics.renderer.d3d12.shader.ShaderCompiler;
+import limen.d3d12.Types.Address;
+import limen.d3d12.Types.Box;
+import limen.d3d12.Types.ClearValue;
+import limen.d3d12.Types.DxgiFormat;
+import limen.d3d12.command.Commands.CommandAllocator;
+import limen.d3d12.command.Commands.CommandList;
+import limen.d3d12.command.Commands.CommandQueue;
+import limen.d3d12.command.Commands.CommandSignature;
+import limen.d3d12.command.Commands.CommandSignatureDesc;
+import limen.d3d12.command.Commands.Fence;
+import limen.d3d12.command.Commands.IndexBufferView;
+import limen.d3d12.command.Commands.IndirectArgumentDesc;
+import limen.d3d12.command.Commands.VertexBufferView;
+import limen.d3d12.command.Commands.WaitEvent;
+import limen.d3d12.descriptor.DescriptorHeap.DescriptorRange;
+import limen.d3d12.descriptor.ResourceViews.Dx12ShaderResourceViewDesc;
+import limen.d3d12.descriptor.ResourceViews.RenderTargetViewDesc;
+import limen.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
+import limen.d3d12.descriptor.ResourceViews.Tex2DArraySRV;
+import limen.d3d12.descriptor.ResourceViews.Tex2DSRV;
+import limen.d3d12.descriptor.ResourceViews.Tex3DSRV;
+import limen.d3d12.descriptor.ResourceViews.TexCubeSRV;
+import limen.d3d12.internal.D3D12Bindings as Driver;
+import limen.d3d12.internal.D3D12Bindings.Constant;
+import limen.d3d12.Types.Device;
+import limen.d3d12.Types.Factory;
+import limen.d3d12.Types.SwapChain;
+import limen.d3d12.DriverFlags;
+import limen.d3d12.internal.D3D12Bindings.Dx12DriverInstance;
+import limen.d3d12.internal.D3D12Bindings.InfoQueueFilter;
+import limen.d3d12.internal.D3D12Bindings.QueryVideoMemoryInfo;
+import limen.d3d12.pipeline.InputLayout.InputElementDesc;
+import limen.d3d12.pipeline.Pipeline.ComputePipelineStateDesc;
+import limen.d3d12.pipeline.Pipeline.Dx12Blend;
+import limen.d3d12.pipeline.Pipeline.Dx12BlendOp;
+import limen.d3d12.pipeline.Pipeline.Dx12ComparisonFunc;
+import limen.d3d12.pipeline.Pipeline.Dx12CullMode;
+import limen.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
+import limen.d3d12.pipeline.Pipeline.Dx12StencilOp;
+import limen.d3d12.pipeline.Pipeline.GraphicsPipelineStateDesc;
+import limen.d3d12.pipeline.Pipeline.PipelineState;
+import limen.d3d12.pipeline.RootSignature.RootParameterConstants;
+import limen.d3d12.pipeline.RootSignature.RootParameterDescriptorTable;
+import limen.d3d12.pipeline.RootSignature.RootSignature;
+import limen.d3d12.pipeline.RootSignature.RootSignatureDesc;
+import limen.d3d12.pipeline.RootSignature.RootSignatureFlag;
+import limen.d3d12.query.Queries.QueryHeapDesc;
+import limen.d3d12.resource.Resources.Dx12Resource;
+import limen.d3d12.resource.Resources.GpuResource;
+import limen.d3d12.resource.Resources.HeapProperties;
+import limen.d3d12.resource.Resources.HeapFlag.CREATE_NOT_ZEROED;
+import limen.d3d12.resource.Resources.ResourceBarrier;
+import limen.d3d12.resource.Resources.ResourceDesc;
+import limen.d3d12.resource.Resources.ResourceFlag;
+import limen.d3d12.resource.Resources.ResourceState;
+import limen.d3d12.shader.ShaderCompiler;
 
 #if (gfx_d3d12ma && !console)
-import limen.graphics.renderer.d3d12.memory.D3D12MemoryAllocator;
+import limen.d3d12.memory.D3D12MemoryAllocator;
 import h3d.impl.driver.dx12.resource.ManagedBuffer;
 import h3d.impl.driver.dx12.resource.ManagedTexture;
 #end
@@ -109,7 +108,7 @@ import h3d.impl.driver.dx12.TempObjects;
 
 class DX12Driver extends h3d.impl.driver.Driver {
 
-	static inline function copyDescriptorsSimple(count:Int, dst:Address, src:Address, type:limen.graphics.renderer.d3d12.descriptor.DescriptorHeap.DescriptorHeapType) {
+	static inline function copyDescriptorsSimple(count:Int, dst:Address, src:Address, type:limen.d3d12.descriptor.DescriptorHeap.DescriptorHeapType) {
 		#if dx12_descriptor_profile
 		var started = haxe.Timer.stamp();
 		#end
@@ -125,7 +124,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	var driver : Dx12DriverInstance;
 	var hasDeviceError = false;
-	var window : limen.platform.window.Window;
+	var window : limen.Window;
 	var contextLost = new Map<h3d.Engine, Void -> Void>();
 	var frames : Array<DX12Frame>;
 	var frame : DX12Frame;
@@ -260,7 +259,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	public function new() {
-		window = @:privateAccess limen.platform.window.Window.windows[0];
+		window = @:privateAccess limen.Window.windows[0];
 		var backends : Array<UpscalingBackend> = [];
 		#if dlss_allowed backends.push(new h3d.impl.driver.dx12.upscaling.DX12DlssBackend(this)); #end
 		#if fsr_allowed backends.push(new h3d.impl.driver.dx12.upscaling.DX12FsrBackend(this)); #end
@@ -349,10 +348,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		psoConfigCache = PipelineCache.PipelineConfigCache.get();
 		psoConfigCache?.load();
 
-		var flags = new Dx12DriverInitFlags();
-		if( DEBUG ) {
-			flags.set(Dx12DriverInitFlag.DEBUG);
-		}
+		var flags = DEBUG ? DriverFlags.DebugLayer : DriverFlags.None;
 		driver = Driver.create(window, flags, DEVICE_NAME);
 		if( DEBUG ) suppressDebugMessages();
 		frames = [];
@@ -775,8 +771,11 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 		#end
 		if( frames != null ) {
-			for( f in frames )
+			for( f in frames ) {
+				while( f.toRelease.length > 0 )
+					f.toRelease.pop().release();
 				f.dynamicBufferAlloc?.dispose();
+			}
 			frames = [];
 		}
 		uploadBufferAlloc?.dispose();
@@ -2210,7 +2209,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 				t.t = td;
 				textures.push(t);
 				if( i == 0 ) {
-					var info = new limen.graphics.renderer.d3d12.resource.Resources.ResourceAllocationInfo();
+					var info = new limen.d3d12.resource.Resources.ResourceAllocationInfo();
 					Driver.getResourceAllocationInfo(desc, info);
 					bytes = info.sizeInBytes;
 				}

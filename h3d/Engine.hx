@@ -497,11 +497,11 @@ class Engine {
 
 	public function dispose() {
 		if( gpuTrace != null ) { gpuTrace.dispose(); gpuTrace = null; }
+		if( mem != null )
+			mem.dispose();
 		driver.dispose();
 		driver.removeEngine(this);
 		window.removeResizeEvent(onWindowResize);
-		if ( mem != null )
-			mem.dispose();
 		#if multidriver
 		for ( r in resCache ) {
 			var resource = Std.downcast(r, hxd.res.Resource);

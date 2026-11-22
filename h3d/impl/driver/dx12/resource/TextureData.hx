@@ -1,7 +1,7 @@
 package h3d.impl.driver.dx12.resource;
 
 #if (limen && gfx_dx12)
-import limen.graphics.renderer.d3d12.DX12Core.DxgiFormat;
+import limen.d3d12.Types.DxgiFormat;
 
 import h3d.impl.allocator.MemoryBlock;
 import h3d.impl.driver.dx12.descriptor.BlockHeap;

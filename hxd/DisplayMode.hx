@@ -1,7 +1,7 @@
 package hxd;
 
 #if limen
-typedef DisplayMode = limen.platform.window.WindowMode;
+typedef DisplayMode = limen.window.WindowMode;
 #else
 enum DisplayMode {
 	Windowed; 				// 0

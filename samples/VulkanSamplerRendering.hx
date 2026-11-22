@@ -110,7 +110,7 @@ class VulkanSamplerRendering extends hxd.App {
 				if (slots.generations != 2 || slots.slotReuses == 0) throw "Missing slot/generation coverage";
 				Sys.println(haxe.Json.stringify(slots));
 			}
-			final validation = limen.graphics.renderer.vulkan.internal.VulkanBindings.validationEnabled();
+			final validation = limen.vulkan.internal.VulkanBindings.validationEnabled();
 			if (!validation) throw "Vulkan validation is unavailable";
 			e.dispose();
 			Sys.println('PASS bindless=$bindless frames=$frame draws=2048 comparisons=$comparisons validation=' + validation);
@@ -120,7 +120,7 @@ class VulkanSamplerRendering extends hxd.App {
 	static function main() {
 		hxd.GraphicsDriverConfig.setCurrent(Vulkan);
 		if (Sys.args().indexOf('--bindless') >= 0) h3d.impl.driver.Driver.requestFeature(Bindless);
-		limen.graphics.renderer.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
+		limen.vulkan.internal.VulkanBindings.ENABLE_VALIDATION = true;
 		new VulkanSamplerRendering();
 	}
 }

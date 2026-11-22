@@ -4,35 +4,35 @@ package h3d.impl.driver.dx12.upscaling;
 
 import h3d.impl.Upscaling;
 import h3d.impl.driver.dx12.DX12Driver;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings;
-import limen.graphics.renderer.d3d12.internal.D3D12Bindings.SwapChain;
-import limen.graphics.renderer.d3d12.resource.Resources;
-import limen.graphics.renderer.d3d12.command.Commands.CommandList;
-import limen.graphics.postprocess.dlss.resource.DLSSBufferType;
-import limen.graphics.postprocess.dlss.frame.DLSSConstants;
-import limen.graphics.postprocess.dlss.frame.DLSSFrameToken;
-import limen.graphics.postprocess.dlss.DLSSFeature;
-import limen.graphics.postprocess.dlss.DLSSResult;
-import limen.graphics.postprocess.dlss.frame.DLSSMatrix;
-import limen.graphics.postprocess.dlss.upscaling.DLSSMode;
-import limen.graphics.postprocess.dlss.upscaling.DLSSOptimalSettings;
-import limen.graphics.postprocess.dlss.upscaling.DLSSOptions;
-import limen.graphics.postprocess.dlss.upscaling.DLSSPreset;
-import limen.graphics.postprocess.dlss.resource.DLSSResource;
-import limen.graphics.postprocess.dlss.resource.DLSSResourceLifecycle;
-import limen.graphics.postprocess.dlss.frame.DLSSVector;
-import limen.graphics.postprocess.dlss.framegen.DLSSGFlag;
-import limen.graphics.postprocess.dlss.framegen.DLSSGModeNative;
-import limen.graphics.postprocess.dlss.framegen.DLSSGOptions;
-import limen.graphics.postprocess.dlss.framegen.DLSSGStateInfo;
-import limen.graphics.postprocess.dlss.pcl.PCLHotKey;
-import limen.graphics.postprocess.dlss.pcl.PCLMarker;
-import limen.graphics.postprocess.dlss.reflex.ReflexFrameReport;
-import limen.graphics.postprocess.dlss.reflex.ReflexModeNative;
-import limen.graphics.postprocess.dlss.reflex.ReflexStateInfo;
-import limen.graphics.postprocess.dlss.DLSS;
-import limen.graphics.postprocess.PostProcessDevice;
-import limen.graphics.postprocess.TextureResource;
+import limen.d3d12.internal.D3D12Bindings;
+import limen.d3d12.Types.SwapChain;
+import limen.d3d12.resource.Resources;
+import limen.d3d12.command.Commands.CommandList;
+import limen.dlss.resource.DLSSBufferType;
+import limen.dlss.frame.DLSSConstants;
+import limen.dlss.frame.DLSSFrameToken;
+import limen.dlss.DLSSFeature;
+import limen.dlss.DLSSResult;
+import limen.dlss.frame.DLSSMatrix;
+import limen.dlss.upscaling.DLSSMode;
+import limen.dlss.upscaling.DLSSOptimalSettings;
+import limen.dlss.upscaling.DLSSOptions;
+import limen.dlss.upscaling.DLSSPreset;
+import limen.dlss.resource.DLSSResource;
+import limen.dlss.resource.DLSSResourceLifecycle;
+import limen.dlss.frame.DLSSVector;
+import limen.dlss.framegen.DLSSGFlag;
+import limen.dlss.framegen.DLSSGModeNative;
+import limen.dlss.framegen.DLSSGOptions;
+import limen.dlss.framegen.DLSSGStateInfo;
+import limen.dlss.pcl.PCLHotKey;
+import limen.dlss.pcl.PCLMarker;
+import limen.dlss.reflex.ReflexFrameReport;
+import limen.dlss.reflex.ReflexModeNative;
+import limen.dlss.reflex.ReflexStateInfo;
+import limen.dlss.DLSS as LimenDlss;
+import limen.postprocess.PostProcessDevice;
+import limen.postprocess.TextureResource;
 
 @:access(h3d.impl.driver.dx12.DX12Driver)
 class DX12DlssBackend extends UpscalingBackend {
@@ -93,7 +93,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		frameToken = null;
 		dlssgMode = Off;
 		reflexMode = Off;
-		if( wanted.toInt() == 0 || !DLSS.isAvailable() )
+		if( wanted.toInt() == 0 || !LimenDlss.isAvailable() )
 			return;
 		var features = [];
 		if( wanted.has(Upscaler) ) features.push(DLSSFeature.DLSS);
@@ -102,7 +102,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		var nativeFeatures = new hl.NativeArray<Int>(features.length);
 		for( i => f in features )
 			nativeFeatures[i] = f;
-		slInitResult = DLSS.init(Upscaling.DEBUG, nativeFeatures, CHECK_SIGNATURE);
+		slInitResult = LimenDlss.init(Upscaling.DEBUG, nativeFeatures, CHECK_SIGNATURE);
 		slReady = slInitResult == 0;
 	}
 
@@ -113,29 +113,29 @@ class DX12DlssBackend extends UpscalingBackend {
 		var device = new PostProcessDevice(D3D12, driver.nativeDevice);
 		var dlssOk = false;
 		if( wanted.has(Upscaler) ) {
-			dlssSupportResult = DLSS.isFeatureSupported(device, DLSSFeature.DLSS);
+			dlssSupportResult = LimenDlss.isFeatureSupported(device, DLSSFeature.DLSS);
 			dlssOk = dlssSupportResult == 0;
 		}
-		var dlssgOk = wanted.has(FrameGen) && DLSS.isFeatureSupported(device, DLSSFeature.FRAMEGEN) == 0;
-		var reflexOk = (wanted.has(LowLatency) || dlssgOk) && DLSS.isFeatureSupported(device, DLSSFeature.REFLEX) == 0;
+		var dlssgOk = wanted.has(FrameGen) && LimenDlss.isFeatureSupported(device, DLSSFeature.FRAMEGEN) == 0;
+		var reflexOk = (wanted.has(LowLatency) || dlssgOk) && LimenDlss.isFeatureSupported(device, DLSSFeature.REFLEX) == 0;
 		if( !dlssOk && !dlssgOk && !reflexOk ) {
-			DLSS.shutdown();
+			LimenDlss.shutdown();
 			slReady = false;
 			return;
 		}
-		D3D12Bindings.setDevice(DLSS.upgradeDevice(driver.nativeDevice));
-		slReady = DLSS.setDevice(new PostProcessDevice(D3D12, D3D12Bindings.getDevice())) == 0;
+		D3D12Bindings.setDevice(LimenDlss.upgradeDevice(driver.nativeDevice));
+		slReady = LimenDlss.setDevice(new PostProcessDevice(D3D12, D3D12Bindings.getDevice())) == 0;
 		if( !slReady )
 			return;
 		if( wanted.has(FrameGen) && !dlssgOk )
-			DLSS.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
+			LimenDlss.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
 		dlssReady = dlssOk;
 		framegenReady = dlssgOk;
 		if( reflexOk ) {
-			pclReady = DLSS.isFeatureSupported(device, DLSSFeature.PCL) == 0 && DLSS.pclInitStats() == 0;
+			pclReady = LimenDlss.isFeatureSupported(device, DLSSFeature.PCL) == 0 && LimenDlss.pclInitStats() == 0;
 			if( reflexState == null )
 				reflexState = new ReflexStateInfo();
-			reflexReady = DLSS.reflexSetOptions(ReflexModeNative.OFF, 0, false, PCLHotKey.USE_PING_MESSAGE, 0) == 0;
+			reflexReady = LimenDlss.reflexSetOptions(ReflexModeNative.OFF, 0, false, PCLHotKey.USE_PING_MESSAGE, 0) == 0;
 		}
 		if( dlssReady ) supported.set(Upscaler);
 		if( framegenReady ) supported.set(FrameGen);
@@ -144,7 +144,7 @@ class DX12DlssBackend extends UpscalingBackend {
 
 	override function release( unused : haxe.EnumFlags<UpscalingFeature> ) {
 		if( unused.has(FrameGen) && framegenReady ) {
-			DLSS.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
+			LimenDlss.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
 			framegenReady = false;
 		}
 		if( unused.has(LowLatency) )
@@ -154,22 +154,22 @@ class DX12DlssBackend extends UpscalingBackend {
 	override function afterCreateQueue() {
 		if( !slReady )
 			return;
-				driver.nativeQueue = DLSS.getNativeQueue(driver.directQueue);
+				driver.nativeQueue = LimenDlss.getNativeQueue(driver.directQueue);
 
-		D3D12Bindings.setFactory(DLSS.upgradeFactory(driver.nativeFactory));
+		D3D12Bindings.setFactory(LimenDlss.upgradeFactory(driver.nativeFactory));
 	}
 
 	override function afterCreateSwapChain() {
 		if( slReady && driver.swapChain != null )
-			driver.setSwapChain(DLSS.upgradeSwapChain(driver.swapChain));
+			driver.setSwapChain(LimenDlss.upgradeSwapChain(driver.swapChain));
 	}
 
 	override function beginFrame() {
 		if( !slReady )
 			return;
-		frameToken = DLSS.getNewFrameToken(driver.frameCount);
+		frameToken = LimenDlss.getNewFrameToken(driver.frameCount);
 		if( reflexReady )
-			DLSS.reflexGetState(reflexState);
+			LimenDlss.reflexGetState(reflexState);
 	}
 
 	override function begin() {
@@ -205,10 +205,10 @@ class DX12DlssBackend extends UpscalingBackend {
 			return;
 		if( dlssgMode != Off ) {
 			setDlssgMode(Off, 1, true);
-			DLSS.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
+			LimenDlss.setFeatureLoaded(DLSSFeature.FRAMEGEN, false);
 		}
 		driver.waitGpu();
-		DLSS.shutdown();
+		LimenDlss.shutdown();
 		slReady = false;
 		dlssReady = false;
 		framegenReady = false;
@@ -268,7 +268,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		options.mode = getMode(mode);
 		options.outputWidth = targetWidth;
 		options.outputHeight = targetHeight;
-		DLSS.getOptimalSettings(options, optimalSettings);
+		LimenDlss.getOptimalSettings(options, optimalSettings);
 		settings.renderWidth = optimalSettings.optimalRenderWidth;
 		settings.renderHeight = optimalSettings.optimalRenderHeight;
 		return settings;
@@ -283,7 +283,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		options.outputHeight = output.height;
 		options.colorBufferHDR = params.colorBufferHDR;
 		options.preset = mode == NativeAA ? DLSSPreset.PRESET_L : DLSSPreset.PRESET_K;
-		DLSS.setOptions(options);
+		LimenDlss.setOptions(options);
 
 		var cmd = driver.beginExternalCommands();
 		addTag(DLSSBufferType.COLORIN, inputs.color);
@@ -292,7 +292,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		addTag(DLSSBufferType.COLOROUT, output);
 		flushTags(cmd);
 		setConstants(params);
-		lastResult = DLSS.evaluateFeature(frameToken, cmd, DLSSFeature.DLSS);
+		lastResult = LimenDlss.evaluateFeature(frameToken, cmd, DLSSFeature.DLSS);
 		driver.endExternalCommands();
 	}
 
@@ -300,7 +300,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		if( !dlssReady )
 			return;
 		driver.waitGpu();
-		DLSS.freeResources(DLSSFeature.DLSS);
+		LimenDlss.freeResources(DLSSFeature.DLSS);
 	}
 
 	override function setFrameGenMode( mode : FrameGenMode, numFramesToGenerate : Int, releaseResources : Bool ) : Bool {
@@ -347,7 +347,7 @@ class DX12DlssBackend extends UpscalingBackend {
 			case On: ReflexModeNative.LOW_LATENCY;
 			case OnWithBoost: ReflexModeNative.LOW_LATENCY_WITH_BOOST;
 		}
-		if( DLSS.reflexSetOptions(native, frameLimitUs, false, PCLHotKey.USE_PING_MESSAGE, 0) != 0 )
+		if( LimenDlss.reflexSetOptions(native, frameLimitUs, false, PCLHotKey.USE_PING_MESSAGE, 0) != 0 )
 			return false;
 		reflexMode = mode;
 		return true;
@@ -355,7 +355,7 @@ class DX12DlssBackend extends UpscalingBackend {
 
 	override function lowLatencySleep() {
 		if( reflexReady && frameToken != null )
-			DLSS.reflexSleep(frameToken);
+			LimenDlss.reflexSleep(frameToken);
 	}
 
 	override function latencyMarker( m : LatencyMarker ) {
@@ -363,7 +363,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		case SimulationStart:
 			if( pclReady && frameToken != null ) {
 				pclMarker(PCLMarker.SIMULATION_START);
-				DLSS.pclPollPing(frameToken);
+				LimenDlss.pclPollPing(frameToken);
 			}
 		case SimulationEnd:
 			pclMarker(PCLMarker.SIMULATION_END);
@@ -382,7 +382,7 @@ class DX12DlssBackend extends UpscalingBackend {
 
 	inline function pclMarker( marker : PCLMarker ) {
 		if( slReady && pclReady && frameToken != null )
-			DLSS.pclSetMarker(frameToken, marker);
+			LimenDlss.pclSetMarker(frameToken, marker);
 	}
 
 	function addTag( type : DLSSBufferType, t : h3d.mat.Texture ) {
@@ -412,7 +412,7 @@ class DX12DlssBackend extends UpscalingBackend {
 				r.lifecycle = DLSSResourceLifecycle.VALID_UNTIL_PRESENT;
 				driver.markUsed(t);
 			}
-			DLSS.setTagForFrame(frameToken, resources, count, cmd);
+			LimenDlss.setTagForFrame(frameToken, resources, count, cmd);
 		}
 		tagTypes.resize(0);
 		tagTextures.resize(0);
@@ -476,7 +476,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		c.motionVectorsJittered = params.motionVectorsJittered;
 		c.minRelativeLinearDepthObjectSeparation = 40.0;
 
-		DLSS.setConstants(frameToken, c);
+		LimenDlss.setConstants(frameToken, c);
 	}
 
 	function setDlssgMode( mode : FrameGenMode, numFramesToGenerate : Int, releaseResources : Bool ) : Bool {
@@ -496,18 +496,18 @@ class DX12DlssBackend extends UpscalingBackend {
 			dlssgFrames = numFramesToGenerate;
 
 		dlssgOptions.flags = DLSSGFlag.RETAIN_RESOURCES_WHEN_OFF;
-		if( DLSS.dlssgSetOptions(dlssgOptions) != 0 )
+		if( LimenDlss.dlssgSetOptions(dlssgOptions) != 0 )
 			return false;
 
 		dlssgMode = mode;
 		refreshDLSSGState();
 		if( mode == Off && releaseResources )
-			DLSS.freeResources(DLSSFeature.FRAMEGEN);
+			LimenDlss.freeResources(DLSSFeature.FRAMEGEN);
 		return true;
 	}
 
 	function refreshDLSSGState() : Bool {
-		if( !slReady || !framegenReady || DLSS.dlssgGetState(dlssgStateInfo) != 0 )
+		if( !slReady || !framegenReady || LimenDlss.dlssgGetState(dlssgStateInfo) != 0 )
 			return false;
 		var s = dlssgSettings;
 		s.status = dlssgStateInfo.status;
@@ -558,7 +558,7 @@ class DX12DlssBackend extends UpscalingBackend {
 		var buf = new StringBuf();
 		if( reflexState == null )
 			reflexState = new ReflexStateInfo();
-		DLSS.reflexGetState(reflexState);
+		LimenDlss.reflexGetState(reflexState);
 		buf.add('mode=$reflexMode ');
 		buf.add('lowLatencyAvailable=${reflexState.lowLatencyAvailable} ');
 		buf.add('latencyReportAvailable=${reflexState.latencyReportAvailable} ');
@@ -567,9 +567,9 @@ class DX12DlssBackend extends UpscalingBackend {
 		if( reflexState.lowLatencyAvailable == 0 ) buf.add("Low latency is not available.\n");
 		if( reflexState.latencyReportAvailable == 0 ) buf.add("Latency report are not available.\n");
 		var reports = [];
-		for( i in 0...DLSS.REFLEX_FRAME_REPORT_COUNT ) {
+		for( i in 0...LimenDlss.REFLEX_FRAME_REPORT_COUNT ) {
 			var r = new ReflexFrameReport();
-			if( DLSS.reflexGetFrameReport(i, r) == 0 && r.frameID > 0 )
+			if( LimenDlss.reflexGetFrameReport(i, r) == 0 && r.frameID > 0 )
 				reports.push(r);
 		}
 		if( reports.length == 0 ) {
