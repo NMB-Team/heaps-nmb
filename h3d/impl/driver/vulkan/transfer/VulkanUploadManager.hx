@@ -12,17 +12,17 @@ import h3d.impl.driver.vulkan.resource.VulkanImage.VulkanImageState;
 import h3d.impl.driver.vulkan.resource.VulkanResourceState;
 import limen.vulkan.Vulkan as VulkanRuntime;
 import limen.vulkan.command.Commands.VkCommandBuffer;
-import limen.vulkan.command.Commands.VkPipelineStage2;
 import limen.vulkan.internal.VulkanBindings;
 import limen.vulkan.Context;
-import limen.vulkan.memory.Memory.VkAccess2;
 import limen.vulkan.memory.Memory.VkBufferImageCopy;
 import limen.vulkan.memory.Memory.VkBufferUsageFlag;
 import limen.vulkan.memory.Memory.VkMemoryPropertyFlag;
 
 private class VulkanUploadPage {
-	public var buffer:VulkanUploadBuffer;
-	public var capacity:Int;
+	public final buffer:VulkanUploadBuffer;
+	public final capacity:Int;
+	public final mapped:hl.Bytes;
+	public final coherent:Bool;
 	public var offset = 0;
 	public var idleFrames = 0;
 	public var underusedFrames = 0;
@@ -30,6 +30,8 @@ private class VulkanUploadPage {
 	public function new(buffer:VulkanUploadBuffer, capacity:Int) {
 		this.buffer = buffer;
 		this.capacity = capacity;
+		mapped = buffer.allocation.mappedBytes(0, capacity);
+		coherent = (buffer.allocation.memoryProperties & (1 << Type.enumIndex(VkMemoryPropertyFlag.HOST_COHERENT))) != 0;
 	}
 }
 
@@ -37,7 +39,7 @@ class VulkanConstantUpload {
 	public var buffer:VulkanUploadBuffer;
 	public var offset:Int;
 	public var size:Int;
-	public var paramsCache = new h3d.impl.driver.ShaderParamCache();
+	public final cache = new h3d.impl.driver.ShaderParamCache();
 
 	public function new() {
 	}
@@ -119,25 +121,31 @@ class VulkanUploadManager {
 		command.copyBuffer2(page.buffer.buffer, destination.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(destinationOffset) : hl.I64), (Int64.ofInt(size) : hl.I64));
 	}
 
-	public function uploadConstants(command:VkCommandBuffer, source:hl.Bytes, sourceOffset:Int, size:Int, alignment:Int, upload:VulkanConstantUpload, recordBarrier = true) {
+	public function uploadConstants(source:hl.Bytes, sourceOffset:Int, size:Int, alignment:Int, upload:VulkanConstantUpload) {
 		if (size <= 0)
 			throw "Vulkan constant upload size must be positive";
 		allocate(size, alignment);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
-		page.buffer.allocation.flush(offset, size);
-		uploadedBytes += size;
-		if (recordBarrier) {
-			VulkanResourceState.recordBarrier();
-			final shaderStages:hl.I64 = cast ((VkPipelineStage2.VERTEX_SHADER : haxe.Int64)
-				| (VkPipelineStage2.FRAGMENT_SHADER : haxe.Int64) | (VkPipelineStage2.COMPUTE_SHADER : haxe.Int64));
-			command.bufferBarrier2(page.buffer.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(size) : hl.I64),
-				VkPipelineStage2.HOST, VkAccess2.HOST_WRITE, shaderStages, VkAccess2.UNIFORM_READ);
-		}
+		writeUpload(page, offset, source, sourceOffset, size);
 		upload.buffer = page.buffer;
 		upload.offset = offset;
 		upload.size = size;
+	}
+
+	public function uploadVertices(source:hl.Bytes, size:Int, offset:hl.Ref<Int>):VulkanUploadBuffer {
+		allocate(size, 16);
+		offset.set(allocatedOffset);
+		writeUpload(allocatedPage, allocatedOffset, source, 0, size);
+		return allocatedPage.buffer;
+	}
+
+	inline function writeUpload(page:VulkanUploadPage, offset:Int, source:hl.Bytes, sourceOffset:Int, size:Int) {
+		// queue submission makes flushed host writes visible to the GPU
+		page.mapped.blit(offset, source, sourceOffset, size);
+		if (!page.coherent)
+			page.buffer.allocation.flush(offset, size);
+		uploadedBytes += size;
 	}
 
 	public function uploadImage(command:VkCommandBuffer, destination:VulkanImage, mipLevel:Int, layer:Int, source:hl.Bytes, sourceOffset:Int, size:Int, width:Int, height:Int, depth:Int,
@@ -213,6 +221,7 @@ class VulkanUploadManager {
 		var usage = new haxe.EnumFlags<VkBufferUsageFlag>();
 		usage.set(TRANSFER_SRC);
 		usage.set(UNIFORM_BUFFER);
+		usage.set(VERTEX_BUFFER);
 		final handle = context.createBuffer64((Int64.ofInt(capacity) : hl.I64), usage);
 		if (handle == null)
 			throw VulkanRuntime.error('Failed to create Vulkan upload page $nextPageId ($capacity bytes)');

@@ -315,6 +315,9 @@ class VulkanDriver extends Driver {
 	var pipelineColorMasks:Array<Int> = [];
 	final blendFormatSupport:Map<Int, Bool> = new Map();
 	var currentVertexBuffers : Array<VulkanBuffer> = [];
+	var boundVertexBuffers : Array<VulkanBuffer> = [];
+	var boundVertexOffsets : Array<Int> = [];
+	var boundIndexBuffer : VulkanBuffer;
 	var currentBlendState : VulkanBlendState;
 	var currentCullMode : VkCullModeFlags;
 	var currentDepthTest = true;
@@ -330,6 +333,7 @@ class VulkanDriver extends Driver {
 	var disabledStencilState:VulkanStencilState;
 	var readOnlyStencilState:VulkanStencilState;
 	var materialSelected = false;
+	var currentMaterialBits = 0;
 	var boundPipeline : VkGraphicsPipeline;
 	var boundDescriptorState : VulkanCompiledShader;
 	var boundComputePipeline : VulkanComputePipeline;
@@ -344,7 +348,7 @@ class VulkanDriver extends Driver {
 	var boundDepthBias:Float;
 	var boundSlopeScaledDepthBias:Float;
 	var renderingResume = false;
-	final textureBindingEntries:Array<{texture:h3d.mat.Texture}> = [];
+	final activeTextureBindings:Array<{texture:h3d.mat.Texture}> = [];
 	var textureBindings:Map<String, {texture:h3d.mat.Texture}> = new Map();
 	var resolvedTextureScratch:Map<String, Array<VulkanResolvedTexture>> = new Map();
 	var textureBindingsShaderKey:String;
@@ -731,6 +735,9 @@ class VulkanDriver extends Driver {
 		boundDynamicState = false;
 		currentVertexLayout = null;
 		currentVertexBuffers.resize(0);
+		boundVertexBuffers.resize(0);
+		boundVertexOffsets.resize(0);
+		boundIndexBuffer = null;
 		currentTargetSet = resolveDefaultTarget(ReadWrite);
 		if( defaultDepthBuffer != null )
 			@:privateAccess defaultDepthBuffer.t = outImages[currentImageIndex].depthResource;
@@ -1292,7 +1299,7 @@ class VulkanDriver extends Driver {
 		if( p.compute != null && !capabilities.graphicsQueueCompute )
 			throw 'Vulkan compute is unavailable because graphics queue family ${capabilities.graphicsQueueFamily} lacks VK_QUEUE_COMPUTE_BIT; ${capabilities.diagnostics}';
 		currentShader = p;
-		for( binding in textureBindingEntries ) binding.texture = null;
+		clearTextureBindings();
 		textureBindingsShaderKey = p.cacheKey;
 		bufferBindings.clear();
 		bufferBindingKeys.resize(0);
@@ -2133,7 +2140,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final savedStencilState = currentStencilState;
 		currentStencilState = null;
 		final savedMaterialSelected = materialSelected;
-		final savedTextureBindings = [for (key => value in textureBindings) {key: key, value: value.texture}];
+		final savedMaterialBits = currentMaterialBits;
+		final savedTextureBindings = [for (key => value in textureBindings) if (value.texture != null) {key: key, value: value.texture}];
 		final savedTextureBindingsShaderKey = textureBindingsShaderKey;
 		final savedStartingMip = t.startingMip;
 		final savedMipMap = t.mipMap;
@@ -2187,8 +2195,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		currentColorMasks = savedColorMasks;
 		currentStencilState = savedStencilState;
 		materialSelected = savedMaterialSelected;
-		for( binding in textureBindingEntries ) binding.texture = null;
-		for (binding in savedTextureBindings) textureBindings.get(binding.key).texture = binding.value;
+		currentMaterialBits = savedMaterialBits;
+		clearTextureBindings();
+		for (saved in savedTextureBindings) {
+			final binding = textureBindings.get(saved.key);
+			binding.texture = saved.value;
+			activeTextureBindings.push(binding);
+		}
 		textureBindingsShaderKey = savedTextureBindingsShaderKey;
 		boundPipeline = null;
 		boundDescriptorState = null;
@@ -2309,14 +2322,39 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "A Vulkan shader must be selected before selecting a vertex buffer";
 		final vbuf:VulkanBuffer = @:privateAccess v.vbuf;
 		prepareVertexBuffer(vbuf);
+		selectVertexBuffer(v.format, vbuf, 0);
+	}
+
+	@:access(h3d.Engine)
+	@:allow(h2d.RenderContext)
+	function renderStreamedQuads(engine:h3d.Engine, vertices:hxd.FloatBuffer, count:Int) {
+		if( engine.shaderFailed )
+			return;
+
+		final indexes = engine.mem.getQuadIndexes(count);
+		if( indexes.isDisposed() )
+			return;
+
+		engine.flushTarget();
+		final format = hxd.BufferFormat.XY_UV_RGBA;
+		var offset = 0;
+		final buffer = uploadManager.uploadVertices(hl.Bytes.getArray(vertices.getNative()), count * format.strideBytes, offset);
+		selectVertexBuffer(format, buffer, offset);
+		final triangles = count >> 1;
+		draw(indexes, 0, triangles);
+		engine.drawTriangles += triangles;
+		engine.drawCalls++;
+	}
+
+	function selectVertexBuffer(format:hxd.BufferFormat, vbuf:VulkanBuffer, offset:Int) {
 		var layouts = vertexLayouts.get(currentShader);
 		if( layouts == null ) {
 			layouts = new Map();
 			vertexLayouts.set(currentShader, layouts);
 		}
-		var layout = layouts.get(v.format);
+		var layout = layouts.get(format);
 		if( layout == null ) {
-			final mapping = v.format.resolveMapping(currentShader.vertexFormat);
+			final mapping = format.resolveMapping(currentShader.vertexFormat);
 			final attributes = [];
 			final bindings = [];
 			final bindingIds = [-1, -1];
@@ -2325,20 +2363,25 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				final rate = input.instanceDivisor;
 				if( bindingIds[rate] < 0 ) {
 					bindingIds[rate] = bindings.length;
-					bindings.push(new VulkanVertexBinding(bindings.length, v.format.strideBytes, rate == 1));
+					bindings.push(new VulkanVertexBinding(bindings.length, format.strideBytes, rate == 1));
 				}
 				attributes.push(new VulkanVertexAttribute(input.location, bindingIds[rate], resolveVertexFormat(input.type, entry.precision), entry.offset));
 			}
 			validateVertexAttributes(attributes, bindings);
 			layout = new VulkanVertexLayout(bindings, attributes);
-			layouts.set(v.format, layout);
+			layouts.set(format, layout);
 		}
 		currentVertexLayout = layout;
 		currentVertexBuffers.resize(hxd.Math.imax(1, layout.bindings.length));
 		currentVertexBuffers[0] = vbuf;
 		for( binding in layout.bindings ) {
-			currentVertexBuffers[binding.binding] = vbuf;
-			command.bindVertexBuffer(binding.binding, vbuf.buffer, 0);
+			final index = binding.binding;
+			currentVertexBuffers[index] = vbuf;
+			if( boundVertexBuffers[index] != vbuf || boundVertexOffsets[index] != offset ) {
+				command.bindVertexBuffer(index, vbuf.buffer, offset);
+				boundVertexBuffers[index] = vbuf;
+				boundVertexOffsets[index] = offset;
+			}
 		}
 	}
 
@@ -2386,22 +2429,32 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		if( vertexBufferScratch.length < bindingCount ) vertexBufferScratch = new hl.NativeArray<limen.vulkan.memory.Memory.VkBuffer>(bindingCount);
 		if( vertexOffsetScratch.length < bindingCount ) vertexOffsetScratch = new hl.NativeArray<hl.I64>(bindingCount);
+		var changed = false;
 		for( binding in layout.bindings ) {
 			final vbuf:VulkanBuffer = @:privateAccess buffers[binding.sourceBuffer].vbuf;
 			prepareVertexBuffer(vbuf);
 			currentVertexBuffers[binding.binding] = vbuf;
 			vertexBufferScratch[binding.binding] = vbuf.buffer;
 			vertexOffsetScratch[binding.binding] = (haxe.Int64.ofInt(0) : hl.I64);
+			if( boundVertexBuffers[binding.binding] != vbuf || boundVertexOffsets[binding.binding] != 0 )
+				changed = true;
 		}
-		command.bindVertexBuffersNative(0, bindingCount, vertexBufferScratch, vertexOffsetScratch);
+		if( changed ) {
+			command.bindVertexBuffersNative(0, bindingCount, vertexBufferScratch, vertexOffsetScratch);
+			for( index in 0...bindingCount ) {
+				boundVertexBuffers[index] = currentVertexBuffers[index];
+				boundVertexOffsets[index] = 0;
+			}
+		}
 	}
 
 	function prepareVertexBuffer(buffer:VulkanBuffer) {
 		if( buffer == null || buffer.disposed || !buffer.usage.has(VERTEX_BUFFER) )
 			throw "Vulkan draw requires a valid vertex-buffer resource";
-		if( renderingStarted && buffer.state != VertexInput )
+		if( buffer.state != VertexInput ) {
 			suspendRendering();
-		VulkanResourceState.transitionBuffer(command, buffer, VertexInput, haxe.Int64.ofInt(0), buffer.size);
+			VulkanResourceState.transitionBuffer(command, buffer, VertexInput, haxe.Int64.ofInt(0), buffer.size);
+		}
 		buffer.lastSubmission = currentSubmissionSerial;
 	}
 
@@ -2621,6 +2674,11 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	override function selectMaterial( pass : h3d.mat.Pass ) {
+		final bits = @:privateAccess pass.bits;
+		if( materialSelected && currentBlendState != null && currentMaterialBits == bits && currentColorMasks == pass.colorMask
+			&& pass.stencil == null && !currentStencilState.enabled )
+			return;
+
 		if( pass.wireframe && !capabilities.fillModeNonSolid )
 			throw "Vulkan wireframe rendering requires the fillModeNonSolid device feature";
 		if( pass.depthClamp && !capabilities.depthClamp )
@@ -2680,6 +2738,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			}
 		}
 		materialSelected = true;
+		currentMaterialBits = bits;
 	}
 
 	inline function blendFactor(factor:h3d.mat.Data.Blend):VkBlendFactor {
@@ -2753,30 +2812,30 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( currentShader.shader.mode != hxsl.RuntimeShader.LinkMode.Compute )
 				uploadStageConstants(buf.fragment, currentShader.shader.fragment, VulkanShaderStage.Fragment, VulkanConstantFrequency.Params);
 		case Textures:
-			for( binding in textureBindingEntries ) binding.texture = null;
+			clearTextureBindings();
 			textureBindingsShaderKey = currentShader.cacheKey;
 			if( uploadStageTextures(buf, buf.vertex, currentShader.shader.vertex) )
 				return;
 			if( currentShader.shader.mode != hxsl.RuntimeShader.LinkMode.Compute && uploadStageTextures(buf, buf.fragment, currentShader.shader.fragment) )
 				return;
-			if( currentShader.compute == null )
-				boundDescriptorState = null;
-			else
-				boundComputeDescriptorState = null;
 		case Buffers:
-			bufferBindings.clear();
-			bufferBindingKeys.resize(0);
-			bufferBindingKinds.clear();
+			if( bufferBindingKeys.length > 0 ) {
+				bufferBindings.clear();
+				bufferBindingKeys.resize(0);
+				bufferBindingKinds.clear();
+			}
 			bufferBindingsShaderKey = currentShader.cacheKey;
 			if( uploadStageBuffers(buf.vertex, currentShader.shader.mode == hxsl.RuntimeShader.LinkMode.Compute ? currentShader.shader.compute : currentShader.shader.vertex) )
 				return;
 			if( currentShader.shader.mode != hxsl.RuntimeShader.LinkMode.Compute )
 				uploadStageBuffers(buf.fragment, currentShader.shader.fragment);
-			if( currentShader.compute == null )
-				boundDescriptorState = null;
-			else
-				boundComputeDescriptorState = null;
 		}
+	}
+
+	function clearTextureBindings() {
+		for( binding in activeTextureBindings )
+			binding.texture = null;
+		activeTextureBindings.resize(0);
 	}
 
 	function uploadStageBuffers(buffers:h3d.shader.Buffers.ShaderBuffers, shader:hxsl.RuntimeShader.RuntimeShaderData):Bool {
@@ -2869,15 +2928,16 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				}
 				validateTextureType(texture, elementType, allocation.name);
 				final key = allocationIds[slot - 1];
-				final existing = textureBindings.get(key);
-				if( existing != null && existing.texture != null && existing.texture != texture )
-					throw 'HxSL resource $key resolves to different vertex and fragment textures';
-				if( existing == null ) {
-					final binding = {texture: texture};
+				var binding = textureBindings.get(key);
+				if( binding == null ) {
+					binding = {texture: null};
 					textureBindings.set(key, binding);
-					textureBindingEntries.push(binding);
-				} else
-					existing.texture = texture;
+				}
+				if( binding.texture == null ) {
+					binding.texture = texture;
+					activeTextureBindings.push(binding);
+				} else if( binding.texture != texture )
+					throw 'HxSL resource $key resolves to different vertex and fragment textures';
 				@:privateAccess texture.lastFrame = hxd.Timer.frameCount;
 			}
 			allocation = allocation.next;
@@ -2979,7 +3039,6 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final source = frequency == VulkanConstantFrequency.Globals ? buffers.globals : buffers.params;
 		if( source.length * 4 < block.sourceSize )
 			throw '${block.name} requires ${block.sourceSize} CPU bytes, got ${source.length * 4}';
-		final bytes = hl.Bytes.getArray(source.toData());
 		final alignment = hxd.Math.imax(16, limits.minUniformBufferOffsetAlignment.toInt());
 		final frame = frames[currentFrameIndex];
 		final blockId = currentShader.constantBlockIds.get(block);
@@ -2991,8 +3050,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			frame.shaderConstants.set(blockId, upload);
 		}
 		final previousBuffer = upload.buffer;
-		if( frequency != VulkanConstantFrequency.Params || upload.paramsCache.update(source, block.sourceSize >> 2, upload.buffer == null) )
-			uploadManager.uploadConstants(command, bytes, 0, block.sourceSize, alignment, upload, !renderingStarted);
+		if( upload.cache.update(source, block.sourceSize >> 2, upload.buffer == null) )
+			uploadManager.uploadConstants(hl.Bytes.getArray(source.toData()), 0, block.sourceSize, alignment, upload);
 		if( previousBuffer != upload.buffer )
 			currentShader.descriptorSets[block.set].revision++;
 		final textureStart = frequency == VulkanConstantFrequency.Globals ? shader.paramsTexHandleCount : 0;
@@ -3044,7 +3103,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		if( count != null && count.state != IndirectArgument ) requiresBufferTransition = true;
 		if( renderingStarted && requiresBufferTransition )
 			suspendRendering();
-		VulkanResourceState.transitionBuffer(command, b, IndexInput, haxe.Int64.ofInt(0), b.size);
+		if( b.state != IndexInput )
+			VulkanResourceState.transitionBuffer(command, b, IndexInput, haxe.Int64.ofInt(0), b.size);
 		b.lastSubmission = currentSubmissionSerial;
 		if( indirect != null ) {
 			VulkanResourceState.transitionBuffer(command, indirect, IndirectArgument, haxe.Int64.ofInt(0), indirect.size);
@@ -3084,7 +3144,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		applyDynamicDrawState();
 		bindShaderDescriptors(false);
-		command.bindIndexBuffer64(b.buffer, (haxe.Int64.ofInt(0) : hl.I64), b.stride == 4 ? VkIndexType.UINT32 : VkIndexType.UINT16);
+		if( boundIndexBuffer != b ) {
+			command.bindIndexBuffer64(b.buffer, (haxe.Int64.ofInt(0) : hl.I64), b.stride == 4 ? VkIndexType.UINT32 : VkIndexType.UINT16);
+			boundIndexBuffer = b;
+		}
 		return b;
 	}
 
@@ -3940,6 +4003,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		boundDynamicState = false;
 		currentVertexLayout = null;
 		currentVertexBuffers.resize(0);
+		boundVertexBuffers.resize(0);
+		boundVertexOffsets.resize(0);
+		boundIndexBuffer = null;
 		currentTargetSet = savedTarget;
 		if (!query.resultValid)
 			throw "Vulkan query did not resolve after its synchronous submission completed";

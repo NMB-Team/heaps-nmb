@@ -125,6 +125,10 @@ class RenderContext extends h3d.impl.RenderContext {
 	var renderY : Float;
 	var renderW : Float;
 	var renderH : Float;
+	var clipMinX = -1.;
+	var clipMinY = -1.;
+	var clipMaxX = 1.;
+	var clipMaxY = 1.;
 	var currentBlend : BlendMode;
 	var drawBlend : BlendMode;
 	var drawSmooth : Bool;
@@ -633,11 +637,11 @@ class RenderContext extends h3d.impl.RenderContext {
 			// to the original, so the non-filtered screen path is byte-identical.
 			var scaleX = viewA * halfW;
 			var scaleY = viewD * halfH;
-			engine.setRenderZone(
+			applyRenderZone(
 				Std.int(x * scaleX + (viewX + 1) * halfW + 1e-10),
 				Std.int(y * scaleY + (viewY + 1) * halfH + 1e-10),
 				Std.int(w * scaleX + 1e-10),
-				Std.int(h * scaleY + 1e-10)
+				Std.int(h * scaleY + 1e-10), targetW, targetH
 			);
 		} else {
 			// A rotating/shearing camera makes viewB/viewC != 0; a flipping one makes viewA/viewD < 0 (which the
@@ -653,13 +657,25 @@ class RenderContext extends h3d.impl.RenderContext {
 			var maxX = Math.max(Math.max(ax, bx), Math.max(cx, dx));
 			var minY = Math.min(Math.min(ay, by), Math.min(cy, dy));
 			var maxY = Math.max(Math.max(ay, by), Math.max(cy, dy));
-			engine.setRenderZone(
+			applyRenderZone(
 				Std.int(minX + 1e-10),
 				Std.int(minY + 1e-10),
 				Std.int(maxX - minX + 1e-10),
-				Std.int(maxY - minY + 1e-10)
+				Std.int(maxY - minY + 1e-10), targetW, targetH
 			);
 		}
+	}
+
+	function applyRenderZone(x:Int, y:Int, w:Int, h:Int, targetW:Int, targetH:Int) {
+		engine.setRenderZone(x, y, w, h);
+
+		final sx = 2 / targetW;
+		final sy = 2 / targetH;
+		// allow for rasterization and pixel alignment at the clip edges
+		clipMinX = (x - 2.) * sx - 1;
+		clipMinY = (y - 2.) * sy - 1;
+		clipMaxX = (x + w + 2.) * sx - 1;
+		clipMaxY = (y + h + 2.) * sy - 1;
 	}
 
 	inline function clearRZ() {
@@ -698,19 +714,28 @@ class RenderContext extends h3d.impl.RenderContext {
 		beforeDraw();
 		var nverts = Std.int(bufPos / stride);
 
-		if( uploadBuffer == null || uploadBuffer.isDisposed() || uploadBuffer.vertices < nverts ) {
-			var capacity = uploadBuffer == null ? 256 : uploadBuffer.vertices;
-			while( capacity < nverts ) capacity <<= 1;
-			if( uploadBuffer != null ) uploadBuffer.dispose();
-			uploadBuffer = new h3d.Buffer(capacity, hxd.BufferFormat.XY_UV_RGBA, [Dynamic]);
-			uploadVertex = 0;
-		} else if( uploadVertex + nverts > uploadBuffer.vertices ) {
-			uploadVertex = 0;
+		#if (limen && gfx_vulkan)
+		final vulkan = Std.downcast(engine.driver, h3d.impl.driver.vulkan.VulkanDriver);
+		if( vulkan != null )
+			vulkan.renderStreamedQuads(engine, buffer, nverts);
+		else
+		#end
+		{
+			if( uploadBuffer == null || uploadBuffer.isDisposed() || uploadBuffer.vertices < nverts ) {
+				var capacity = uploadBuffer == null ? 256 : uploadBuffer.vertices;
+				while( capacity < nverts ) capacity <<= 1;
+				if( uploadBuffer != null ) uploadBuffer.dispose();
+				uploadBuffer = new h3d.Buffer(capacity, hxd.BufferFormat.XY_UV_RGBA, [Dynamic]);
+				uploadVertex = 0;
+			} else if( uploadVertex + nverts > uploadBuffer.vertices ) {
+				uploadVertex = 0;
+			}
+
+			uploadBuffer.uploadFloats(buffer, 0, nverts, uploadVertex);
+			engine.renderQuadBuffer(uploadBuffer, uploadVertex >> 1, nverts >> 1);
+			uploadVertex += nverts;
 		}
 
-		uploadBuffer.uploadFloats(buffer, 0, nverts, uploadVertex);
-		engine.renderQuadBuffer(uploadBuffer, uploadVertex >> 1, nverts >> 1);
-		uploadVertex += nverts;
 		bufPos = 0;
 		texture = null;
 	}
@@ -792,6 +817,39 @@ class RenderContext extends h3d.impl.RenderContext {
 	}
 
 	/**
+		Tests local mesh bounds against the current viewport and clip.
+		Include any vertex displacement in the bounds before calling this.
+	**/
+	@:access(h2d.Object)
+	public function isBoundsVisible(obj:Object, bounds:h2d.col.Bounds):Bool {
+		if( inFilter != null || baseShaderListTail != baseShaderList || onBeginDraw != null )
+			return true;
+
+		final a = obj.matA * viewA + obj.matB * viewC;
+		final b = obj.matA * viewB + obj.matB * viewD;
+		final c = obj.matC * viewA + obj.matD * viewC;
+		final d = obj.matC * viewB + obj.matD * viewD;
+		final x = obj.absX * viewA + obj.absY * viewC + viewX;
+		final y = obj.absX * viewB + obj.absY * viewD + viewY;
+		return visibleProjectedBounds(a, b, c, d, x, y, bounds.xMin, bounds.yMin, bounds.width, bounds.height);
+	}
+
+	inline function visibleProjectedBounds(a:Float, b:Float, c:Float, d:Float, x:Float, y:Float,
+			left:Float, top:Float, width:Float, height:Float):Bool {
+		final halfW = width * 0.5;
+		final halfH = height * 0.5;
+		final midX = left + halfW;
+		final midY = top + halfH;
+		final cx = x + a * midX + c * midY;
+		final cy = y + b * midX + d * midY;
+		final rx = Math.abs(a) * halfW + Math.abs(c) * halfH;
+		final ry = Math.abs(b) * halfW + Math.abs(d) * halfH;
+		if( cx + rx < -1 || cx - rx > 1 || cy + ry < -1 || cy - ry > 1 )
+			return false;
+		return !hasRenderZone || !(cx + rx < clipMinX || cx - rx > clipMaxX || cy + ry < clipMinY || cy - ry > clipMaxY);
+	}
+
+	/**
 		Renders a Tile with the transform of the given Drawable.
 
 		@returns `true` if tile was drawn, `false` otherwise.
@@ -824,8 +882,11 @@ class RenderContext extends h3d.impl.RenderContext {
 			absY = obj.absX * viewB + obj.absY * viewD + viewY;
 		}
 
-		// check if our tile is outside of the viewport
-		if( matB == 0 && matC == 0 ) {
+		final batchable = obj.shaders == null && baseShaderListTail == baseShaderList;
+		if( batchable && inFilter == null && onBeginDraw == null ) {
+			if( !visibleProjectedBounds(matA, matB, matC, matD, absX, absY, tile.dx, tile.dy, tile.width, tile.height) )
+				return false;
+		} else if( matB == 0 && matC == 0 ) {
 			var tx = tile.dx + tile.width * 0.5;
 			var ty = tile.dy + tile.height * 0.5;
 			var tr = (tile.width > tile.height ? tile.width : tile.height) * 1.5 * hxd.Math.max(hxd.Math.abs(matA),hxd.Math.abs(matD));
