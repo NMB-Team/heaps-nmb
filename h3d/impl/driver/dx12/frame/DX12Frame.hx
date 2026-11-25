@@ -24,6 +24,7 @@ class DX12Frame {
 	public var allocator : CommandAllocator;
 	public var commandList : CommandList;
 	public var copyAllocator : CommandAllocator;
+	public var copyCommandsPending = false;
 	public var copyCommandList : CommandList;
 	public var fenceValue : Int64;
 	public var toRelease : Array<Dx12Resource> = [];

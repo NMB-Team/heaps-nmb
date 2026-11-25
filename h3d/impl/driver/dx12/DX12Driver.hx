@@ -103,6 +103,7 @@ import h3d.impl.driver.dx12.resource.ResourceData;
 import h3d.impl.driver.dx12.resource.TextureData;
 import h3d.impl.driver.dx12.shader.CompiledShader;
 import h3d.impl.driver.dx12.shader.ShaderRegisters;
+import h3d.impl.driver.dx12.shader.ShaderRegisters.TextureTable;
 import h3d.impl.driver.dx12.TempObjects;
 
 
@@ -156,7 +157,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	var currentShader : CompiledShader;
 	var compiledShaders : Map<Int,CompiledShader>;
 	var compiler : ShaderCompiler;
-	var currentIndex : Buffer;
+	var currentIndex : BufferData;
+	var currentVertex : BufferData;
+	var currentVertexFormat : hxd.BufferFormat;
+	var currentVertexShader : CompiledShader;
 	#if heaps_mt_hxsl_cache
 	var compileMutex  = new sys.thread.Mutex();
 	var shaderBinaryMutex  = new sys.thread.Mutex();
@@ -520,6 +524,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		frame.copyAllocator.reset();
 		frame.copyCommandList.reset(frame.copyAllocator, null);
+		frame.copyCommandsPending = false;
 		while( frame.pendingCopyBuffers.length > 0 )
 			uploadBufferAlloc.free(frame.pendingCopyBuffers.pop());
 		frame.pendingCopyBytes = 0;
@@ -571,6 +576,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		depthStenciViews.clear();
 		curStencilRef = -1;
 		currentIndex = null;
+		currentVertex = null;
+		currentVertexFormat = null;
+		currentVertexShader = null;
 		viewportDirty = true;
 
 		frame.backBufferView = renderTargetViews.alloc(1);
@@ -839,6 +847,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if( res.needsAliasingBarrier ) {
 			// Activate before uploads; the direct queue waits for the copy queue.
 			frame.copyCommandList.resourceAliasingBarrier(null, res.res);
+			frame.copyCommandsPending = true;
 			res.needsAliasingBarrier = false;
 		}
 		if( res.targetState == to )
@@ -2419,6 +2428,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		waitCopy();
 		frame.copyAllocator.reset();
 		frame.copyCommandList.reset(frame.copyAllocator, null);
+		frame.copyCommandsPending = false;
 		while( frame.pendingCopyBuffers.length > 0 )
 			uploadBufferAlloc.free(frame.pendingCopyBuffers.pop());
 		frame.pendingCopyBytes = 0;
@@ -2453,11 +2463,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		if( texture.needsAliasingBarrier ) {
 			frame.copyCommandList.resourceAliasingBarrier(null, texture.res);
+			frame.copyCommandsPending = true;
 			texture.needsAliasingBarrier = false;
 		}
 		var mem = alloc.alloc(tmpSize, null, textureAlignment);
 
 		if( useCopy ) {
+			frame.copyCommandsPending = true;
 			frame.pendingCopyBuffers.push(mem);
 			frame.pendingCopyBytes += mem.size;
 			uploadIdleFrames = 0;
@@ -2598,19 +2610,19 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		return mem;
 	}
 
-	function hasTexturesChanged( buf : h3d.shader.Buffers.ShaderBuffers, regs : ShaderRegisters ) : Bool {
-		if( regs.lastHeapCount != heapCount )
-			return true;
+	function matchesTextureTable(buf:h3d.shader.Buffers.ShaderBuffers, table:TextureTable, count:Int):Bool {
+		if( table.heapGeneration != heapCount )
+			return false;
 
-		for( i in 0...regs.texturesTypes.length ) {
+		for( i in 0...count ) {
 			var t = buf.tex[i];
-			var td = t != null ? t.t : null;
-			var bits = t != null ? t.bits : -1;
-			if( regs.lastTextures[i] != td || regs.lastTexturesBits[i] != bits )
-				return true;
+			final texture:TextureData = t == null ? null : t.t;
+			if( texture == null || table.textures[i] != texture || table.resources[i] != texture.res || table.bits[i] != t.bits
+				|| table.residentMips[i] != t.residentMip || table.flags[i] != t.flags.toInt() )
+				return false;
 		}
 
-		return false;
+		return true;
 	}
 
 	inline function toDepthFormat(format : h3d.mat.Data.TextureFormat ) : DxgiFormat {
@@ -2783,9 +2795,9 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		switch( which ) {
 		case Params:
 			if( shader.paramsSize > 0 ) {
-				var data = hl.Bytes.getArray(buf.params.toData());
-				var dataSize = shader.paramsSize << 4;
 				if( regs.paramsCache.update(buf.params, shader.paramsSize << 2, regs.paramsGeneration != paramsGeneration) ) {
+					var data = hl.Bytes.getArray(buf.params.toData());
+					var dataSize = shader.paramsSize << 4;
 					if( regs.params & 0x100 != 0 ) {
 						// update CBV
 						var srv = frame.srvHeap.alloc(1);
@@ -2861,21 +2873,28 @@ class DX12Driver extends h3d.impl.driver.Driver {
 				lastVertexGlobalBind = bind;
 		case Textures:
 			if( shader.texturesCount > 0 ) {
-				if ( hasTexturesChanged(buf, regs) ) {
-					regs.lastHeapCount = heapCount;
-					regs.srv = frame.srvHeap.alloc(shader.texturesCount);
-					regs.samplersView = frame.samplerHeap.alloc(regs.texturesCount);
-					if ( regs.lastTextures.length < shader.texturesCount ) {
-						regs.lastTextures.resize(shader.texturesCount);
-						regs.lastTexturesBits.resize(shader.texturesCount);
-					}
-					var regIndex = regs.buffers + shader.bufferCount;
+				var table = regs.textureTable;
+				var alternate = regs.alternateTextureTable;
+				var reuse = matchesTextureTable(buf, table, shader.texturesCount);
+				if( !reuse ) {
+					reuse = matchesTextureTable(buf, alternate, shader.texturesCount);
+					regs.alternateTextureTable = table;
+					regs.textureTable = table = alternate;
+				}
+
+				if( !reuse ) {
+					final tableHeapGeneration = heapCount;
+					table.heapGeneration = -1;
+					table.srv = frame.srvHeap.alloc(shader.texturesCount);
+					table.samplers = frame.samplerHeap.alloc(regs.texturesCount);
+					var cacheable = true;
 					var textureIndex = 0;
 					var uavIndex = regs.texturesCount;
 					for( i in 0...shader.texturesCount ) {
 						var t = buf.tex[i];
 						var pt = regs.texturesTypes[i];
 						if( t == null || t.isDisposed() ) {
+							cacheable = false;
 							switch ( pt ) {
 							case TSampler(TCube, false):
 								t = h3d.mat.Texture.defaultCubeTexture();
@@ -2891,9 +2910,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 							t.alloc();
 							t.realloc();
 							if( hasDeviceError ) return;
-							if( s != currentShader ) {
-								// realloc triggered a shader change !
-								// we need to reset the original shader and reupload everything
+							if( s != currentShader || tableHeapGeneration != heapCount ) {
+								// realloc can draw or change descriptor heaps
 								currentShader = null;
 								selectShader(s.shader);
 								uploadShaderBuffers(buffers,Globals);
@@ -2902,9 +2920,6 @@ class DX12Driver extends h3d.impl.driver.Driver {
 								return;
 							}
 						}
-
-						regs.lastTextures[i] = buf.tex[i] != null ? buf.tex[i].t : null;
-						regs.lastTexturesBits[i] = buf.tex[i] != null ? buf.tex[i].bits : -1;
 
 						markUsed(t);
 
@@ -2939,20 +2954,27 @@ class DX12Driver extends h3d.impl.driver.Driver {
 								desc.arraySize = 1;
 							}
 							final texture:TextureData = t.t;
-							Driver.createUnorderedAccessView(texture.res, null, desc, regs.srv.offset(uavIndex * frame.srvHeap.stride));
+							Driver.createUnorderedAccessView(texture.res, null, desc, table.srv.offset(uavIndex * frame.srvHeap.stride));
 							uavIndex++;
-							continue;
 						default:
 							var state = if ( shader.kind == Fragment )
 								PIXEL_SHADER_RESOURCE;
 							else
 								NON_PIXEL_SHADER_RESOURCE;
 							transition(t.t, state);
-							createTexView(t, regs.srv.offset(textureIndex * frame.srvHeap.stride));
-							createSampler(t, regs.samplersView.offset(textureIndex * frame.samplerHeap.stride));
+							createTexView(t, table.srv.offset(textureIndex * frame.srvHeap.stride));
+							createSampler(t, table.samplers.offset(textureIndex * frame.samplerHeap.stride));
 							textureIndex++;
 						}
+						final texture:TextureData = t.t;
+						table.textures[i] = texture;
+						table.resources[i] = texture.res;
+						table.bits[i] = t.bits;
+						table.residentMips[i] = t.residentMip;
+						table.flags[i] = t.flags.toInt();
 					}
+					if( cacheable )
+						table.heapGeneration = tableHeapGeneration;
 				} else {
 					for( i in 0...shader.texturesCount ) {
 						var t = buf.tex[i];
@@ -2969,15 +2991,21 @@ class DX12Driver extends h3d.impl.driver.Driver {
 					}
 				}
 
+				if( reuse && regs.boundTextureTable == table && regs.textureTableBindingGeneration == paramsGeneration )
+					return;
+
+				final srv = frame.srvHeap.toGPU(table.srv);
 				if( currentShader.isCompute ) {
-					frame.commandList.setComputeRootDescriptorTable(regs.textures, frame.srvHeap.toGPU(regs.srv));
-					if ( regs.texturesCount > 0 )
-						frame.commandList.setComputeRootDescriptorTable(regs.samplers, frame.samplerHeap.toGPU(regs.samplersView));
-				} else {
-					frame.commandList.setGraphicsRootDescriptorTable(regs.textures, frame.srvHeap.toGPU(regs.srv));
-					if ( regs.texturesCount > 0 )
-						frame.commandList.setGraphicsRootDescriptorTable(regs.samplers, frame.samplerHeap.toGPU(regs.samplersView));
-				}
+					frame.commandList.setComputeRootDescriptorTable(regs.textures, srv);
+					if( regs.texturesCount > 0 )
+						frame.commandList.setComputeRootDescriptorTable(regs.samplers, frame.samplerHeap.toGPU(table.samplers));
+				} else if( regs.texturesCount > 0 )
+					frame.commandList.setGraphicsRootDescriptorTables(regs.textures, srv, regs.samplers, frame.samplerHeap.toGPU(table.samplers));
+				else
+					frame.commandList.setGraphicsRootDescriptorTable(regs.textures, srv);
+
+				regs.boundTextureTable = table;
+				regs.textureTableBindingGeneration = paramsGeneration;
 			}
 		case Buffers:
 			if( shader.bufferCount > 0 ) {
@@ -3101,9 +3129,13 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	override function selectBuffer(buffer:Buffer) {
+		final vbuf:BufferData = buffer.vbuf;
+		transition(vbuf, VERTEX_AND_CONSTANT_BUFFER);
+		if( currentVertex == vbuf && currentVertexFormat == buffer.format && currentVertexShader == currentShader )
+			return;
+
 		ensureVertexViews(currentShader.inputCount);
 		var views = tmp.vertexViews;
-		final vbuf:BufferData = buffer.vbuf;
 		var bview = vbuf.view;
 		var map = buffer.format.resolveMapping(currentShader.format);
 		for( i in 0...currentShader.inputCount ) {
@@ -3114,8 +3146,10 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			v.strideInBytes = bview.strideInBytes;
 			pipelineBuilder.setBuffer(i, inf, v.strideInBytes);
 		}
-		transition(vbuf, VERTEX_AND_CONSTANT_BUFFER);
 		frame.commandList.iaSetVertexBuffers(0, currentShader.inputCount, views[0]);
+		currentVertex = vbuf;
+		currentVertexFormat = buffer.format;
+		currentVertexShader = currentShader;
 	}
 
 	override function selectMultiBuffers(formats:hxd.BufferFormat.MultiFormat,buffers:Array<h3d.Buffer>) {
@@ -3134,6 +3168,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			pipelineBuilder.setBuffer(i, inf, v.strideInBytes);
 		}
 		frame.commandList.iaSetVertexBuffers(0, map.length, views[0]);
+		currentVertex = null;
 	}
 
 	inline function ensureVertexViews( count : Int ) {
@@ -3397,11 +3432,11 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		if( !flushPipeline() )
 			return;
-		if( currentIndex != ibuf ) {
-			currentIndex = ibuf;
-			final vbuf:BufferData = ibuf.vbuf;
-			transition(vbuf, INDEX_BUFFER);
-			frame.commandList.iaSetIndexBuffer(vbuf.iview);
+		final index:BufferData = ibuf.vbuf;
+		transition(index, INDEX_BUFFER);
+		if( currentIndex != index ) {
+			frame.commandList.iaSetIndexBuffer(index.iview);
+			currentIndex = index;
 		}
 		flushTransitions();
 		frame.commandList.drawIndexedInstanced(ntriangles * 3,1,startIndex,0,0);
@@ -3413,11 +3448,11 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 		if( !flushPipeline() )
 			return;
-		if( currentIndex != ibuf ) {
-			currentIndex = ibuf;
-			final vbuf:BufferData = ibuf.vbuf;
-			transition(vbuf, INDEX_BUFFER);
-			frame.commandList.iaSetIndexBuffer(vbuf.iview);
+		final index:BufferData = ibuf.vbuf;
+		transition(index, INDEX_BUFFER);
+		if( currentIndex != index ) {
+			frame.commandList.iaSetIndexBuffer(index.iview);
+			currentIndex = index;
 		}
 		if( commands.data != null ) {
 			transition(commands.data, INDIRECT_ARGUMENT);
@@ -3492,9 +3527,11 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		flushQueries();
 		frame.commandList.close();
 		frame.copyCommandList.close();
-		copyQueue.executeCommandList(frame.copyCommandList);
-		copyQueue.signal(copyFence, ++copyFenceValue);
-		directQueue.wait(copyFence, copyFenceValue);
+		if( frame.copyCommandsPending ) {
+			copyQueue.executeCommandList(frame.copyCommandList);
+			copyQueue.signal(copyFence, ++copyFenceValue);
+			directQueue.wait(copyFence, copyFenceValue);
+		}
 		directQueue.executeCommandList(frame.commandList);
 		currentPipelineState = null;
 		currentShader = null;

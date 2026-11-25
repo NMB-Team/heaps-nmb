@@ -311,6 +311,7 @@ class VulkanDriver extends Driver {
 	final vertexLayouts:Map<VulkanCompiledShader, Map<hxd.BufferFormat, VulkanVertexLayout>> = new Map();
 	final multiVertexLayouts:Map<VulkanCompiledShader, Map<hxd.BufferFormat.MultiFormat, VulkanVertexLayout>> = new Map();
 	var pipelineDescription = new VulkanGraphicsPipelineDesc();
+	var graphicsPipelineDirty = true;
 	var pipelineColorFormats:Array<VkFormat> = [];
 	var pipelineColorMasks:Array<Int> = [];
 	final blendFormatSupport:Map<Int, Bool> = new Map();
@@ -739,6 +740,7 @@ class VulkanDriver extends Driver {
 		boundVertexOffsets.resize(0);
 		boundIndexBuffer = null;
 		currentTargetSet = resolveDefaultTarget(ReadWrite);
+		graphicsPipelineDirty = true;
 		if( defaultDepthBuffer != null )
 			@:privateAccess defaultDepthBuffer.t = outImages[currentImageIndex].depthResource;
 		viewportWidth = currentTargetSet.width;
@@ -1241,7 +1243,10 @@ class VulkanDriver extends Driver {
 	override function setDepthClamp(enabled:Bool) {
 		if( enabled && !capabilities.depthClamp )
 			throw "Vulkan depth clamp is not supported by this device";
-		driverDepthClamp = enabled;
+		if( driverDepthClamp != enabled ) {
+			driverDepthClamp = enabled;
+			graphicsPipelineDirty = true;
+		}
 	}
 
 	override function setDepthBias(depthBias:Float, slopeScaledBias:Float) {
@@ -1299,6 +1304,7 @@ class VulkanDriver extends Driver {
 		if( p.compute != null && !capabilities.graphicsQueueCompute )
 			throw 'Vulkan compute is unavailable because graphics queue family ${capabilities.graphicsQueueFamily} lacks VK_QUEUE_COMPUTE_BIT; ${capabilities.diagnostics}';
 		currentShader = p;
+		graphicsPipelineDirty = true;
 		clearTextureBindings();
 		textureBindingsShaderKey = p.cacheKey;
 		bufferBindings.clear();
@@ -1449,6 +1455,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		computePipelineManager.reclaimUnused(frame - keepFrames, completedSubmissionSerial, deferredDestroy);
 		deferredDestroy.collect(completedSubmissionSerial, ctx);
 		if (reclaimed != pipelineManager.reclaimedCount + computePipelineManager.reclaimedCount) {
+			graphicsPipelineDirty = true;
 			boundPipeline = null;
 			boundComputePipeline = null;
 		}
@@ -1639,6 +1646,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			beginRendering();
 		suspendRendering();
 		currentTargetSet = next;
+		graphicsPipelineDirty = true;
 		viewportWidth = next.width;
 		viewportHeight = next.height;
 		setRenderZone(0, 0, -1, -1);
@@ -2182,6 +2190,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			viewportHeight = savedTarget.height;
 			setRenderZone(0, 0, -1, -1);
 		}
+		graphicsPipelineDirty = true;
 		currentShader = savedShader;
 		currentVertexLayout = savedVertexLayout;
 		currentVertexBuffers = savedVertexBuffers;
@@ -2371,7 +2380,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			layout = new VulkanVertexLayout(bindings, attributes);
 			layouts.set(format, layout);
 		}
-		currentVertexLayout = layout;
+		if( currentVertexLayout != layout ) {
+			currentVertexLayout = layout;
+			graphicsPipelineDirty = true;
+		}
 		currentVertexBuffers.resize(hxd.Math.imax(1, layout.bindings.length));
 		currentVertexBuffers[0] = vbuf;
 		for( binding in layout.bindings ) {
@@ -2418,7 +2430,10 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			layout = new VulkanVertexLayout(bindings, attributes);
 			layouts.set(format, layout);
 		}
-		currentVertexLayout = layout;
+		if( currentVertexLayout != layout ) {
+			currentVertexLayout = layout;
+			graphicsPipelineDirty = true;
+		}
 		final bindingCount = layout.bindings.length;
 		currentVertexBuffers.resize(hxd.Math.imax(1, bindingCount));
 		if( bindingCount == 0 ) {
@@ -2739,6 +2754,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 		materialSelected = true;
 		currentMaterialBits = bits;
+		graphicsPipelineDirty = true;
 	}
 
 	inline function blendFactor(factor:h3d.mat.Data.Blend):VkBlendFactor {
@@ -3085,7 +3101,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Vulkan indexed draw requires a valid 16-bit or 32-bit index buffer";
 		if( currentTargetSet == null )
 			throw "Vulkan indexed draw requires an active attachment set";
-		if( currentBlendState.enabled )
+		if( graphicsPipelineDirty && currentBlendState.enabled )
 			for( attachment in currentTargetSet.colors ) {
 				final format:Int = cast attachment.format;
 				var supported = blendFormatSupport.get(format);
@@ -3118,6 +3134,22 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		prepareShaderTextures(false);
 		beginRendering();
 		beginActiveSampleQuery();
+		final pipeline = graphicsPipelineDirty ? resolveGraphicsPipeline() : pipelineManager.reuseResolved(currentSubmissionSerial);
+		if( boundPipeline != pipeline ) {
+			command.bindPipeline(GRAPHICS, pipeline);
+			boundPipeline = pipeline;
+			boundDynamicState = false;
+		}
+		applyDynamicDrawState();
+		bindShaderDescriptors(false);
+		if( boundIndexBuffer != b ) {
+			command.bindIndexBuffer(b.buffer, 0, cast (b.stride == 4 ? VkIndexType.UINT32 : VkIndexType.UINT16));
+			boundIndexBuffer = b;
+		}
+		return b;
+	}
+
+	function resolveGraphicsPipeline():VkGraphicsPipeline {
 		final targetDepthFormat = currentTargetSet.depth == null ? VkFormat.UNDEFINED : currentTargetSet.depth.format;
 		final targetStencilFormat = currentTargetSet.stencil == null ? VkFormat.UNDEFINED : currentTargetSet.stencil.format;
 		final stencilState = effectiveStencilState();
@@ -3137,18 +3169,8 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		pipelineDescription.update(currentShader, currentVertexLayout, pipelineColorFormats, targetDepthFormat, targetStencilFormat,
 			currentTargetSet.samples, currentBlendState, pipelineColorMasks, stencilState, currentDepthClamp || driverDepthClamp, currentWireframe);
 		final pipeline = pipelineManager.get(pipelineDescription, currentSubmissionSerial);
-		if( boundPipeline != pipeline ) {
-			command.bindPipeline(GRAPHICS, pipeline);
-			boundPipeline = pipeline;
-			boundDynamicState = false;
-		}
-		applyDynamicDrawState();
-		bindShaderDescriptors(false);
-		if( boundIndexBuffer != b ) {
-			command.bindIndexBuffer64(b.buffer, (haxe.Int64.ofInt(0) : hl.I64), b.stride == 4 ? VkIndexType.UINT32 : VkIndexType.UINT16);
-			boundIndexBuffer = b;
-		}
-		return b;
+		graphicsPipelineDirty = false;
+		return pipeline;
 	}
 
 	function applyDynamicDrawState() {

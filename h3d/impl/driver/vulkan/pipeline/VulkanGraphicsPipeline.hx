@@ -303,6 +303,7 @@ private class VulkanGraphicsPipelineEntry {
 class VulkanGraphicsPipelineManager {
 	final context:Context;
 	final buckets:Map<Int, Array<VulkanGraphicsPipelineEntry>> = new Map();
+	var resolved:VulkanGraphicsPipelineEntry;
 	public var createdCount(default, null) = 0;
 	public var hitCount(default, null) = 0;
 	public var reclaimedCount(default, null) = 0;
@@ -318,9 +319,8 @@ class VulkanGraphicsPipelineManager {
 			for (entry in bucket)
 				if (entry.description.equals(description)) {
 					hitCount++;
-					entry.lastFrame = hxd.Timer.frameCount;
-					entry.lastSubmission = submissionSerial;
-					return entry.pipeline;
+					resolved = entry;
+					return reuseResolved(submissionSerial);
 				}
 		if (bucket == null) {
 			bucket = [];
@@ -329,11 +329,17 @@ class VulkanGraphicsPipelineManager {
 		final saved = description.snapshot();
 		final pipeline = create(saved);
 		final entry = new VulkanGraphicsPipelineEntry(saved, pipeline);
-		entry.lastFrame = hxd.Timer.frameCount;
-		entry.lastSubmission = submissionSerial;
 		bucket.push(entry);
 		createdCount++;
-		return pipeline;
+		resolved = entry;
+		return reuseResolved(submissionSerial);
+	}
+
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	inline function reuseResolved(submissionSerial:Int):VkGraphicsPipeline {
+		resolved.lastFrame = hxd.Timer.frameCount;
+		resolved.lastSubmission = submissionSerial;
+		return resolved.pipeline;
 	}
 
 	function create(description:VulkanGraphicsPipelineDesc):VkGraphicsPipeline {
@@ -452,6 +458,7 @@ class VulkanGraphicsPipelineManager {
 			var write = 0;
 			for (entry in bucket) {
 				if (entry.lastFrame < beforeFrame && entry.lastSubmission <= completedSerial) {
+					if (resolved == entry) resolved = null;
 					deferred.retire(entry.lastSubmission, () -> context.destroyGraphicsPipeline(entry.pipeline));
 					reclaimedCount++;
 				} else {
@@ -470,6 +477,7 @@ class VulkanGraphicsPipelineManager {
 			for (entry in bucket)
 				context.destroyGraphicsPipeline(entry.pipeline);
 		buckets.clear();
+		resolved = null;
 	}
 }
 #end

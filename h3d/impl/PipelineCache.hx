@@ -352,26 +352,33 @@ class PipelineBuilder {
 	}
 
 	public function selectMaterial( pass : h3d.mat.Pass ) @:privateAccess {
-		signature.setI32(PSIGN_MATID, pass.bits);
-		signature.setUI8(PSIGN_COLOR_MASK, pass.colorMask);
-		var st = pass.stencil;
-		if( st != null ) {
-			signature.setUI16(PSIGN_STENCIL_MASK, st.maskBits & 0xFFFF);
-			signature.setI32(PSIGN_STENCIL_OPS, st.opBits);
-		} else {
-			signature.setUI16(PSIGN_STENCIL_MASK, 0);
-			signature.setI32(PSIGN_STENCIL_OPS, 0);
-		}
+		final bits = pass.bits;
+		final colorMask = pass.colorMask & 0xFF;
+		final stencil = pass.stencil;
+		final stencilMask = stencil == null ? 0 : stencil.maskBits & 0xFFFF;
+		final stencilOps = stencil == null ? 0 : stencil.opBits;
+		if( signature.getI32(PSIGN_MATID) == bits && signature.getUI8(PSIGN_COLOR_MASK) == colorMask
+			&& signature.getUI16(PSIGN_STENCIL_MASK) == stencilMask && signature.getI32(PSIGN_STENCIL_OPS) == stencilOps )
+			return;
+
+		signature.setI32(PSIGN_MATID, bits);
+		signature.setUI8(PSIGN_COLOR_MASK, colorMask);
+		signature.setUI16(PSIGN_STENCIL_MASK, stencilMask);
+		signature.setI32(PSIGN_STENCIL_OPS, stencilOps);
 		needFlush = true;
 	}
 
 	public inline function setBuffer( i : Int, inf : hxd.BufferFormat.BufferMapping, stride : Int ) {
 		if( inf.offset >= 256 || (inf.offset & 3) != 0 ) throw "assert";
-		signature.setUI16(PSIGN_LAYOUT + (i<<SHIFT_PER_BUFFER), (inf.offset << 1) | inf.precision.toInt());
-		#if js
-		signature.setUI16(PSIGN_LAYOUT + (i<<SHIFT_PER_BUFFER) + 2, stride);
-		#end
-		needFlush = true;
+		final offset = PSIGN_LAYOUT + (i << SHIFT_PER_BUFFER);
+		final input = (inf.offset << 1) | inf.precision.toInt();
+		if( signature.getUI16(offset) != input #if js || signature.getUI16(offset + 2) != stride #end ) {
+			signature.setUI16(offset, input);
+			#if js
+			signature.setUI16(offset + 2, stride);
+			#end
+			needFlush = true;
+		}
 	}
 
 	public function getCurrentPass() @:privateAccess {
