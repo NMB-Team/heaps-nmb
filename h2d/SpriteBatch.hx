@@ -477,14 +477,17 @@ class SpriteBatch extends Drawable {
 	}
 
 	function flush() {
-		if( first == null ) {
-			return;
-		}
+		if( first == null ) return;
+
 		if( tmpBuf == null ) tmpBuf = new hxd.FloatBuffer();
+		var tmp = tmpBuf;
+		var capacity = tmp.length;
 		var pos = 0;
 		var e = first;
-		var tmp = tmpBuf;
-		var bufferVertices = 0;
+		var runStart = 0;
+		#if hl
+		var data = hl.Bytes.getArray(tmp.getNative());
+		#end
 		state.clear();
 
 		while( e != null ) {
@@ -494,100 +497,78 @@ class SpriteBatch extends Drawable {
 			}
 
 			var t = e.t;
-			state.setTile(t);
-			state.add(4);
+			var texture = t.getTexture();
+			if( texture != null && texture != state.currentTexture ) {
+				state.add((pos - runStart) >> 3);
+				state.setTexture(texture);
+				runStart = pos;
+			}
 
-			tmp.grow(pos + 8 * 4);
+			if( pos + 32 > capacity ) {
+				capacity = pos + 32;
+				tmp.grow(capacity);
+				#if hl
+				// growing the float array can move its backing storage
+				data = hl.Bytes.getArray(tmp.getNative());
+				#end
+			}
 
 			final r : hxd.impl.Float32 = e.r, g : hxd.impl.Float32 = e.g, b : hxd.impl.Float32 = e.b, a : hxd.impl.Float32 = e.a;
-			final u0 : hxd.impl.Float32 = t.u0, v0 : hxd.impl.Float32 = t.v0, u1 : hxd.impl.Float32 = t.u1, v1 : hxd.impl.Float32 = t.v1,
-			u2c : hxd.impl.Float32 = t.u2c, v2c : hxd.impl.Float32 = t.v2c, u3 : hxd.impl.Float32 = t.u3, v3 : hxd.impl.Float32 = t.v3;
+			inline function emit(x:Float, y:Float, u:hxd.impl.Float32, v:hxd.impl.Float32) {
+				#if hl
+				final offset = pos << 2;
+				data.setF32(offset, x);
+				data.setF32(offset + 4, y);
+				data.setF32(offset + 8, u);
+				data.setF32(offset + 12, v);
+				data.setF32(offset + 16, r);
+				data.setF32(offset + 20, g);
+				data.setF32(offset + 24, b);
+				data.setF32(offset + 28, a);
+				pos += 8;
+				#else
+				tmp[pos++] = x;
+				tmp[pos++] = y;
+				tmp[pos++] = u;
+				tmp[pos++] = v;
+				tmp[pos++] = r;
+				tmp[pos++] = g;
+				tmp[pos++] = b;
+				tmp[pos++] = a;
+				#end
+			}
+
 			if( hasRotationScale ) {
 				var ca = Math.cos(e.rotation), sa = Math.sin(e.rotation);
-				var hx = t.width, hy = t.height;
-				var px = t.dx * e.scaleX, py = t.dy * e.scaleY;
-				tmp[pos++] = px * ca - py * sa + e.x;
-				tmp[pos++] = py * ca + px * sa + e.y;
-				tmp[pos++] = u0;
-				tmp[pos++] = v0;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				var px = (t.dx + hx) * e.scaleX, py = t.dy * e.scaleY;
-				tmp[pos++] = px * ca - py * sa + e.x;
-				tmp[pos++] = py * ca + px * sa + e.y;
-				tmp[pos++] = u1;
-				tmp[pos++] = v1;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				var px = t.dx * e.scaleX, py = (t.dy + hy) * e.scaleY;
-				tmp[pos++] = px * ca - py * sa + e.x;
-				tmp[pos++] = py * ca + px * sa + e.y;
-				tmp[pos++] = u2c;
-				tmp[pos++] = v2c;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				var px = (t.dx + hx) * e.scaleX, py = (t.dy + hy) * e.scaleY;
-				tmp[pos++] = px * ca - py * sa + e.x;
-				tmp[pos++] = py * ca + px * sa + e.y;
-				tmp[pos++] = u3;
-				tmp[pos++] = v3;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
+				var x0 = t.dx * e.scaleX, x1 = (t.dx + t.width) * e.scaleX;
+				var y0 = t.dy * e.scaleY, y1 = (t.dy + t.height) * e.scaleY;
+				emit(x0 * ca - y0 * sa + e.x, y0 * ca + x0 * sa + e.y, t.u0, t.v0);
+				emit(x1 * ca - y0 * sa + e.x, y0 * ca + x1 * sa + e.y, t.u1, t.v1);
+				emit(x0 * ca - y1 * sa + e.x, y1 * ca + x0 * sa + e.y, t.u2c, t.v2c);
+				emit(x1 * ca - y1 * sa + e.x, y1 * ca + x1 * sa + e.y, t.u3, t.v3);
 			} else {
-				var sx = e.x + t.dx;
-				var sy = e.y + t.dy;
-				tmp[pos++] = sx;
-				tmp[pos++] = sy;
-				tmp[pos++] = u0;
-				tmp[pos++] = v0;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				tmp[pos++] = sx + t.width + 0.1;
-				tmp[pos++] = sy;
-				tmp[pos++] = u1;
-				tmp[pos++] = v1;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				tmp[pos++] = sx;
-				tmp[pos++] = sy + t.height + 0.1;
-				tmp[pos++] = u2c;
-				tmp[pos++] = v2c;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
-				tmp[pos++] = sx + t.width + 0.1;
-				tmp[pos++] = sy + t.height + 0.1;
-				tmp[pos++] = u3;
-				tmp[pos++] = v3;
-				tmp[pos++] = r;
-				tmp[pos++] = g;
-				tmp[pos++] = b;
-				tmp[pos++] = a;
+				var x0 = e.x + t.dx, x1 = x0 + t.width + 0.1;
+				var y0 = e.y + t.dy, y1 = y0 + t.height + 0.1;
+				emit(x0, y0, t.u0, t.v0);
+				emit(x1, y0, t.u1, t.v1);
+				emit(x0, y1, t.u2c, t.v2c);
+				emit(x1, y1, t.u3, t.v3);
 			}
+
 			e = e.next;
 		}
-		bufferVertices = pos>>3;
+
+		state.add((pos - runStart) >> 3);
+		var bufferVertices = pos >> 3;
 		if( buffer != null && !buffer.isDisposed() ) {
-			if( buffer.vertices >= bufferVertices ){
+			if( buffer.vertices >= bufferVertices ) {
 				buffer.uploadFloats(tmpBuf, 0, bufferVertices);
 				return;
 			}
 			buffer.dispose();
 			buffer = null;
 		}
+
 		empty = bufferVertices == 0;
 		if( bufferVertices > 0 ) {
 			buffer = hxd.impl.Allocator.get().ofSubFloats(tmpBuf, bufferVertices, hxd.BufferFormat.H2D, Dynamic);
