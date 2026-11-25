@@ -2,6 +2,9 @@ package h2d;
 
 import h2d.RenderContext;
 import h2d.impl.BatchDrawState;
+#if (hl && limen && heaps_native_sprite_jobs)
+import limen.internal.NativeJobs;
+#end
 
 /**
 	Iterates through the BatchElement linked list.
@@ -488,6 +491,9 @@ class SpriteBatch extends Drawable {
 		#if hl
 		var data = hl.Bytes.getArray(tmp.getNative());
 		#end
+		#if (hl && limen && heaps_native_sprite_jobs)
+		final nativeGeometry = hasRotationScale && NativeJobs.workers >= 0 && buffer != null && buffer.vertices >= 4096;
+		#end
 		state.clear();
 
 		while( e != null ) {
@@ -512,6 +518,38 @@ class SpriteBatch extends Drawable {
 				data = hl.Bytes.getArray(tmp.getNative());
 				#end
 			}
+
+			#if (hl && limen && heaps_native_sprite_jobs)
+			if( nativeGeometry ) {
+				// each snapshot occupies the same slot as its output quad
+				final offset = pos << 2;
+				data.setF64(offset, e.x);
+				data.setF64(offset + 8, e.y);
+				data.setF64(offset + 16, t.dx);
+				data.setF64(offset + 24, t.dy);
+				data.setF64(offset + 32, t.width);
+				data.setF64(offset + 40, t.height);
+				data.setF64(offset + 48, e.scaleX);
+				data.setF64(offset + 56, e.scaleY);
+				data.setF64(offset + 64, e.rotation);
+
+				data.setF32(offset + 72, t.u0);
+				data.setF32(offset + 76, t.v0);
+				data.setF32(offset + 80, t.u1);
+				data.setF32(offset + 84, t.v1);
+				data.setF32(offset + 88, t.u2c);
+				data.setF32(offset + 92, t.v2c);
+				data.setF32(offset + 96, t.u3);
+				data.setF32(offset + 100, t.v3);
+				data.setF32(offset + 104, e.r);
+				data.setF32(offset + 108, e.g);
+				data.setF32(offset + 112, e.b);
+				data.setF32(offset + 116, e.a);
+				pos += 32;
+				e = e.next;
+				continue;
+			}
+			#end
 
 			final r : hxd.impl.Float32 = e.r, g : hxd.impl.Float32 = e.g, b : hxd.impl.Float32 = e.b, a : hxd.impl.Float32 = e.a;
 			inline function emit(x:Float, y:Float, u:hxd.impl.Float32, v:hxd.impl.Float32) {
@@ -558,6 +596,10 @@ class SpriteBatch extends Drawable {
 			e = e.next;
 		}
 
+		#if (hl && limen && heaps_native_sprite_jobs)
+		if( nativeGeometry && pos > 0 )
+			NativeJobs.buildSpriteGeometry(data, capacity << 2, pos >> 5, NativeJobs.workers);
+		#end
 		state.add((pos - runStart) >> 3);
 		var bufferVertices = pos >> 3;
 		if( buffer != null && !buffer.isDisposed() ) {

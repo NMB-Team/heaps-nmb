@@ -295,6 +295,9 @@ class System {
 		var engine = h3d.Engine.getCurrent();
 		if( engine != null )
 			engine.driver.upscaling.dispose();
+		#if (limen && (heaps_native_jobs || heaps_native_sprite_jobs || heaps_native_world_culling))
+		limen.internal.NativeJobs.stop();
+		#end
 		Sys.exit(0);
 	}
 
@@ -511,6 +514,9 @@ class System {
 	}
 
 	public static function exit() : Void {
+		#if (limen && (heaps_native_jobs || heaps_native_sprite_jobs || heaps_native_world_culling))
+		limen.internal.NativeJobs.stop();
+		#end
 		try {
 			Sys.exit(0);
 		} catch( e : Dynamic ) {

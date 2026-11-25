@@ -397,7 +397,14 @@ class Pixels {
 		case [S3TC(ver),_]:
 			if( (width|height)&3 != 0 ) throw "Texture size should be 4x4 multiple";
 			var out = haxe.io.Bytes.alloc(width * height * 4);
-			if( !std.format.hl.Native.decodeDXT((this.bytes:hl.Bytes).offset(this.offset), out, width, height, ver) )
+			#if (limen && heaps_native_jobs)
+			final workers = limen.internal.NativeJobs.workers;
+			final decoded = workers > 0 && width * height >= 1024 * 1024 &&
+				limen.internal.NativeJobs.decodeDxt(this.bytes, this.bytes.length, this.offset, out, out.length, width, height, ver, workers);
+			#else
+			final decoded = false;
+			#end
+			if( !decoded && !std.format.hl.Native.decodeDXT((this.bytes:hl.Bytes).offset(this.offset), out, width, height, ver) )
 				throw "Failed to decode DDS";
 			offset = 0;
 			this.bytes = out;
