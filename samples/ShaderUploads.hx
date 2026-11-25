@@ -112,11 +112,9 @@ private class ProbeOutput extends h3d.pass.Output {
 				if( block.frequency != h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanConstantFrequency.Params ) continue;
 				var id = s.constantBlockIds.get(block);
 				var upload = frame.shaderConstants.get(id);
-				if( upload == null ) {
-					upload = new h3d.impl.driver.vulkan.transfer.VulkanUploadManager.VulkanConstantUpload();
-					frame.shaderConstants.set(id, upload);
-				}
-				upload.paramsCache = counter(upload.paramsCache, block.stage == h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage.Vertex);
+				var cache = counter(upload?.cache, block.stage == h3d.impl.driver.vulkan.shader.VulkanShaderAbi.VulkanShaderStage.Vertex);
+				if( upload == null || upload.cache != cache )
+					frame.shaderConstants.set(id, new h3d.impl.driver.vulkan.transfer.VulkanUploadManager.VulkanConstantUpload(cache));
 			}
 		}
 		#end

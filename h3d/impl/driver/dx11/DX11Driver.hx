@@ -977,7 +977,7 @@ class DX11Driver extends h3d.impl.driver.Driver {
 			var prev = from.lastFrame;
 			from.preventAutoDispose();
 			to.alloc();
-			@:bypassAccessor from.lastFrame = prev;
+			from.restoreLastFrame(prev);
 			if( from.t == null ) throw "assert";
 			if( to.t == null ) return false;
 		}

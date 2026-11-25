@@ -24,6 +24,7 @@ private class VulkanUploadPage {
 	public final mapped:hl.Bytes;
 	public final coherent:Bool;
 	public var offset = 0;
+	public var dirtyFrom = -1;
 	public var idleFrames = 0;
 	public var underusedFrames = 0;
 
@@ -39,15 +40,17 @@ class VulkanConstantUpload {
 	public var buffer:VulkanUploadBuffer;
 	public var offset:Int;
 	public var size:Int;
-	public final cache = new h3d.impl.driver.ShaderParamCache();
+	public final cache:h3d.impl.driver.ShaderParamCache;
 
-	public function new() {
+	public function new(?cache:h3d.impl.driver.ShaderParamCache) {
+		this.cache = cache == null ? new h3d.impl.driver.ShaderParamCache() : cache;
 	}
 }
 
 class VulkanUploadManager {
 	final context:Context;
 	final allocator:VulkanMemoryAllocator;
+	final imageRegion = new VkBufferImageCopy();
 	final pageSize:Int;
 	final frames:Array<Array<VulkanUploadPage>>;
 	final frameDemand:Array<Int>;
@@ -114,9 +117,7 @@ class VulkanUploadManager {
 		allocate(size, 16);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
-		page.buffer.allocation.flush(offset, size);
-		uploadedBytes += size;
+		writeUpload(page, offset, source, sourceOffset, size);
 		VulkanResourceState.transitionBuffer(command, destination, TransferDestination, Int64.ofInt(destinationOffset), Int64.ofInt(size));
 		command.copyBuffer2(page.buffer.buffer, destination.buffer, (Int64.ofInt(offset) : hl.I64), (Int64.ofInt(destinationOffset) : hl.I64), (Int64.ofInt(size) : hl.I64));
 	}
@@ -143,9 +144,19 @@ class VulkanUploadManager {
 	inline function writeUpload(page:VulkanUploadPage, offset:Int, source:hl.Bytes, sourceOffset:Int, size:Int) {
 		// queue submission makes flushed host writes visible to the GPU
 		page.mapped.blit(offset, source, sourceOffset, size);
-		if (!page.coherent)
-			page.buffer.allocation.flush(offset, size);
+		if (!page.coherent && page.dirtyFrom < 0)
+			page.dirtyFrom = offset;
 		uploadedBytes += size;
+	}
+
+	public function flushPending() {
+		for (page in frames[currentFrame]) {
+			if (page.dirtyFrom < 0)
+				continue;
+
+			page.buffer.allocation.flush(page.dirtyFrom, page.offset - page.dirtyFrom);
+			page.dirtyFrom = -1;
+		}
 	}
 
 	public function uploadImage(command:VkCommandBuffer, destination:VulkanImage, mipLevel:Int, layer:Int, source:hl.Bytes, sourceOffset:Int, size:Int, width:Int, height:Int, depth:Int,
@@ -153,11 +164,9 @@ class VulkanUploadManager {
 		allocate(size, 16);
 		final page = allocatedPage;
 		final offset = allocatedOffset;
-		page.buffer.allocation.writeMapped(offset, source, sourceOffset, size);
-		page.buffer.allocation.flush(offset, size);
-		uploadedBytes += size;
+		writeUpload(page, offset, source, sourceOffset, size);
 		VulkanResourceState.transitionImage(command, destination, mipLevel, layer, TransferDestination);
-		final region = new VkBufferImageCopy();
+		final region = imageRegion;
 		region.bufferOffset = (Int64.ofInt(offset) : hl.I64);
 		region.aspectMask = destination.aspect;
 		region.mipLevel = mipLevel;
@@ -174,6 +183,8 @@ class VulkanUploadManager {
 	}
 
 	function allocate(size:Int, alignment:Int) {
+		if (size <= 0 || alignment <= 0)
+			throw "Invalid Vulkan upload size or alignment";
 		if (currentFrame < 0)
 			throw "Vulkan uploads require an active frame";
 		if (allocatedPage != null) {
@@ -201,7 +212,7 @@ class VulkanUploadManager {
 		while (capacity < demand && capacity < pageSize)
 			capacity = capacity > (pageSize >> 1) ? pageSize : capacity * 2;
 		if (size > capacity)
-			capacity = alignUp(size, alignment);
+			capacity = size;
 		final page = createPage(capacity);
 		frames[currentFrame].push(page);
 		reserve(page, 0, size);
@@ -274,7 +285,9 @@ class VulkanUploadManager {
 	}
 
 	static inline function alignUp(value:Int, alignment:Int):Int {
-		return Std.int((value + alignment - 1) / alignment) * alignment;
+		final remainder = value % alignment;
+		final padding = remainder == 0 ? 0 : alignment - remainder;
+		return padding > 0x7FFFFFFF - value ? 0x7FFFFFFF : value + padding;
 	}
 }
 #end

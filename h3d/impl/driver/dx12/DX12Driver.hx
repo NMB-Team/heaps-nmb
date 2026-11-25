@@ -2421,7 +2421,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		if( frame.pendingCopyBuffers.length == 0 )
 			return;
 		var size = frame.pendingCopyBytes;
-		if( size + request < COPY_STREAM_SIZE )
+		if( request < COPY_STREAM_SIZE - size )
 			return;
 		frame.copyCommandList.close();
 		copyQueue.executeCommandList(frame.copyCommandList);
@@ -2444,9 +2444,12 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		var is3d = t.flags.has(Is3D);
 		var mip = mipLevel - t.residentMip;
 		var subRes = is3d ? mip : mip + side * (t.mipLevels - t.residentMip);
-		var tmpSize = texture.res.getRequiredIntermediateSize(subRes, 1).low;
-		if ( is3d )
-			tmpSize = Std.int(tmpSize / t.layerCount );
+		var requiredSize : Int64 = texture.res.getRequiredIntermediateSize(subRes, 1);
+		if( is3d )
+			requiredSize /= t.layerCount;
+		if( requiredSize <= 0 || requiredSize > 0x7FFFFFFF )
+			throw "D3D12 texture upload exceeds the supported staging range";
+		var tmpSize = requiredSize.low;
 
 		var useCopy = texture.state == COMMON && texture.targetState == COMMON;
 		var cmd, alloc : Allocator;
@@ -2494,8 +2497,12 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		var numRow = numRow[0].low;
 		var rowSizeInBytes = rowSizeInBytes[0].low;
 		var address = mem.cpuAddress;
-		for( i in 0...numRow )
-			address.blit(rowPitch * i, data, rowSizeInBytes * i, rowSizeInBytes);
+		if( rowPitch == rowSizeInBytes ) {
+			address.blit(0, data, 0, rowSizeInBytes * numRow);
+		} else {
+			for( i in 0...numRow )
+				address.blit(rowPitch * i, data, rowSizeInBytes * i, rowSizeInBytes);
+		}
 
 		src.placedFootprint.footprint.depth = 1;
 		cmd.copyTextureRegion(dst, 0, 0, is3d ? side : 0, src, null);
@@ -2511,7 +2518,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			var prev = from.lastFrame;
 			from.preventAutoDispose();
 			to.alloc();
-			@:bypassAccessor from.lastFrame = prev;
+			from.restoreLastFrame(prev);
 			if( from.t == null ) throw "assert";
 			if( to.t == null ) return false;
 		}

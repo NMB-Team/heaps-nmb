@@ -33,6 +33,8 @@ class Texture {
 	public var format(default, null) : TextureFormat;
 
 	var lastFrame(default,set) : Int;
+	var memoryIndex = -1;
+	var evictionIndex = -1;
 	var bits : Int;
 	var waitLoads : Array<Void -> Void>;
 	@:bits(bits) public var mipMap : MipMap;
@@ -66,7 +68,7 @@ class Texture {
 		If this callback is set, the texture can be re-allocated when the 3D context has been lost or when
 		it's been free because of lack of memory.
 	**/
-	public var realloc : Void -> Void;
+	public var realloc(default,set) : Void -> Void;
 
 	/**
 		When the texture is used as render target, tells which depth buffer will be used.
@@ -77,8 +79,25 @@ class Texture {
 	var tmpColor : h3d.Vector4;
 
 	function set_lastFrame(lf:Int) {
-		if( lastFrame != PREVENT_AUTO_DISPOSE ) lastFrame = lf;
+		if( lastFrame != PREVENT_AUTO_DISPOSE ) restoreLastFrame(lf);
 		return lastFrame;
+	}
+
+	inline function restoreLastFrame( frame : Int ) {
+		if( lastFrame == frame )
+			return;
+
+		@:bypassAccessor lastFrame = frame;
+		if( realloc != null && memoryIndex >= 0 )
+			mem.updateTextureEviction(this);
+	}
+
+	function set_realloc( callback : Void -> Void ) {
+		var changed = (realloc == null) != (callback == null);
+		realloc = callback;
+		if( changed && memoryIndex >= 0 )
+			mem.updateTextureEviction(this);
+		return callback;
 	}
 
 	inline function get_startingMip() {
@@ -198,7 +217,7 @@ class Texture {
 		else
 		#end
 			h3d.pass.Copy.run(this, t);
-		@:bypassAccessor lastFrame = old;
+		restoreLastFrame(old);
 		return t;
 	}
 
@@ -435,7 +454,7 @@ class Texture {
 		var old = lastFrame;
 		preventAutoDispose();
 		var pix = mem.driver.capturePixels(this, face, mipLevel, region);
-		@:bypassAccessor lastFrame = old;
+		restoreLastFrame(old);
 		return pix;
 	}
 

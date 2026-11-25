@@ -21,7 +21,7 @@ class TextureArray extends Texture {
 		preventAutoDispose();
 		var t = new TextureArray(width, height, layers, null, format);
 		h3d.pass.Copy.run(this, t);
-		@:bypassAccessor lastFrame = old;
+		restoreLastFrame(old);
 		return t;
 	}
 

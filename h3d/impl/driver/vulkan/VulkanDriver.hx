@@ -1257,6 +1257,7 @@ class VulkanDriver extends Driver {
 	function submit( present = true ) {
 		var frame = frames[currentFrameIndex];
 		var image = outImages[currentImageIndex];
+		uploadManager.flushPending();
 		if( ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, present ? image.renderFinished : null, frame.fence) != 0 )
 			throw VulkanRuntime.error("Failed to submit Vulkan frame");
 		frame.imageAvailableConsumed = true;
@@ -4000,6 +4001,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw VulkanRuntime.error("Failed to end Vulkan query command buffer");
 		frameStarted = false;
 		final frame = frames[submittedFrame];
+		uploadManager.flushPending();
 		if (ctx.submitFrame(frame.command, frame.imageAvailableConsumed ? null : frame.imageAvailable, null, frame.fence) != 0)
 			throw VulkanRuntime.error("Failed to submit Vulkan query command buffer");
 		frame.imageAvailableConsumed = true;

@@ -30,6 +30,7 @@ class MemoryManager {
 	var driver : Driver;
 	var buffers : Array<Buffer>;
 	var textures : Array<h3d.mat.Texture>;
+	final evictionHeap : Array<h3d.mat.Texture> = [];
 
 	var triIndexes16 : Indexes;
 	var quadIndexes16 : Indexes;
@@ -188,23 +189,86 @@ class MemoryManager {
 	}
 
 	public function cleanTextures( force = true ) {
-		textures.sort(sortByLRU);
+		var t = evictionHeap[0];
+		if( t == null )
+			return false;
+
 		var cleanupFrames = Math.ceil(autoDisposeKeepTime * hxd.Timer.fps());
 		if( cleanupFrames < 1 ) cleanupFrames = 1;
-		for( t in textures ) {
-			if( t.realloc == null || t.isDisposed() ) continue;
-			if( t.lastFrame == h3d.mat.Texture.PREVENT_AUTO_DISPOSE ) break;
-			if( force || t.lastFrame < hxd.Timer.frameCount - cleanupFrames ) {
-				t.dispose();
-				if( hxd.NMBTrace.enabled() ) hxd.NMBTrace.instant("heaps.memory", "GPU Texture Cleanup");
-				return true;
-			}
-		}
-		return false;
+		if( !force && t.lastFrame >= hxd.Timer.frameCount - cleanupFrames )
+			return false;
+
+		t.dispose();
+		if( hxd.NMBTrace.enabled() ) hxd.NMBTrace.instant("heaps.memory", "GPU Texture Cleanup");
+		return true;
 	}
 
-	static function sortByLRU( t1 : h3d.mat.Texture, t2 : h3d.mat.Texture ) {
-		return t1.lastFrame - t2.lastFrame;
+	@:allow(h3d.mat.Texture)
+	function updateTextureEviction( t : h3d.mat.Texture ) {
+		if( t.memoryIndex < 0 )
+			return;
+
+		if( t.realloc == null || t.lastFrame == h3d.mat.Texture.PREVENT_AUTO_DISPOSE || t.isDisposed() ) {
+			removeTextureEviction(t);
+			return;
+		}
+
+		if( t.evictionIndex < 0 ) {
+			t.evictionIndex = evictionHeap.length;
+			evictionHeap.push(t);
+		}
+		orderTextureEviction(t);
+	}
+
+	function removeTextureEviction( t : h3d.mat.Texture ) {
+		var index = t.evictionIndex;
+		if( index < 0 )
+			return;
+
+		var last = evictionHeap.pop();
+		t.evictionIndex = -1;
+		if( last == t )
+			return;
+
+		last.evictionIndex = index;
+		evictionHeap[index] = last;
+		orderTextureEviction(last);
+	}
+
+	function orderTextureEviction( t : h3d.mat.Texture ) {
+		var index = t.evictionIndex;
+		while( index > 0 ) {
+			var parent = (index - 1) >> 1;
+			var ancestor = evictionHeap[parent];
+			if( !evictsBefore(t, ancestor) )
+				break;
+
+			evictionHeap[index] = ancestor;
+			ancestor.evictionIndex = index;
+			index = parent;
+		}
+
+		while( index < (evictionHeap.length >> 1) ) {
+			var child = index * 2 + 1;
+			var right = child + 1;
+			if( right < evictionHeap.length && evictsBefore(evictionHeap[right], evictionHeap[child]) )
+				child = right;
+
+			var next = evictionHeap[child];
+			if( !evictsBefore(next, t) )
+				break;
+
+			evictionHeap[index] = next;
+			next.evictionIndex = index;
+			index = child;
+		}
+
+		evictionHeap[index] = t;
+		t.evictionIndex = index;
+	}
+
+	static inline function evictsBefore( a : h3d.mat.Texture, b : h3d.mat.Texture ) {
+		return a.lastFrame < b.lastFrame || (a.lastFrame == b.lastFrame && a.id < b.id);
 	}
 
 	public function beginFrame() {
@@ -252,8 +316,18 @@ class MemoryManager {
 
 	@:allow(h3d.mat.Texture.dispose)
 	function deleteTexture( t : h3d.mat.Texture ) {
-		if( !textures.remove(t) ) return;
+		var index = t.memoryIndex;
+		if( index < 0 || textures[index] != t ) return;
+
 		driver.disposeTexture(t);
+		removeTextureEviction(t);
+		t.memoryIndex = -1;
+		var last = textures.pop();
+		if( last != t ) {
+			textures[index] = last;
+			last.memoryIndex = index;
+		}
+
 		texMemory -= memSize(t);
 	}
 
@@ -266,7 +340,9 @@ class MemoryManager {
 			if( driver.isDisposed() ) return;
 			tryFreeMemory();
 		}
+		t.memoryIndex = textures.length;
 		textures.push(t);
+		updateTextureEviction(t);
 		texMemory += memSize(t);
 	}
 

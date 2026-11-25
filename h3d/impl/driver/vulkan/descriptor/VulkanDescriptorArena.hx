@@ -17,6 +17,7 @@ private class VulkanDescriptorPoolPage {
 	public final maxSets:Int;
 	public final maxDescriptors:Int;
 	public var usedSets = 0;
+	public var idleResets = 0;
 	public var usedDescriptors = 0;
 
 	public function new(pool:VkDescriptorPool, maxSets:Int, maxDescriptors:Int) {
@@ -63,31 +64,47 @@ class VulkanDescriptorArena {
 		pools.push(createPool(64, 256));
 	}
 
-	public function resetCacheAndPools() {
-		for (page in pools) {
-			final result = context.resetDescriptorPool(page.pool);
-			if (result != 0)
-				throw VulkanRuntime.error('Failed to reset frame descriptor pool (VkResult $result)');
-			page.usedSets = 0;
-			page.usedDescriptors = 0;
+	public function resetCacheAndPools(reuseOverflow = true) {
+		if (!reuseOverflow)
+			while (pools.length > 1)
+				context.destroyDescriptorPool(pools.pop().pool);
+
+		var retained = 1;
+		for (index => page in pools) {
+			if (page.usedSets != 0) {
+				final result = context.resetDescriptorPool(page.pool);
+				if (result != 0)
+					throw VulkanRuntime.error('Failed to reset frame descriptor pool (VkResult $result)');
+				page.usedSets = 0;
+				page.usedDescriptors = 0;
+				page.idleResets = 0;
+			} else if (index != 0) {
+				page.idleResets++;
+			}
+
+			if (page.idleResets < 2)
+				retained = index + 1;
 		}
 		poolResetCount++;
-		while (pools.length > 1)
+		while (pools.length > retained)
 			context.destroyDescriptorPool(pools.pop().pool);
+
 		currentPool = 0;
 	}
 
 	public function allocate(layout:VkDescriptorSetLayout, descriptorCount:Int):VkDescriptorSet {
 		var page = pools[currentPool];
-		if (page.usedSets == page.maxSets || page.usedDescriptors + descriptorCount > page.maxDescriptors)
+		if (page.usedSets == page.maxSets || descriptorCount > page.maxDescriptors - page.usedDescriptors)
 			page = nextPool(descriptorCount);
+
 		var result = allocateFrom(page, layout);
-		if (result != 0) {
-			page = growPool(descriptorCount);
+		if (result == -1000069000 || result == -12) { // out of pool memory or fragmented pool
+			page = nextPool(descriptorCount);
 			result = allocateFrom(page, layout);
 		}
 		if (result != 0)
-			throw VulkanRuntime.error('Failed to allocate frame descriptor set after pool growth (VkResult $result)');
+			throw VulkanRuntime.error('Failed to allocate frame descriptor set (VkResult $result)');
+
 		page.usedSets++;
 		page.usedDescriptors += descriptorCount;
 		allocationCount++;
@@ -104,18 +121,22 @@ class VulkanDescriptorArena {
 	}
 
 	function nextPool(requiredDescriptors:Int):VulkanDescriptorPoolPage {
-		currentPool++;
-		if (currentPool == pools.length) {
-			final previous = pools[currentPool - 1];
-			pools.push(createPool(previous.maxSets << 1, hxd.Math.imax(previous.maxDescriptors << 1, requiredDescriptors)));
+		var index = currentPool + 1;
+		while (index < pools.length) {
+			final page = pools[index];
+			if (page.usedSets < page.maxSets && requiredDescriptors <= page.maxDescriptors - page.usedDescriptors) {
+				currentPool = index;
+				return page;
+			}
+			index++;
 		}
-		return pools[currentPool];
-	}
 
-	function growPool(requiredDescriptors:Int):VulkanDescriptorPoolPage {
-		currentPool = pools.length;
 		final previous = pools[pools.length - 1];
-		final page = createPool(previous.maxSets << 1, hxd.Math.imax(previous.maxDescriptors << 1, requiredDescriptors));
+		if (previous.maxSets > 0x3FFFFFFF || previous.maxDescriptors > 0x3FFFFFFF)
+			throw "Vulkan frame descriptor arena exhausted";
+
+		final page = createPool(previous.maxSets * 2, hxd.Math.imax(previous.maxDescriptors * 2, requiredDescriptors));
+		currentPool = pools.length;
 		pools.push(page);
 		return page;
 	}

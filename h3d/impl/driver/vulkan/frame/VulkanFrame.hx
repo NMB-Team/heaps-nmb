@@ -55,6 +55,7 @@ class VulkanDescriptorCacheEntry {
 
 class VulkanFrame {
 	public static inline final MAX_DESCRIPTOR_CACHE_ENTRIES = 8192;
+	static inline final MAX_IDLE_DESCRIPTOR_REUSES = 120;
 	public var command : VkCommandBuffer;
 	public var fence : VkFence;
 	public var imageAvailable : VkSemaphore;
@@ -73,6 +74,8 @@ class VulkanFrame {
 	public var descriptorCacheHitCount = 0;
 	public var descriptorCacheMissCount = 0;
 	public var descriptorUpdateCount = 0;
+	var lastDescriptorActivity = 0;
+	var idleDescriptorReuses = 0;
 
 	public function resetShaderConstants() {
 		shaderConstants.clear();
@@ -83,11 +86,22 @@ class VulkanFrame {
 
 
 	public function reclaimDescriptors() {
-		if (!shouldReclaimDescriptors()) return;
+		final activity = descriptorCacheHitCount + descriptorCacheMissCount;
+		if (activity != lastDescriptorActivity || descriptorArena.pageCount <= 1)
+			idleDescriptorReuses = 0;
+		else
+			idleDescriptorReuses++;
+		lastDescriptorActivity = activity;
+
+		final idle = idleDescriptorReuses >= MAX_IDLE_DESCRIPTOR_REUSES;
+		if (!idle && !shouldReclaimDescriptors())
+			return;
+
 		descriptorSets.clear();
 		resolvedDescriptorSets.clear();
 		descriptorCacheEntries = 0;
-		descriptorArena.resetCacheAndPools();
+		descriptorArena.resetCacheAndPools(!idle);
+		idleDescriptorReuses = 0;
 		descriptorCacheResetCount++;
 	}
 
