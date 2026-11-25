@@ -20,6 +20,36 @@ enum abstract TangentOptions(Int) to Int from Int {
 
 #if (hl && hl_ver >= version("1.15.0"))
 class MeshOptimizer {
+	public static function optimize(vertices:hl.Bytes, vertexCount:Int, vertexSize:Int, indices:hl.Bytes, indexCount:Int, targetIndexCount:Int, targetError:Float) : { vertexCount : Int, indexCount : Int } {
+		if( hl.Api.isPrimLoaded(optimizeMesh) ) {
+			var count = new hl.Ref(indexCount);
+			vertexCount = optimizeMesh(vertices, vertexCount, vertexSize, indices, count, targetIndexCount, targetError);
+			return { vertexCount : vertexCount, indexCount : count.get() };
+		}
+
+		var remap = new hl.Bytes(vertexCount << 2);
+		var uniqueVertexCount = generateVertexRemap(remap, indices, indexCount, vertices, vertexCount, vertexSize);
+		remapIndexBuffer(indices, indices, indexCount, remap);
+		remapVertexBuffer(vertices, vertices, vertexCount, vertexSize, remap);
+		vertexCount = uniqueVertexCount;
+
+		if( targetIndexCount >= 0 ) {
+			var target = targetIndexCount > indexCount ? indexCount : targetIndexCount;
+			indexCount = simplify(indices, indices, indexCount, vertices, vertexCount, vertexSize, target, targetError, SimplifyOptions.LockBorder | SimplifyOptions.Prune, null);
+		}
+
+		optimizeVertexCache(indices, indices, indexCount, vertexCount);
+		optimizeOverdraw(indices, indices, indexCount, vertices, vertexCount, vertexSize, 1.05);
+		vertexCount = optimizeVertexFetch(vertices, indices, indexCount, vertices, vertexCount, vertexSize);
+
+		return { vertexCount : vertexCount, indexCount : indexCount };
+	}
+
+	@:hlNative("?heaps", "optimize_mesh")
+	static function optimizeMesh(vertices:hl.Bytes, vertexCount:Int, vertexSize:Int, indices:hl.Bytes, indexCount:hl.Ref<Int>, targetIndexCount:Int, targetError:Single) : Int {
+		return 0;
+	}
+
 	/**
 	Generates a vertex remap table from the vertex buffer and an optional index buffer and returns number of unique vertices
 	As a result, all vertices that are binary equivalent map to the same (new) location, with no gaps in the resulting sequence.

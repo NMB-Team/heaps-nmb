@@ -9,9 +9,14 @@ class MeshTools {
 			case "mikktspace":
 				mikktspace(args);
 			case "optimize":
-				optimize(args);
+				optimize(args, -1, 0.);
 			case "simplify":
-				simplify(args);
+				if( args.length < 4 )
+					exit();
+				var targetIndexCount = Std.parseInt(args[3]);
+				if( targetIndexCount == null || targetIndexCount < 0 )
+					exit();
+				optimize(args, targetIndexCount, args.length > 4 ? Std.parseFloat(args[4]) : 0.05);
 			case "vhacd":
 				vhacd(args);
 			default:
@@ -50,60 +55,24 @@ class MeshTools {
 		sys.io.File.saveBytes(args[2], tangents);
 	}
 
-	static function optimize(args) {
+	static function optimize(args, targetIndexCount:Int, targetError:Float) {
 		if ( args.length < 3 )
 			exit();
 
 		var input = new haxe.io.BytesInput(sys.io.File.getBytes(args[1]));
 		var vertexCount = input.readInt32();
 		var vertexSize = input.readInt32();
-		var vertices = hl.Bytes.fromBytes(input.read(vertexCount * vertexSize));
+		var vertices = input.read(vertexCount * vertexSize);
 		var indexCount = input.readInt32();
-		var indices = hl.Bytes.fromBytes(input.read(indexCount * 4));
-		var remap = new hl.Bytes(vertexCount * 4);
-		var uniqueVertexCount = hxd.tools.MeshOptimizer.generateVertexRemap(remap, indices, indexCount, vertices, vertexCount, vertexSize);
-		hxd.tools.MeshOptimizer.remapIndexBuffer(indices, indices, indexCount, remap);
-		hxd.tools.MeshOptimizer.remapVertexBuffer(vertices, vertices, vertexCount, vertexSize, remap);
-		vertexCount = uniqueVertexCount;
-		hxd.tools.MeshOptimizer.optimizeVertexCache(indices, indices, indexCount, vertexCount);
-		hxd.tools.MeshOptimizer.optimizeOverdraw(indices, indices, indexCount, vertices, vertexCount, vertexSize, 1.05);
-		vertexCount = hxd.tools.MeshOptimizer.optimizeVertexFetch(vertices, indices, indexCount, vertices, vertexCount, vertexSize);
+		var indices = input.read(indexCount << 2);
+
+		var mesh = hxd.tools.MeshOptimizer.optimize(hl.Bytes.fromBytes(vertices), vertexCount, vertexSize, hl.Bytes.fromBytes(indices), indexCount, targetIndexCount, targetError);
 
 		var outputData = new haxe.io.BytesBuffer();
-		outputData.addInt32(vertexCount);
-		outputData.add(haxe.io.Bytes.ofData(new haxe.io.BytesData(vertices, vertexCount * vertexSize)));
-		outputData.addInt32(indexCount);
-		outputData.add(haxe.io.Bytes.ofData(new haxe.io.BytesData(indices, indexCount * 4)));
-		sys.io.File.saveBytes(args[2], outputData.getBytes());
-	}
-
-	static function simplify(args) {
-		if ( args.length < 3 )
-			exit();
-
-		var input = new haxe.io.BytesInput(sys.io.File.getBytes(args[1]));
-		var targetIndexCount = Std.parseInt(args[3]);
-		var targetError = args.length > 4 ? Std.parseFloat(args[4]) : 0.05;
-		var vertexCount = input.readInt32();
-		var vertexSize = input.readInt32();
-		var vertices = hl.Bytes.fromBytes(input.read(vertexCount * vertexSize));
-		var indexCount = input.readInt32();
-		var indices = hl.Bytes.fromBytes(input.read(indexCount << 2));
-		var remap = new hl.Bytes(vertexCount << 2);
-		var uniqueVertexCount = hxd.tools.MeshOptimizer.generateVertexRemap(remap, indices, indexCount, vertices, vertexCount, vertexSize);
-		hxd.tools.MeshOptimizer.remapIndexBuffer(indices, indices, indexCount, remap);
-		hxd.tools.MeshOptimizer.remapVertexBuffer(vertices, vertices, vertexCount, vertexSize, remap);
-		vertexCount = uniqueVertexCount;
-		indexCount = hxd.tools.MeshOptimizer.simplify(indices, indices, indexCount, vertices, vertexCount, vertexSize, targetIndexCount, targetError, hxd.tools.MeshOptimizer.SimplifyOptions.LockBorder | hxd.tools.MeshOptimizer.SimplifyOptions.Prune, null);
-		hxd.tools.MeshOptimizer.optimizeVertexCache(indices, indices, indexCount, vertexCount);
-		hxd.tools.MeshOptimizer.optimizeOverdraw(indices, indices, indexCount, vertices, vertexCount, vertexSize, 1.05);
-		vertexCount = hxd.tools.MeshOptimizer.optimizeVertexFetch(vertices, indices, indexCount, vertices, vertexCount, vertexSize);
-
-		var outputData = new haxe.io.BytesBuffer();
-		outputData.addInt32(vertexCount);
-		outputData.add(haxe.io.Bytes.ofData(new haxe.io.BytesData(vertices, vertexCount * vertexSize)));
-		outputData.addInt32(indexCount);
-		outputData.add(haxe.io.Bytes.ofData(new haxe.io.BytesData(indices, indexCount << 2)));
+		outputData.addInt32(mesh.vertexCount);
+		outputData.addBytes(vertices, 0, mesh.vertexCount * vertexSize);
+		outputData.addInt32(mesh.indexCount);
+		outputData.addBytes(indices, 0, mesh.indexCount << 2);
 		sys.io.File.saveBytes(args[2], outputData.getBytes());
 	}
 

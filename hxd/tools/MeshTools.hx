@@ -62,19 +62,7 @@ class MeshTools {
 	**/
 	public static dynamic function optimize( vertices : haxe.io.Bytes, vertexCount : Int, vertexSize : Int, indexes : haxe.io.Bytes, indexCount : Int, targetIndexCount = -1, targetError = 0. ) : { vertexCount : Int, indexCount : Int } {
 		#if (hl && hl_ver >= version("1.15.0"))
-		var v = @:privateAccess vertices.b;
-		var idx = @:privateAccess indexes.b;
-		var remap = new hl.Bytes(vertexCount << 2);
-		var uniqueVertexCount = MeshOptimizer.generateVertexRemap(remap, idx, indexCount, v, vertexCount, vertexSize);
-		MeshOptimizer.remapIndexBuffer(idx, idx, indexCount, remap);
-		MeshOptimizer.remapVertexBuffer(v, v, vertexCount, vertexSize, remap);
-		vertexCount = uniqueVertexCount;
-		if( targetIndexCount >= 0 )
-			indexCount = MeshOptimizer.simplify(idx, idx, indexCount, v, vertexCount, vertexSize, targetIndexCount, targetError, MeshOptimizer.SimplifyOptions.LockBorder | MeshOptimizer.SimplifyOptions.Prune, null);
-		MeshOptimizer.optimizeVertexCache(idx, idx, indexCount, vertexCount);
-		MeshOptimizer.optimizeOverdraw(idx, idx, indexCount, v, vertexCount, vertexSize, 1.05);
-		vertexCount = MeshOptimizer.optimizeVertexFetch(v, idx, indexCount, v, vertexCount, vertexSize);
-		return { vertexCount : vertexCount, indexCount : indexCount };
+		return MeshOptimizer.optimize(@:privateAccess vertices.b, vertexCount, vertexSize, @:privateAccess indexes.b, indexCount, targetIndexCount, targetError);
 		#elseif (sys || nodejs)
 		var data = new haxe.io.BytesOutput();
 		data.writeInt32(vertexCount);
