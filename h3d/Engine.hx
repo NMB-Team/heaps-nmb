@@ -228,6 +228,23 @@ class Engine {
 		}
 	}
 
+	#if (hl && limen)
+	public function renderIndexedBatch(batch:IndexedDrawBatch) {
+		if( batch.count == 0 )
+			return;
+		batch.requireBacking(this);
+		if( shaderFailed || !selectBuffer(batch.vertex) )
+			return;
+
+		if( batch.count == 1 )
+			driver.draw(batch.index, batch.words[1], Std.int(batch.triangles));
+		else
+			driver.drawIndexedBatch(batch.index, batch.words, batch.count);
+		drawTriangles += batch.triangles;
+		drawCalls += batch.count;
+	}
+	#end
+
 	public function renderMultiBuffers( format : hxd.BufferFormat.MultiFormat, buffers : Array<Buffer>, indexes : Indexes, startTri = 0, drawTri = -1 ) {
 		if( shaderFailed )
 			return;

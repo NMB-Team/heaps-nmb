@@ -156,6 +156,9 @@ class MemoryManager {
 		if( b.vbuf == null ) return;
 		driver.disposeBuffer(b);
 		b.vbuf = null;
+		#if (hl && limen)
+		b.indexedDrawGeneration = null;
+		#end
 		// in case it was allocated with a previous memory manager
 		if( buffers.remove(b) )
 			bufferMemory -= b.getMemSize();

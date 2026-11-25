@@ -3427,11 +3427,21 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	// --- DRAW etc.
 
 	override function draw( ibuf : Buffer, startIndex : Int, ntriangles : Int ) {
+		if( prepareIndexedDraw(ibuf) )
+			frame.commandList.drawIndexedInstanced(ntriangles * 3,1,startIndex,0,0);
+	}
+
+	override function drawIndexedBatch(ibuf:Buffer, ranges:hl.NativeArray<Int>, count:Int) {
+		if( prepareIndexedDraw(ibuf) && !frame.commandList.drawIndexedRanges(ranges, count, ibuf.vertices) )
+			throw "Invalid D3D12 indexed draw ranges";
+	}
+
+	inline function prepareIndexedDraw(ibuf:Buffer):Bool {
 		if ( (tmp.rect.right - tmp.rect.left) <= 0 || (tmp.rect.bottom - tmp.rect.top) <= 0 )
-			return;
+			return false;
 
 		if( !flushPipeline() )
-			return;
+			return false;
 		final index:BufferData = ibuf.vbuf;
 		transition(index, INDEX_BUFFER);
 		if( currentIndex != index ) {
@@ -3439,7 +3449,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			currentIndex = index;
 		}
 		flushTransitions();
-		frame.commandList.drawIndexedInstanced(ntriangles * 3,1,startIndex,0,0);
+		return true;
 	}
 
 	override function drawInstanced(ibuf:Buffer, commands:InstanceBuffer) {

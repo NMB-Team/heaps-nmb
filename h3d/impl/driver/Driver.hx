@@ -137,6 +137,16 @@ class Driver {
 	public function draw( ibuf : Buffer, startIndex : Int, ntriangles : Int ) {
 	}
 
+	#if (hl && limen)
+	@:allow(h3d.Engine)
+	function drawIndexedBatch(ibuf:Buffer, ranges:hl.NativeArray<Int>, count:Int) {
+		for( i in 0...count ) {
+			final position = 1 + i * 2;
+			draw(ibuf, ranges[position], Std.int(ranges[position + 1] / 3));
+		}
+	}
+	#end
+
 	public function drawInstanced( ibuf : Buffer, commands : h3d.impl.InstanceBuffer ) {
 	}
 

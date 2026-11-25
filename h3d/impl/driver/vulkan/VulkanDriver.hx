@@ -3087,6 +3087,12 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		command.drawIndexed(ntriangles * 3, 1, startIndex, 0, 0);
 	}
 
+	override function drawIndexedBatch(ibuf:h3d.Buffer, ranges:hl.NativeArray<Int>, count:Int) {
+		prepareIndexedDraw(ibuf);
+		if( !command.drawIndexedRanges(ranges, count, ibuf.vertices) )
+			throw "Invalid Vulkan indexed draw ranges";
+	}
+
 	function prepareIndexedDraw(ibuf:h3d.Buffer, indirect:VulkanBuffer = null, count:VulkanBuffer = null):VulkanBuffer {
 		if( !frameStarted )
 			throw "Vulkan indexed draw requires an active frame";

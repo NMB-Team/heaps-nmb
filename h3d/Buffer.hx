@@ -32,6 +32,9 @@ class Buffer {
 	var lastFrame : Int;
 
 	@:allow(h3d.impl.driver.Driver) var vbuf : h3d.impl.driver.GPUBuffer;
+	#if (hl && limen)
+	var indexedDrawGeneration:hl.NativeArray<Int>;
+	#end
 	public var vertices(default,null) : Int;
 	public var format(default,null) : hxd.BufferFormat;
 	public var flags(default, null) : haxe.EnumFlags<BufferFlag>;
