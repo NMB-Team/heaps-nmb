@@ -2503,6 +2503,10 @@ class OpenGLDriver extends Driver {
 			memoryBarrier();
 	}
 
+	override function renderGraphBarrier() {
+		if( hasFeature(ComputeShaders) ) GL.memoryBarrier(0xFFFFFFFF);
+	}
+
 	override function memoryBarrier(){
 		GL.memoryBarrier(GL.BUFFER_UPDATE_BARRIER_BIT | GL.TEXTURE_FETCH_BARRIER_BIT | GL.SHADER_STORAGE_BARRIER_BIT);
 	}

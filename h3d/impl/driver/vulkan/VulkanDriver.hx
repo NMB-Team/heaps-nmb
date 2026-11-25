@@ -3868,6 +3868,17 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			memoryBarrier();
 	}
 
+	override function renderGraphBarrier() {
+		if( pendingClearColor != null || pendingClearDepth != null || pendingClearStencil != null
+			|| pendingInitialColorClears.length > 0 || pendingInitialDepthClear )
+			beginRendering();
+
+		suspendRendering();
+		final access : hl.I64 = cast ((VkAccess2.MEMORY_READ : haxe.Int64) | (VkAccess2.MEMORY_WRITE : haxe.Int64));
+		VulkanResourceState.recordBarrier();
+		command.memoryBarrier2(VkPipelineStage2.ALL_COMMANDS, access, VkPipelineStage2.ALL_COMMANDS, access);
+	}
+
 	override function memoryBarrier() {
 		if( !frameStarted )
 			throw "Vulkan memoryBarrier requires an active frame";

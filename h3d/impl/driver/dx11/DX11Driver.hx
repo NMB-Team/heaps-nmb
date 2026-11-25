@@ -1037,6 +1037,8 @@ class DX11Driver extends h3d.impl.driver.Driver {
 		_setRenderTargets(tmpTextures, layer, mipLevel, depthBinding);
 	}
 
+	override function supportsRenderGraphAliasing() return false;
+
 	function unbind( res ) {
 		for( i in 0...64 ) {
 			if( vertexShader.resources[i] == res ) {

@@ -8,6 +8,14 @@ import h3d.impl.driver.dx12.descriptor.BlockHeap;
 
 class TextureData extends ResourceData {
 	public var format : DxgiFormat;
+	public var mipCount = 1;
+	public var arraySize = 1;
+	public var planeCount = 1;
+
+	public inline function subresource(mip : Int, layer : Int, plane : Int) {
+		return mip + (layer + plane * arraySize) * mipCount;
+	}
+
 	public var memory : MemoryBlock;
 	#if (gfx_d3d12ma && !console)
 	public var managed : ManagedTexture;

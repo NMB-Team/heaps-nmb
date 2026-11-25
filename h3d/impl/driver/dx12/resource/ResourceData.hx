@@ -11,6 +11,9 @@ class ResourceData {
 	public var needsAliasingBarrier = false;
 	public var state : ResourceState;
 	public var targetState : ResourceState;
+	public var lastDirectUseFence : haxe.Int64 = 0;
+	public var subresourceStates : hl.NativeArray<ResourceState>;
+	public var mixedSubresourceStates = false;
 
 	public function new() {
 	}

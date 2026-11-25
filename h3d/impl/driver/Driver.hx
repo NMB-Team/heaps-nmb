@@ -282,6 +282,13 @@ class Driver {
 		return 0.;
 	}
 
+	// implicit APIs order tracked render and transfer operations on the immediate context
+	@:noCompletion public function renderGraphBarrier() {}
+
+	@:noCompletion public function supportsDisjointRenderGraphViews() return false;
+
+	@:noCompletion public function supportsRenderGraphAliasing() return true;
+
 	// --- COMPUTE
 
 	public function computeDispatch( x : Int = 1, y : Int = 1, z : Int = 1, barrier: Bool = true ) {

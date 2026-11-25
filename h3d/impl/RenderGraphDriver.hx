@@ -226,6 +226,18 @@ class RenderGraphDriver extends Driver {
 		d.uploadTexturePixels(t, pixels, mipLevel, side);
 	}
 
+	override function supportsDisjointRenderGraphViews() {
+		return d.supportsDisjointRenderGraphViews();
+	}
+
+	override function supportsRenderGraphAliasing() {
+		return d.supportsRenderGraphAliasing();
+	}
+
+	override function renderGraphBarrier() {
+		d.renderGraphBarrier();
+	}
+
 	override function computeDispatch( x : Int = 1, y : Int = 1, z : Int = 1, barrier : Bool = true ) {
 		d.computeDispatch(x, y, z, barrier);
 	}

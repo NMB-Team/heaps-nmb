@@ -3722,6 +3722,11 @@ class JSDriver extends h3d.impl.driver.Driver {
 			memoryBarrier();
 	}
 
+	override function renderGraphBarrier() {
+		needUAVBarrier = true;
+		flushTransitions();
+	}
+
 	override function memoryBarrier() {
 		needUAVBarrier = true;
 	}

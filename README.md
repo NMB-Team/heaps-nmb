@@ -98,3 +98,55 @@ The `-D dx12` JavaScript target uses the Origin DX12 host API through
 JavaScript implementations of `hl.*`; it does not run in a standard browser.
 Supply those bindings on the compiler classpath. Regular JavaScript builds
 continue to use WebGL, and native builds use Limen's selected graphics driver.
+
+### Explicit render graphs
+
+`h3d.RenderGraph` is an opt-in scheduler for Engine render callbacks.
+Create one graph per reusable set of passes, declare each pass once, then
+call `execute()` from the normal render callback.
+
+```haxe
+final graph = new h3d.RenderGraph(engine);
+final source = graph.transientTarget(256, 256);
+final destination = graph.importTexture(output);
+final copy = new h3d.pass.Copy();
+
+graph.addColorPass("clear source", source, 0xFF438BDA);
+final pass = graph.addColorPass("copy to output", destination, 0,
+    (_, g) -> copy.apply(g.texture(source), null));
+graph.use(pass, source, Read, 0, 0);
+
+// inside the render callback
+graph.execute();
+```
+
+`addColorPass` declares a color attachment and optionally clears it.
+`addPass` records custom work through the existing Engine and driver APIs.
+Declare full replacements as `Write` and partial updates as `ReadWrite`.
+Use `dependsOn` for ordering dependencies that declarations cannot
+express. Mark observable work with `sideEffect` and callbacks with
+unknown resource usage as `external`. Keep callbacks on the render thread
+and balance any target pushes they make.
+
+Import persistent and history textures and buffers explicitly. Rebind a
+texture import between executions to replace its backing object, including
+when replacing a history texture. Use `swapTextures()` for two imports that
+exchange roles. The graph resolves imported texture
+objects on each execution. Use `backBuffer()` for the current swapchain
+color attachment. Use `reset()` when rebuilding the graph and `dispose()`
+to release its owned transient targets. Imported objects remain owned by the
+caller.
+
+Transient targets are single-sample color textures initialized by a full
+clear. The optional `aliasTargets` constructor argument lets disjoint,
+compatible lifetimes share a physical texture. Resolve graph textures inside
+the active pass and release references to transient textures when it ends.
+Custom and opaque work uses conservative boundaries. For API-specific
+depth, stencil, MRT, or transfer operations use a custom pass and the
+existing driver capabilities.
+
+Native Direct3D 12 color passes can declare reads from subresources
+disjoint from the active color attachment. Declarations must match the
+bound view. A sampled view starting at a mip includes all remaining
+resident mips of that view. Direct3D 11 keeps separate transient targets
+when aliasing is requested.

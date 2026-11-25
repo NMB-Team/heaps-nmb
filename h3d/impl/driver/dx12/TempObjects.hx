@@ -17,8 +17,6 @@ import limen.d3d12.descriptor.ResourceViews.ShaderComponentMapping;
 import limen.d3d12.descriptor.ResourceViews.Tex2DSRV;
 import limen.d3d12.descriptor.ResourceViews.UAVBufferViewDesc;
 import limen.d3d12.descriptor.ResourceViews.UAVTextureViewDesc;
-import limen.d3d12.internal.D3D12Bindings as Driver;
-import limen.d3d12.internal.D3D12Bindings.Constant;
 import limen.d3d12.pipeline.Pipeline.Dx12SamplerDesc;
 import limen.d3d12.resource.Resources.HeapProperties;
 import limen.d3d12.resource.Resources.ResourceBarrier;
@@ -70,9 +68,6 @@ class TempObjects {
 		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
 		maxBarriers = 100;
 		barriers = hl.CArray.alloc(ResourceBarrier, maxBarriers);
-		var allSubresource = #if limen Driver.getConstant(RESOURCE_BARRIER_ALL_SUBRESOURCES) #else 0xffffffff #end;
-		for(i in 0...maxBarriers)
-			barriers[i].subResource = allSubresource;
 		resourcesToTransition = new hl.NativeArray(maxBarriers);
 		barrierCount = 0;
 		pass = new h3d.mat.Pass("default");
