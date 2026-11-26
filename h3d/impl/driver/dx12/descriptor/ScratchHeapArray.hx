@@ -33,27 +33,31 @@ class ScratchHeapArray {
 
 	public function checkSize(minSize:Int, toRelease:Array<limen.d3d12.resource.Resources.Dx12Resource>) {
 		if(minSize <= size) return;
-		if(type == SAMPLER && minSize > 2048)
-			throw 'Shader-visible sampler heap exhausted (requested=$minSize, limit=2048)';
+		var limit = DescriptorHeapBase.shaderVisibleCapacity(type);
+		if(minSize > limit)
+			throw new h3d.impl.DescriptorAllocationError('Shader-visible descriptor heap exhausted (type=$type, requested=$minSize, limit=$limit)', true);
 		#if dx12_descriptor_profile
 		growths++;
 		#end
-		size = hxd.Math.imax(minSize, (size * 3) >> 1);
-		if(type == SAMPLER)
-			size = hxd.Math.imin(size, 2048);
+		size = hxd.Math.imin(limit, hxd.Math.imax(minSize, (size * 3) >> 1));
 		for(h in heaps) toRelease.push(@:privateAccess h.heap);
 		heaps = [];
 		cursor = 0;
 	}
 
 	public function next() {
-		var h = heaps[cursor++];
+		var h = heaps[cursor];
 		if(h == null) {
 			h = new ScratchHeap(type, size);
 			heaps.push(h);
 		} else
 			h.clear();
+		cursor++;
 		return h;
+	}
+
+	public function releaseUnused() {
+		cursor--;
 	}
 
 	public function getSize() {

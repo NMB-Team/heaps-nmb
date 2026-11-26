@@ -154,6 +154,8 @@ class Engine {
 		if( onError == null )
 			switched = driver.selectShader(shader);
 		else try switched = driver.selectShader(shader) catch( e : haxe.Exception ) {
+			if( Std.isOfType(e, h3d.impl.DescriptorAllocationError) )
+				throw e;
 			shaderFailed = true;
 			shader.failed = e.message;
 			onError(Shader(shader), shader.failed);

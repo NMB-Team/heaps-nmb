@@ -8,11 +8,12 @@ class ScratchHeap extends DescriptorHeapBase {
 	public var available(get,never) : Int;
 
 	override function allocHeap(size:Int) {
-		if(shaderVisible && type == SAMPLER && size > 2048)
-			throw 'Shader-visible sampler heap exhausted (requested=$size, limit=2048)';
+		var limit = DescriptorHeapBase.shaderVisibleCapacity(type);
+		if(shaderVisible && size > limit)
+			throw new h3d.impl.DescriptorAllocationError('Shader-visible descriptor heap exhausted (type=$type, requested=$size, limit=$limit)', true);
 
-		cursor = 0;
 		super.allocHeap(size);
+		cursor = 0;
 	}
 
 	public function alloc(count:Int) {
@@ -20,11 +21,11 @@ class ScratchHeap extends DescriptorHeapBase {
 		var started = haxe.Timer.stamp();
 		#end
 		if(cursor + count > size) {
+			if( shaderVisible )
+				throw new h3d.impl.DescriptorAllocationError('D3D12 shader-visible descriptor heap exhausted (type=$type, capacity=$size)', true);
 			var prevCursor = cursor;
 			// onFree may preserve the old descriptors and restore the cursor.
 			var nextSize = hxd.Math.imax(getNextHeapSize(), cursor + count);
-			if(shaderVisible && type == SAMPLER && cursor + count <= 2048)
-				nextSize = hxd.Math.imin(nextSize, 2048);
 			var prev = heap;
 			allocHeap(nextSize);
 			onFree(prev, prevCursor);

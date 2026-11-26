@@ -488,8 +488,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		bindlessSrvHeap = new BlockHeap(CBV_SRV_UAV, INITIAL_BINDLESS_SRV_COUNT, false);
 		bindlessSrvHeap.onFree = function(prev, prevSize) @:privateAccess {
 			copyDescriptorsSimple(prevSize, bindlessSrvHeap.address.value, prev.getHandle(false).value, CBV_SRV_UAV);
-			(prev : Dx12Resource).release();
 			flushHeaps();
+			(prev : Dx12Resource).release();
 		}
 		var errorTexView = getCpuTexView(errorTex);
 		for ( i in 0...bindlessSrvHeap.size)
@@ -498,8 +498,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		bindlessSamplerHeap = new BlockHeap(SAMPLER, INITIAL_BINDLESS_SAMPLER_COUNT, false);
 		bindlessSamplerHeap.onFree = function(prev, prevSize) @:privateAccess {
 			copyDescriptorsSimple(prevSize, bindlessSamplerHeap.address.value, prev.getHandle(false).value, SAMPLER);
-			(prev : Dx12Resource).release();
 			flushHeaps();
+			(prev : Dx12Resource).release();
 		}
 		var errorTexSampler = getCpuSampler(errorTex);
 		for ( i in 0...bindlessSamplerHeap.size)
@@ -2713,6 +2713,8 @@ class DX12Driver extends h3d.impl.driver.Driver {
 
 	override function uploadShaderBuffers(buffers:h3d.shader.Buffers, which:h3d.shader.Buffers.BufferKind) {
 		if( which == Globals ) {
+			if( frame.srvHeap.available < 2 )
+				flushHeaps(2);
 			lastGlobalsShader = currentShader;
 			if( currentShader.isCompute )
 				lastFragmentGlobalBind = -1;
@@ -3069,7 +3071,6 @@ class DX12Driver extends h3d.impl.driver.Driver {
 							var fmt;
 							if( (arr != t.flags.has(IsArray)) || dim != tdim )
 								throw "Texture format does not match: "+t+"["+t.format+"] should be "+hxsl.Ast.Tools.toString(pt);
-							var srv = frame.srvHeap.alloc(1);
 							if( !t.flags.has(Writable) )
 								throw "Texture was allocated without Writable flag";
 							t.flags.set(WasCleared);
@@ -3609,12 +3610,21 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 	}
 
-	function flushHeaps() {
+	function flushHeaps(requiredSrv = 0, requiredSamplers = 0) {
+		if( bindlessSamplerHeap.size + requiredSamplers > 2048 )
+			throw new h3d.impl.DescriptorAllocationError("D3D12 sampler descriptor capacity exhausted", true);
+
+		frame.srvHeapCache.checkSize(bindlessSrvHeap.size + hxd.Math.imax(INITIAL_SRV_COUNT, requiredSrv + 2), frame.toRelease);
+		frame.samplerHeapCache.checkSize(hxd.Math.imin(bindlessSamplerHeap.size +
+			hxd.Math.imax(INITIAL_SAMPLER_COUNT, requiredSamplers), 2048), frame.toRelease);
+		var srv = frame.srvHeapCache.next();
+		var sampler = try frame.samplerHeapCache.next() catch( error : Dynamic ) {
+			frame.srvHeapCache.releaseUnused();
+			throw error;
+		};
+		frame.srvHeap = srv;
+		frame.samplerHeap = sampler;
 		paramsGeneration++;
-		frame.srvHeapCache.checkSize(bindlessSrvHeap.size + INITIAL_SRV_COUNT, frame.toRelease);
-		frame.samplerHeapCache.checkSize(hxd.Math.imin(bindlessSamplerHeap.size + INITIAL_SAMPLER_COUNT, 2048), frame.toRelease);
-		frame.srvHeap = frame.srvHeapCache.next();
-		frame.samplerHeap = frame.samplerHeapCache.next();
 		heapCount++;
 		var arr = tmp.descriptors2;
 		arr[0] = @:privateAccess frame.srvHeap.heap;
@@ -3661,9 +3671,25 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 	}
 
+	override function preflightBatchDescriptors() {
+		flushShaderBuffers();
+	}
+
 	override function flushShaderBuffers() {
-		if( frame.srvHeap.available < 128 || frame.samplerHeap.available < 64 )
-			flushHeaps();
+		var srv = 0;
+		var samplers = 0;
+		if( currentShader != null ) {
+			var vertex = currentShader.shader.vertex;
+			srv = vertex.texturesCount + vertex.bufferCount + 1;
+			samplers = currentShader.vertexRegisters.texturesCount;
+			if( !currentShader.isCompute ) {
+				var fragment = currentShader.shader.fragment;
+				srv += fragment.texturesCount + fragment.bufferCount + 1;
+				samplers += currentShader.fragmentRegisters.texturesCount;
+			}
+		}
+		if( frame.srvHeap.available < hxd.Math.imax(128, srv) || frame.samplerHeap.available < hxd.Math.imax(64, samplers) )
+			flushHeaps(srv, samplers);
 	}
 
 	function flushFrame( onResize : Bool = false ) {

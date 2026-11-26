@@ -15,10 +15,21 @@ class BlockHeap extends DescriptorHeapBase {
 	function resize() {
 		var prevSize = size;
 		var prev = heap;
+		var prevAddress = address;
+		var prevCpuToGpu = cpuToGpu;
 		allocHeap(getNextHeapSize());
+		try {
+			onFree(prev, prevSize);
+		} catch( error : Dynamic ) {
+			(heap : limen.d3d12.resource.Resources.Dx12Resource).release();
+			heap = prev;
+			size = prevSize;
+			address = prevAddress;
+			cpuToGpu = prevCpuToGpu;
+			throw error;
+		}
 		for(i in prevSize + 1...size)
 			freeList.push(i);
-		onFree(prev, prevSize);
 	}
 
 	public function allocIndex():Int {

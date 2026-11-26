@@ -6,12 +6,22 @@ enum BatcherFlags {
 	ManualEmitGPU;
 }
 
+enum BatchExecutionMode {
+	Automatic;
+	Cpu;
+	Gpu;
+}
+
 @:allow(h3d.scene.Batcher)
 class ObjectInstance {
+	var owner : Batcher;
+	var generation : Int;
 	public var meshes : Array<MeshInstance>;
 	public var materials : Array<MaterialInstance>;
 	public var draws : Array<DrawInstance>;
-	function new(meshes : Array<MeshInstance>, materials : Array<MaterialInstance>, draws : Array<DrawInstance>) {
+	function new(owner : Batcher, meshes : Array<MeshInstance>, materials : Array<MaterialInstance>, draws : Array<DrawInstance>) {
+		this.owner = owner;
+		generation = @:privateAccess owner.generation;
 		this.meshes = meshes;
 		this.materials = materials;
 		this.draws = draws;
@@ -79,6 +89,7 @@ class BatchLibrary {
 class BatchGroup {
 	var batcher : Batcher;
 	var groupID : Int;
+	var managed = false;
 
 	public inline function new(b:Batcher, groupID : Int) {
 		batcher = b;
@@ -89,14 +100,87 @@ class BatchGroup {
 		batcher.emitInstance( obj, worldPosition, syncID, groupID );
 	}
 
+	/**
+		append an instance and retain a handle for incremental transform updates
+		the handle expires when this group is removed
+	**/
+	public function emitTrackedInstance( obj : ObjectInstance, worldPosition : h3d.Matrix, syncID : Int = 0 ) : BatchInstanceHandle {
+		if( batcher == null || !managed )
+			throw "Batch group is inactive";
+		return @:privateAccess batcher.emitTrackedInstance(this, obj, worldPosition, syncID);
+	}
+
 	public inline function reserveInstances( obj : ObjectInstance, count : Int ) {
 		batcher.reserveInstances( obj, count, groupID );
 	}
 
 	public inline function remove() {
-		if ( batcher != null) {
+		if( batcher != null )
 			batcher.removeGroup(this);
-			batcher = null;
+	}
+}
+
+private typedef TrackedDraw = {
+	var data : EmitData;
+	var index : Int;
+	var relative : h3d.Matrix;
+	var shaderData : ShaderData;
+}
+
+@:allow(h3d.scene.Batcher)
+class BatchInstanceHandle {
+	var group : BatchGroup;
+	var records : Array<TrackedDraw> = [];
+
+	function new(group : BatchGroup) {
+		this.group = group;
+	}
+
+	/**
+		replace the instance or keep the adaptive batch on its caller-owned CPU scene
+		the caller must update that CPU scene before requesting the replacement
+	**/
+	public function replaceOrFallback(template : ObjectInstance, worldPosition : h3d.Matrix, ?previousPosition : h3d.Matrix) : Bool {
+		var batcher = @:privateAccess group.batcher;
+		if( batcher == null )
+			throw "Batch instance has been removed";
+		if( @:privateAccess batcher.cpuFallback == null )
+			throw "replaceOrFallback requires a CPU fallback";
+
+		var replaced = replace(template, worldPosition, previousPosition);
+		if( !replaced )
+			@:privateAccess batcher.requireReplacementFallback(this);
+		return replaced;
+	}
+
+	/** replace the existing slots, returning false for a different batch or pass layout */
+	public function replace(template : ObjectInstance, worldPosition : h3d.Matrix, ?previousPosition : h3d.Matrix) : Bool {
+		var batcher = @:privateAccess group.batcher;
+		if( batcher == null )
+			throw "Batch instance has been removed";
+
+		var replaced = @:privateAccess batcher.replaceTrackedInstance(this, template, worldPosition, previousPosition);
+		if( replaced ) @:privateAccess batcher.incompatibleHandles?.remove(this);
+		return replaced;
+	}
+
+	/**
+		update a CPU-owned transform and optionally supply the previous transform for motion vectors
+		without a previous transform, both samples use the current transform
+	**/
+	public function setTransform(worldPosition : h3d.Matrix, ?previousPosition : h3d.Matrix) {
+		var batcher = @:privateAccess group.batcher;
+		if( batcher == null )
+			throw "Batch instance has been removed";
+
+		for( record in records ) @:privateAccess {
+			batcher.tmpMat.multiply3x4(record.relative, worldPosition);
+			var previous = batcher.tmpMat;
+			if( previousPosition != null ) {
+				batcher.tmpPreviousMat.multiply3x4(record.relative, previousPosition);
+				previous = batcher.tmpPreviousMat;
+			}
+			record.data.updateTransform(record.index, batcher.tmpMat, previous);
 		}
 	}
 }
@@ -106,11 +190,21 @@ class Batcher extends h3d.scene.Object {
 	public var shadowMaxDistance = -1.0;
 	public var shadowCameraFrustumCulling = false; // Aggressive culling inside Shadow passes, using player camera frustum
 	public var hzbCulling = false;
+	public var reuseVisibility = true;
+	public var executionMode : BatchExecutionMode = Automatic;
+	public var minimumGpuInstances = 0;
+	public var maximumGpuInstances = 0x1000000;
+	public var fallbackReason(default, null) : String;
+	var cpuFallback : RenderContext -> Void;
+	var resourceFailure : String;
+	var automaticGpu = false;
+	var incompatibleHandles : Map<BatchInstanceHandle, Bool>;
 	public var isRelative : Bool = false;
 	public var batchFlags = new haxe.EnumFlags<BatcherFlags>();
 	public var syncShader : SyncShaderInterface;
 	var applyTransformShader : h3d.shader.ApplyTransformShader;
 
+	var generation = 0;
 	var highestGroupID = 1;
 	var freeGroupIDs : Array<Int> = [];
 	var groups : Array<BatchGroup> = [];
@@ -197,8 +291,32 @@ class Batcher extends h3d.scene.Object {
 						p.pass.removeShader(s);
 	}
 
-	public function new( parent : h3d.scene.Object, renderer : h3d.scene.Renderer, library : BatchLibrary = null, batchFlags = null ) {
-		if ( !h3d.Engine.getCurrent().driver.hasFeature(Bindless) )
+	/** whether the active Limen renderer can use GPU-generated batches */
+	public static function supportsGpuDriven(driver : h3d.impl.driver.Driver) : Bool {
+		if( !driver.hasFeature(Bindless) || !driver.hasFeature(ComputeShaders) )
+			return false;
+
+		#if (hl && limen && gfx_vulkan)
+		var vulkan = Std.downcast(driver, h3d.impl.driver.vulkan.VulkanDriver);
+		if( vulkan != null ) @:privateAccess {
+			var caps = vulkan.capabilities;
+			return caps != null && caps.drawIndirectCount && caps.multiDrawIndirect && caps.drawIndirectFirstInstance;
+		}
+		#end
+		#if (hl && limen && gfx_dx12)
+		if( Std.isOfType(driver, h3d.impl.driver.dx12.DX12Driver) )
+			return true;
+		#end
+		return false;
+	}
+
+	/**
+		use a caller-owned CPU renderer for the same objects when GPU preparation cannot proceed
+		the callback emits ordinary scene passes and owns their ordering and materials
+	**/
+	public function new( parent : h3d.scene.Object, renderer : h3d.scene.Renderer, library : BatchLibrary = null, batchFlags = null,
+		?cpuFallback : RenderContext -> Void ) {
+		if ( cpuFallback == null && !h3d.Engine.getCurrent().driver.hasFeature(Bindless) )
 			throw "h3d.scene.Batcher requires Bindless support.";
 		super(parent);
 		if ( batchFlags != null )
@@ -206,6 +324,7 @@ class Batcher extends h3d.scene.Object {
 		shouldDisposeLibrary = library == null;
 		this.library = shouldDisposeLibrary ? new BatchLibrary() : library;
 		this.renderer = renderer;
+		this.cpuFallback = cpuFallback;
 		ignoreCollide = true;
 	}
 
@@ -218,6 +337,56 @@ class Batcher extends h3d.scene.Object {
 		batches.push(new Batch(this, prim));
 		primToBatch.set(prim, batchID);
 		return batchID;
+	}
+
+	/**
+		register a GPU template while a caller-owned CPU representation remains available
+		returns null when resource registration must use the CPU path
+	**/
+	public function tryAddInstance(obj : Object, recChildren = true) : ObjectInstance {
+		if( cpuFallback == null )
+			throw "tryAddInstance requires a CPU fallback";
+		if( resourceFailure != null || !supportsGpuDriven(h3d.Engine.getCurrent().driver) )
+			return null;
+
+		try {
+			return addInstance(obj, recChildren);
+		} catch( error : Dynamic ) {
+			if( !recordResourceFailure(error) )
+				throw error;
+			return null;
+		}
+	}
+
+	function requireReplacementFallback(handle : BatchInstanceHandle) {
+		if( incompatibleHandles == null )
+			incompatibleHandles = [];
+		incompatibleHandles.set(handle, true);
+	}
+
+	public function retryGpuPreparation() {
+		resourceFailure = null;
+	}
+
+	function recordResourceFailure(error : Dynamic) {
+		var message = Std.string(error);
+		var allocation = Std.downcast(error, h3d.impl.DescriptorAllocationError);
+		if( allocation != null ) {
+			if( !allocation.recoverable )
+				return false;
+			resourceFailure = allocation.message;
+			return true;
+		}
+		if( message != "Failed to alloc GPU Memory (full)" &&
+			message != "Vulkan frame descriptor arena exhausted" &&
+			!StringTools.startsWith(message, "Descriptor heap exhausted (") &&
+			!StringTools.startsWith(message, "Shader-visible sampler heap exhausted (") &&
+			!~/^VMA allocation failed for .+: -[12](:|$)/.match(message) &&
+			!(StringTools.startsWith(message, "Vulkan bindless ") && message.indexOf(" capacity exhausted:") >= 0) )
+			return false;
+
+		resourceFailure = message;
+		return true;
 	}
 
 	public function addInstance( obj : h3d.scene.Object, recChildren : Bool = true ) : ObjectInstance {
@@ -258,19 +427,27 @@ class Batcher extends h3d.scene.Object {
 			if ( m != null )
 				processMesh(m);
 		}
-		return new ObjectInstance(meshes, materials, draws);
+		return new ObjectInstance(this, meshes, materials, draws);
 	}
 
 	public function createGroup() : BatchGroup {
 		var groupID = freeGroupIDs.length > 0 ? freeGroupIDs.pop() : highestGroupID++;
 		var group = new BatchGroup(this, groupID);
+		group.managed = true;
 		groups.push(group);
 		return group;
 	}
 
 	public function removeGroup(group : BatchGroup) {
 		var groupID = group.groupID;
-		groups.remove(group);
+		if( group.batcher != this || !groups.remove(group) )
+			return;
+
+		group.batcher = null;
+		if( incompatibleHandles != null ) {
+			for( handle in [for( handle in incompatibleHandles.keys() ) if( (@:privateAccess handle.group) == group ) handle] )
+				incompatibleHandles.remove(handle);
+		}
 		freeGroupIDs.push(groupID);
 		for (b in batches)
 			b.disposeGroup(groupID);
@@ -282,6 +459,64 @@ class Batcher extends h3d.scene.Object {
 	}
 
 	var tmpMat = new h3d.Matrix();
+	var tmpPreviousMat = new h3d.Matrix();
+
+	function emitTrackedInstance(group : BatchGroup, instance : ObjectInstance, worldPosition : h3d.Matrix, syncID : Int) {
+		if( instance.owner != this || instance.generation != generation )
+			throw "Batch template belongs to a different or expired batcher";
+
+		var handle = new BatchInstanceHandle(group);
+		for( mesh in instance.meshes ) {
+			tmpMat.multiply3x4(mesh.relPos, worldPosition);
+			batches[mesh.batchID].emitMesh(mesh, instance.materials, instance.draws, tmpMat, syncID, group.groupID,
+				handle.records, mesh.relPos);
+		}
+		return handle;
+	}
+
+	function replaceTrackedInstance(handle : BatchInstanceHandle, template : ObjectInstance, worldPosition : h3d.Matrix, previousPosition : h3d.Matrix) @:privateAccess {
+		if( template == null || template.owner != this || template.generation != generation )
+			return false;
+
+		var updates = [];
+		for( mesh in template.meshes ) {
+			var batch = batches[mesh.batchID];
+			var subMesh = batch.primitive.subMeshes[mesh.subMeshID];
+			for( i in 0...mesh.materialCount ) {
+				var material = template.materials[mesh.materialStart + i];
+				var subPart = subMesh.subPartStart + i * subMesh.lodCount;
+				if( subPart > 0xFFFF || mesh.subMeshID > 0xFFFF )
+					return false;
+
+				for( j in material.drawStart...material.drawStart + material.drawCount ) {
+					var draw = template.draws[j];
+					var record = handle.records[updates.length];
+					if( record == null || record.data.batchPass != batch.passes[draw.passID] )
+						return false;
+					updates.push({ mesh : mesh, subPart : subPart, shaderData : draw.shaderData });
+				}
+			}
+		}
+		if( updates.length != handle.records.length )
+			return false;
+
+		for( i => update in updates ) {
+			var record = handle.records[i];
+			record.relative = update.mesh.relPos;
+			tmpMat.multiply3x4(record.relative, worldPosition);
+			var previous = tmpMat;
+			if( previousPosition != null ) {
+				tmpPreviousMat.multiply3x4(record.relative, previousPosition);
+				previous = tmpPreviousMat;
+			}
+
+			record.data.replaceInstance(record.index, update.mesh.subMeshID, update.subPart,
+				record.shaderData, update.shaderData, tmpMat, previous);
+			record.shaderData = update.shaderData;
+		}
+		return true;
+	}
+
 	public function emitInstance( instance : ObjectInstance, worldPosition : h3d.Matrix, syncID : Int = 0, groupID : Int = 0 ) {
 		for ( mesh in instance.meshes ) {
 			var batch = batches[mesh.batchID];
@@ -301,17 +536,66 @@ class Batcher extends h3d.scene.Object {
 	public function emitGPU(ctx : h3d.scene.RenderContext) {
 		if ( !batchFlags.has(ManualEmitGPU) )
 			throw "Can't call emitGPU without flag ManualEmitGPU";
+		var dispatches = ctx.engine.dispatches;
 		for ( b in batches )
 			b.emitGPU(ctx);
-		ctx.memoryBarrier();
+		if( ctx.engine.dispatches != dispatches )
+			ctx.memoryBarrier();
 	}
 
 	override function emit( ctx : h3d.scene.RenderContext ) {
+		if( cpuFallback == null ) {
+			emitBatches(ctx);
+			return;
+		}
+
+		fallbackReason = resourceFailure;
+		if( fallbackReason == null && incompatibleHandles != null && incompatibleHandles.keys().hasNext() )
+			fallbackReason = "GPU batch has an incompatible replacement";
+		if( fallbackReason == null && !supportsGpuDriven(ctx.engine.driver) )
+			fallbackReason = "GPU batch capability unavailable";
+		if( fallbackReason == null && executionMode == Cpu )
+			fallbackReason = "CPU override";
+
+		if( fallbackReason == null ) {
+			var largest = 0;
+			for( b in batches )
+				largest = hxd.Math.imax(largest, b.totalInstanceCount);
+
+			var threshold = automaticGpu ? minimumGpuInstances - (minimumGpuInstances >> 2) : minimumGpuInstances;
+			if( largest == 0 || (executionMode == Automatic && largest < threshold) )
+				fallbackReason = "GPU batch below workload threshold";
+			else if( largest > maximumGpuInstances )
+				fallbackReason = "GPU batch exceeds instance budget";
+			else if( batchFlags.has(ManualEmitGPU) )
+				fallbackReason = "Manual GPU dispatch owns its fallback";
+		}
+
+		if( fallbackReason == null ) {
+			var dispatches = ctx.engine.dispatches;
+			try {
+				emitBatches(ctx, true);
+			} catch( error : Dynamic ) {
+				if( !recordResourceFailure(error) )
+					throw error;
+				if( ctx.engine.dispatches != dispatches )
+					ctx.memoryBarrier();
+				for( b in batches )
+					b.releaseGpuPasses();
+				fallbackReason = resourceFailure;
+			}
+		}
+		automaticGpu = fallbackReason == null && executionMode == Automatic;
+		if( fallbackReason != null )
+			cpuFallback(ctx);
+	}
+
+	function emitBatches(ctx : RenderContext, adaptive = false) {
 		var maxInstanceCount = 0;
 		for ( b in batches ) {
-			b.uploadPrimitive(ctx);
 			if ( b.totalInstanceCount == 0 )
 				continue;
+			b.uploadPrimitive(ctx);
 			maxInstanceCount = hxd.Math.imax(b.totalInstanceCount, maxInstanceCount);
 		}
 
@@ -336,10 +620,23 @@ class Batcher extends h3d.scene.Object {
 		}
 
 		var doDispatch = !batchFlags.has(ManualEmitGPU);
+		var dispatches = ctx.engine.dispatches;
+		if( adaptive ) {
+			for( b in batches ) {
+				fallbackReason = b.checkGpuPasses(ctx);
+				if( fallbackReason != null )
+					return;
+			}
+			ctx.engine.driver.preflightBatchDescriptors();
+			for( b in batches ) {
+				b.emitGPU(ctx);
+				b.prepareOffsets();
+			}
+		}
 		for ( batchID => b in batches )
-			b.emit(ctx, batchID, doDispatch);
+			b.emit(ctx, batchID, doDispatch && !adaptive, adaptive);
 
-		if ( doDispatch )
+		if( ctx.engine.dispatches != dispatches )
 			ctx.memoryBarrier();
 	}
 
@@ -411,7 +708,11 @@ class Batcher extends h3d.scene.Object {
 			b.dispose();
 		if ( shouldDisposeLibrary )
 			library.dispose();
+		for( group in groups )
+			group.batcher = null;
 		groups.resize(0);
+		incompatibleHandles = null;
+		generation++;
 		batches.resize(0);
 		freeGroupIDs.resize(0);
 		primToBatch.clear();
@@ -527,7 +828,8 @@ private class Batch {
 
 	function findPassID( globals : hxsl.Globals, shaders : hxsl.ShaderList, pass : h3d.mat.Pass ) : Int {
 		for ( i => bp in passes ) @:privateAccess {
-			if ( pass.bits == bp.pass.bits && pass.name == bp.pass.name && pass.layer == bp.pass.layer ) {
+			if ( pass.bits == bp.pass.bits && pass.name == bp.pass.name && pass.layer == bp.pass.layer &&
+				pass.colorMask == bp.pass.colorMask && pass.stencil == null && bp.pass.stencil == null ) {
 				var sl = shaders;
 				var sIdx = 0;
 				var shaderCount = bp.shaders.length;
@@ -541,7 +843,7 @@ private class Batch {
 					sIdx++;
 					sl = sl.next;
 				}
-				if ( sIdx == bp.shaders.length )
+				if ( sIdx == bp.shaders.length && sl == null )
 					return i;
 			}
 		}
@@ -580,17 +882,19 @@ private class Batch {
 		getGroup(groupID).reserve(materials, draws, mesh.materialStart, mesh.materialCount, count);
 	}
 
-	public function emitMesh( mesh : MeshInstance, materials : Array<MaterialInstance>, draws : Array<DrawInstance>, worldPosition : h3d.Matrix, syncID : Int, groupID : Int ) {
+	public function emitMesh( mesh : MeshInstance, materials : Array<MaterialInstance>, draws : Array<DrawInstance>, worldPosition : h3d.Matrix, syncID : Int, groupID : Int, ?records : Array<TrackedDraw>, ?relative : h3d.Matrix ) {
 		var group = getGroup(groupID);
 
 		instancesDirty = true;
 		totalInstanceCount++;
 
-		group.emitMesh(primitive, mesh.subMeshID, materials, draws, mesh.materialStart, mesh.materialCount, worldPosition, syncID);
+		group.emitMesh(primitive, mesh.subMeshID, materials, draws, mesh.materialStart, mesh.materialCount, worldPosition, syncID, records, relative);
 	}
 
 	public function uploadPrimitive(ctx : h3d.scene.RenderContext) {
-		if ( primitive.gpuSubMeshInfos == null || primitive.gpuSubMeshInfos.isDisposed() ) {
+		if ( primitive.gpuSubMeshInfos == null || primitive.gpuSubMeshInfos.isDisposed() ||
+			primitive.gpuSubPartInfos == null || primitive.gpuSubPartInfos.isDisposed() ||
+			primitive.gpuLodInfos == null || primitive.gpuLodInfos.isDisposed() ) {
 			primitive.alloc(ctx.engine);
 			if ( batcher.library.instancesOffset != null )
 				primitive.addBuffer(batcher.library.instancesOffset);
@@ -619,7 +923,34 @@ private class Batch {
 		}
 	}
 
-	public function emit( ctx : h3d.scene.RenderContext, batchID : Int, doEmitGPU : Bool ) {
+	public function releaseGpuPasses() {
+		for( p in passes )
+			p.dispose();
+	}
+
+	public function prepareOffsets() {
+		for( p in passes )
+			if( p.totalInstanceCount != 0 )
+				@:privateAccess batcher.library.checkOffsetBuffer(p.totalInstanceCount * (p.emittedCascades + 1));
+	}
+
+	public function checkGpuPasses(ctx : RenderContext) {
+		for( p in passes ) {
+			if( p.totalInstanceCount == 0 )
+				continue;
+			var pass = p.pass;
+			if( !pass.depthWrite || (pass.depthTest != Less && pass.depthTest != LessEqual &&
+				pass.depthTest != Greater && pass.depthTest != GreaterEqual) || pass.stencil != null ||
+				pass.blendSrc != One || pass.blendDst != Zero ||
+				pass.blendAlphaSrc != One || pass.blendAlphaDst != Zero || pass.blendOp != Add || pass.blendAlphaOp != Add )
+				return "GPU batch requires ordered rendering";
+			if( !p.fitsGpuLimits(ctx) )
+				return "GPU batch exceeds device buffer or indirect draw limits";
+		}
+		return null;
+	}
+
+	public function emit( ctx : h3d.scene.RenderContext, batchID : Int, doEmitGPU : Bool, offsetsReady = false ) {
 		if ( totalInstanceCount == 0 )
 			return;
 
@@ -629,7 +960,8 @@ private class Batch {
 			if ( doEmitGPU )
 				p.emitGPU(ctx);
 			ctx.emitPass(p.pass, batcher).index = i << 16 | batchID;
-			batcher.library.checkOffsetBuffer(p.totalInstanceCount);
+			if( !offsetsReady )
+				@:privateAccess batcher.library.checkOffsetBuffer(p.totalInstanceCount * (p.emittedCascades + 1));
 		}
 	}
 
@@ -679,7 +1011,7 @@ private class GroupData {
 		}
 	}
 
-	public function emitMesh( primitive : h3d.prim.BatchPrimitive, subMeshID : Int, materials : Array<MaterialInstance>, draws : Array<DrawInstance>, materialStart : Int, materialCount : Int, worldPosition : h3d.Matrix, syncID : Int ) {
+	public function emitMesh( primitive : h3d.prim.BatchPrimitive, subMeshID : Int, materials : Array<MaterialInstance>, draws : Array<DrawInstance>, materialStart : Int, materialCount : Int, worldPosition : h3d.Matrix, syncID : Int, records : Array<TrackedDraw>, relative : h3d.Matrix ) {
 		instanceCount++;
 
 		var subMesh = primitive.subMeshes[subMeshID];
@@ -689,7 +1021,11 @@ private class GroupData {
 			var subPartID = subPartStart + i * subMesh.lodCount;
 			for ( j in m.drawStart...m.drawStart + m.drawCount ) {
 				var draw = draws[j];
-				getEmitData(draw.passID).emitInstance(subMeshID, subPartID, draw.shaderData, worldPosition, syncID );
+				var data = getEmitData(draw.passID);
+				var index = data.instanceCount;
+				data.emitInstance(subMeshID, subPartID, draw.shaderData, worldPosition, syncID);
+				if( records != null )
+					records.push({ data : data, index : index, relative : relative, shaderData : draw.shaderData });
 			}
 		}
 	}
@@ -716,12 +1052,30 @@ private class BatchBucketClear extends hxsl.Shader {
 	static var SRC = {
 		@param var buckets : RWBuffer<Int>; // count, firstInstance
 		@param var bucketCount : Int;
+		@param var countBuffer : RWBuffer<Int>;
+		@param var slotCount : Int;
+		@const var singleBucket : Bool;
+		@param var subPartInfos : StorageBuffer<Int>;
+		@param var commandBuffer : RWBuffer<Int>;
 
 		function main() {
 			setLayout(64, 1, 1);
 			var bucket = computeVar.globalInvocation.x;
-			if ( bucket < bucketCount )
+			if ( bucket < slotCount ) {
+				countBuffer[bucket * 2] = 0;
+				countBuffer[bucket * 2 + 1] = 0;
+			}
+			if ( singleBucket ) {
+				if ( bucket == 0 ) {
+					commandBuffer[0] = subPartInfos[0];
+					commandBuffer[1] = 0;
+					commandBuffer[2] = subPartInfos[1];
+					commandBuffer[3] = 0;
+					commandBuffer[4] = 0;
+				}
+			} else if ( bucket < bucketCount ) {
 				buckets[bucket * 2] = 0;
+			}
 		}
 	};
 }
@@ -769,7 +1123,7 @@ private class BatchInstanceScatter extends hxsl.Shader {
 
 		function main() {
 			setLayout(64, 1, 1);
-			var instanceID = computeVar.globalInvocation.x;
+			var instanceID = computeVar.globalInvocation.x + computeVar.globalInvocation.y * (65535 * 64);
 			if ( instanceID >= instanceCount * slotCount )
 				return;
 			var bucket = instanceSlots[instanceID * 2];
@@ -786,6 +1140,10 @@ private class BatchCommandBuilder extends hxsl.Shader {
 		@const var ENABLE_FRUSTUM_CULLING : Bool;
 		@const var ENABLE_DISTANCE_CLIPPING : Bool;
 		@const var ENABLE_HZB_CULLING : Bool;
+		@const var singleBucket : Bool;
+		@param var commandBuffer : RWBuffer<Int>;
+		@param var countBuffer : RWBuffer<Int>;
+		@param var visibleInstanceIds : RWBuffer<Int>;
 
 		@global var camera : {
 			var position : Vec3;
@@ -824,6 +1182,9 @@ private class BatchCommandBuilder extends hxsl.Shader {
 
 		@param var hzb : Sampler2D;
 		@param var hzbSize : Vec2;
+		@param var hzbMipCount : Int;
+		@param var reverseDepth : Bool;
+		@param var frustumPlaneCount : Int;
 
 		@const var ENABLE_STREAMING_FEEDBACK : Bool;
 		@param var streamingFeedback : RWBuffer<Int>;
@@ -868,11 +1229,11 @@ private class BatchCommandBuilder extends hxsl.Shader {
 
 		function main() {
 			setLayout(64, 1, 1);
-			var instanceID = computeVar.workGroup.x * 64 + computeVar.localInvocationIndex;
+			var instanceID = computeVar.globalInvocation.x + computeVar.globalInvocation.y * (65535 * 64);
 			if ( instanceID >= instanceCount )
 				return;
 
-			@unroll for ( slot in 0...MAX_CASCADES + 1 )
+			if ( !singleBucket ) @unroll for ( slot in 0...MAX_CASCADES + 1 )
 				if ( slot <= cascadeCount )
 					instanceSlots[(slot * instanceCount + instanceID) * 2] = -1;
 
@@ -893,7 +1254,7 @@ private class BatchCommandBuilder extends hxsl.Shader {
 				return;
 
 			var flags : Int = instancesInfos[instanceID];
-			var subMeshID : Int = flags >> 16;
+			var subMeshID : Int = (flags >> 16) & 0xFFFF;
 
 			var subMeshPos = subMeshID * subMeshInfosStride;
 			var bbCenter = subMeshInfos[subMeshPos + 0].xyz;
@@ -930,7 +1291,8 @@ private class BatchCommandBuilder extends hxsl.Shader {
 				@unroll for ( i  in 0...6 ) {
 					var plane = frustum[i];
 					var extent = abs(dot(plane.xyz, boxAxes[0])) + abs(dot(plane.xyz, boxAxes[1])) + abs(dot(plane.xyz, boxAxes[2]));
-					if ((dot(plane.xyz, position) - plane.w) < -extent)
+					var errorMargin = (dot(abs(plane.xyz), abs(position)) + abs(plane.w) + extent + 1.0) * 1e-6;
+					if ( i < frustumPlaneCount && dot(plane.xyz, position) - plane.w < -extent - errorMargin )
 						return;
 				}
 			}
@@ -938,40 +1300,46 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			if ( ENABLE_HZB_CULLING ) {
 				var posView = vec4(position, 1.0) * camera.view;
 				var viewAxes = [ boxAxes[0] * camera.view.mat3(), boxAxes[1] * camera.view.mat3(), boxAxes[2] * camera.view.mat3() ];
-				var depthView = posView.z - (abs(viewAxes[0].z) + abs(viewAxes[1].z) + abs(viewAxes[2].z));
-				if ( depthView > camera.zNear ) {
-					var objDepthMin = (camera.zFar * (depthView - camera.zNear)) / (depthView * (camera.zFar - camera.zNear));
-
-					var cornerSigns = [
-						vec3(-1, -1, -1), vec3(1, -1, -1), vec3(-1, 1, -1), vec3(1, 1, -1),
-						vec3(-1, -1, 1), vec3(1, -1, 1), vec3(-1, 1, 1), vec3(1, 1, 1)
-					];
-					var uvMin = vec2(1e30);
-					var uvMax = vec2(-1e30);
-					@unroll for ( i in 0...8 ) {
-						var sign = cornerSigns[i];
-						var corner = posView.xyz + viewAxes[0] * sign.x + viewAxes[1] * sign.y + viewAxes[2] * sign.z;
-						var screenPos = vec4(corner, 1.0) * camera.proj;
-						var cornerUV = screenToUv(screenPos.xy / screenPos.w);
+				var cornerSigns = [
+					vec3(-1, -1, -1), vec3(1, -1, -1), vec3(-1, 1, -1), vec3(1, 1, -1),
+					vec3(-1, -1, 1), vec3(1, -1, 1), vec3(-1, 1, 1), vec3(1, 1, 1)
+				];
+				var uvMin = vec2(1e30);
+				var uvMax = vec2(-1e30);
+				var closest = reverseDepth ? 0.0 : 1.0;
+				var valid = true;
+				@unroll for ( i in 0...8 ) {
+					var sign = cornerSigns[i];
+					var corner = posView.xyz + viewAxes[0] * sign.x + viewAxes[1] * sign.y + viewAxes[2] * sign.z;
+					var clip = vec4(corner, 1.0) * camera.proj;
+					if ( !(clip.w > 0.0 && clip.z > 0.0 && clip.z < clip.w) ) {
+						valid = false;
+					} else {
+						var cornerUV = screenToUv(clip.xy / clip.w);
 						uvMin = min(uvMin, cornerUV);
 						uvMax = max(uvMax, cornerUV);
+						var depth = clip.z / clip.w;
+						closest = reverseDepth ? max(closest, depth) : min(closest, depth);
 					}
-
-					uvMin = saturate(uvMin);
-					uvMax = saturate(uvMax);
-					var mip = selectHzbMip(uvMin, uvMax);
+				}
+				if ( valid ) {
+					var pixel = 1.0 / hzbSize;
+					uvMin = saturate(uvMin - pixel);
+					uvMax = saturate(uvMax + pixel);
+					var mip = min(selectHzbMip(uvMin, uvMax), float(hzbMipCount - 1));
 					var mipSize = max(vec2(1.0), floor(hzbSize / pow(vec2(2.0), vec2(mip))));
+					var low = ivec2(clamp(uvMin * mipSize, vec2(0.0), mipSize - vec2(1.0)));
+					var high = ivec2(clamp(uvMax * mipSize, vec2(0.0), mipSize - vec2(1.0)));
 
-					var aabbCornersUVSpace = [ uvMin, vec2(uvMax.x, uvMin.y), vec2(uvMin.x, uvMax.y), uvMax ];
-					var depth = 0.0;
-					@unroll for ( i in 0...4 ) {
-						var cornerPos = ivec2(clamp(aabbCornersUVSpace[i] * mipSize, vec2(0.0), mipSize - vec2(1.0)));
-						var cornerDepth = hzb.fetchLod(cornerPos, int(mip)).x;
-						depth = max(depth, cornerDepth);
+					if ( high.x - low.x <= 1 && high.y - low.y <= 1 ) {
+						var a = hzb.fetchLod(low, int(mip)).x;
+						var b = hzb.fetchLod(ivec2(high.x, low.y), int(mip)).x;
+						var c = hzb.fetchLod(ivec2(low.x, high.y), int(mip)).x;
+						var d = hzb.fetchLod(high, int(mip)).x;
+						var depth = reverseDepth ? min(min(a, b), min(c, d)) : max(max(a, b), max(c, d));
+						if ( reverseDepth ? closest + 1e-5 < depth : closest - 1e-5 > depth )
+							return;
 					}
-
-					if ( objDepthMin > depth )
-						return;
 				}
 			}
 
@@ -993,32 +1361,41 @@ private class BatchCommandBuilder extends hxsl.Shader {
 			if ( lodSelected >= lodCount )
 				return;
 
-			var subPartID : Int = flags & 0xFFFF;
-			var bucket = subPartID + lodSelected;
-			instanceSlots[instanceID * 2] = bucket;
-			instanceSlots[instanceID * 2 + 1] = atomicAdd(buckets, bucket * 2, 1);
-
-			if ( cascadeCount > 0 ) {
-				var posLs = position * cascadeView.mat3x4();
-				var lightRot = cascadeView.mat3();
-				var extentsLs = abs(boxAxes[0] * lightRot) + abs(boxAxes[1] * lightRot) + abs(boxAxes[2] * lightRot);
-				var dimension = 2.0 * max(extentsLs.x, max(extentsLs.y, extentsLs.z));
-				var inCascade = false;
-				@unroll for ( c in 0...MAX_CASCADES ) {
-					var cMin = cascadeMin[c];
-					var cMax = cascadeMax[c];
-					if ( c < cascadeCount && dimension >= cMin.w && insideOBB(posLs, extentsLs, cMin.xyz, cMax.xyz) ) {
-						var cascadeBucket = (c + 1) * bucketCount + bucket;
-						var instanceSlot = ((c + 1) * instanceCount + instanceID) * 2;
-						instanceSlots[instanceSlot] = cascadeBucket;
-						instanceSlots[instanceSlot + 1] = atomicAdd(buckets, cascadeBucket * 2, 1);
-						inCascade = true;
-					}
-				}
-				if ( ENABLE_STREAMING_FEEDBACK && inCascade )
+			if ( singleBucket ) {
+				var index = atomicAdd(commandBuffer, 1, 1);
+				visibleInstanceIds[index] = instanceID;
+				if ( index == 0 )
+					countBuffer[0] = 1;
+				if ( ENABLE_STREAMING_FEEDBACK )
 					writeStreamingFeedback(instanceID);
-			} else if ( ENABLE_STREAMING_FEEDBACK )
-				writeStreamingFeedback(instanceID);
+			} else {
+				var subPartID : Int = flags & 0xFFFF;
+				var bucket = subPartID + lodSelected;
+				instanceSlots[instanceID * 2] = bucket;
+				instanceSlots[instanceID * 2 + 1] = atomicAdd(buckets, bucket * 2, 1);
+
+				if ( cascadeCount > 0 ) {
+					var posLs = position * cascadeView.mat3x4();
+					var lightRot = cascadeView.mat3();
+					var extentsLs = abs(boxAxes[0] * lightRot) + abs(boxAxes[1] * lightRot) + abs(boxAxes[2] * lightRot);
+					var dimension = 2.0 * max(extentsLs.x, max(extentsLs.y, extentsLs.z));
+					var inCascade = false;
+					@unroll for ( c in 0...MAX_CASCADES ) {
+						var cMin = cascadeMin[c];
+						var cMax = cascadeMax[c];
+						if ( c < cascadeCount && dimension >= cMin.w && insideOBB(posLs, extentsLs, cMin.xyz, cMax.xyz) ) {
+							var cascadeBucket = (c + 1) * bucketCount + bucket;
+							var instanceSlot = ((c + 1) * instanceCount + instanceID) * 2;
+							instanceSlots[instanceSlot] = cascadeBucket;
+							instanceSlots[instanceSlot + 1] = atomicAdd(buckets, cascadeBucket * 2, 1);
+							inCascade = true;
+						}
+					}
+					if ( ENABLE_STREAMING_FEEDBACK && inCascade )
+						writeStreamingFeedback(instanceID);
+				} else if ( ENABLE_STREAMING_FEEDBACK )
+					writeStreamingFeedback(instanceID);
+			}
 		}
 	}
 }
@@ -1060,6 +1437,11 @@ private class BatchPass {
 	var commandCapacity = 0;
 	var commandSlots = 0;
 	var emittedCascades = 0;
+	var visibilityGeometry : h3d.Buffer;
+	var visibilityFrustum : h3d.col.Frustum;
+	var visibilityCamera = new h3d.Vector();
+	var visibilityProjection = 0.;
+	var visibilityLodScale = 0.;
 	var countBuffer : h3d.GPUCounter;
 	var builderShader = new BatchCommandBuilder();
 	var bucketClearShader = new BatchBucketClear();
@@ -1243,9 +1625,9 @@ private class BatchPass {
 	}
 
 	public function uploadInstances() {
-		if ( !instancesDirty )
+		if ( !instancesDirty && instancesData != null && !instancesData.isDisposed() &&
+			instancesInfos != null && !instancesInfos.isDisposed() && (!hasSyncIDs || (syncIDs != null && !syncIDs.isDisposed())) )
 			return;
-		instancesDirty = false;
 		var alloc = hxd.impl.Allocator.get();
 
 		inline function allocBuffer(size, format, flags) {
@@ -1254,7 +1636,7 @@ private class BatchPass {
 
 		var realloc = false;
 		var instanceDataSize = totalInstanceCount * batchShader.paramsSize;
-		if ( instancesData == null || instancesData.vertices < instanceDataSize ) {
+		if ( instancesData == null || instancesData.isDisposed() || instancesData.vertices < instanceDataSize ) {
 			if ( instancesData != null )
 				alloc.disposeBuffer(instancesData);
 			instancesData = allocBuffer( instanceDataSize, hxd.BufferFormat.VEC4_DATA, UniformReadWrite );
@@ -1263,7 +1645,7 @@ private class BatchPass {
 		batchShader.Batch_StorageBuffer = instancesData;
 
 		if ( hasSyncIDs ) {
-			if ( syncIDs == null || syncIDs.vertices < totalInstanceCount ) {
+			if ( syncIDs == null || syncIDs.isDisposed() || syncIDs.vertices < totalInstanceCount ) {
 				if ( syncIDs != null )
 					alloc.disposeBuffer(syncIDs);
 				syncIDs = allocBuffer( totalInstanceCount, hxd.BufferFormat.INDEX32, Uniform );
@@ -1271,7 +1653,7 @@ private class BatchPass {
 			}
 		}
 
-		if ( instancesInfos == null || instancesInfos.vertices < totalInstanceCount ) {
+		if ( instancesInfos == null || instancesInfos.isDisposed() || instancesInfos.vertices < totalInstanceCount ) {
 			if ( instancesInfos != null )
 				alloc.disposeBuffer(instancesInfos);
 			instancesInfos = allocBuffer( totalInstanceCount, PASS_INSTANCES_INFOS_FMT, Uniform );
@@ -1284,37 +1666,50 @@ private class BatchPass {
 		if ( textureHandles != null )
 			textureHandles.resize(0);
 		for ( ed in toEmit ) {
-			if ( ed.bufferHandles != null ) {
+			if ( ed.bufferRefs != null ) {
 				if ( bufferHandles == null )
 					bufferHandles = [];
-				for ( bh in ed.bufferHandles )
+				for ( bh in ed.bufferRefs.keys() )
 					if ( bufferHandles.indexOf(bh) < 0 )
 						bufferHandles.push(bh);
 			}
-			if ( ed.textureHandles != null ) {
+			if ( ed.textureRefs != null ) {
 				if ( textureHandles == null )
 					textureHandles = [];
-				for ( th in ed.textureHandles )
+				for ( th in ed.textureRefs.keys() )
 					if ( textureHandles.indexOf(th) < 0 )
 						textureHandles.push(th);
 			}
 
 			var first = ( realloc || ed.uploadCursor != instanceCursor ) ? 0 : ed.uploadedCount;
 			var count = ed.instanceCount - first;
-			if ( count > 0 ) {
+			if ( hasSyncIDs && count > 0 )
+				syncIDs.uploadBytes(ed.syncIDs, first * 4, count, instanceCursor + first);
+			var infoFirst = hxd.Math.imin(first, ed.dirtyInfoFirst);
+			var infoEnd = count > 0 ? ed.instanceCount : ed.dirtyInfoEnd;
+			if( infoEnd > infoFirst )
+				instancesInfos.uploadBytes(ed.instancesInfos, infoFirst * PASS_INSTANCES_INFOS_FMT.strideBytes,
+					infoEnd - infoFirst, instanceCursor + infoFirst);
+
+			ed.dirtyInfoFirst = ed.instanceCount;
+			ed.dirtyInfoEnd = 0;
+			var dataFirst = hxd.Math.imin(first, ed.dirtyTransformFirst);
+			var dataEnd = count > 0 ? ed.instanceCount : ed.dirtyTransformEnd;
+			if( dataEnd > dataFirst ) {
 				var stride = batchShader.paramsSize;
-				instancesData.uploadFloats( ed.instancesData, first * stride * 4, count * stride, (instanceCursor + first) * stride );
-				instancesInfos.uploadBytes( ed.instancesInfos, first * PASS_INSTANCES_INFOS_FMT.strideBytes, count, instanceCursor + first );
-				if ( hasSyncIDs )
-					syncIDs.uploadBytes( ed.syncIDs, first * 4, count, instanceCursor + first );
+				instancesData.uploadFloats(ed.instancesData, dataFirst * stride * 4, (dataEnd - dataFirst) * stride,
+					(instanceCursor + dataFirst) * stride);
 			}
+			ed.dirtyTransformFirst = ed.instanceCount;
+			ed.dirtyTransformEnd = 0;
 			ed.uploadCursor = instanceCursor;
 			ed.uploadedCount = ed.instanceCount;
 			instanceCursor += ed.instanceCount;
 		}
+		instancesDirty = false;
 	}
 
-	function checkCommandBuffer( slots : Int ) {
+	function checkCommandBuffer( slots : Int, singleBucket : Bool ) {
 		var alloc = hxd.impl.Allocator.get();
 		var bucketCount = primitive.gpuSubPartInfos.vertices;
 		var maxCommandCount = hxd.Math.imin(totalInstanceCount, bucketCount);
@@ -1323,35 +1718,35 @@ private class BatchPass {
 			return alloc.allocBuffer(hxd.impl.Allocator.roundPOT(size), format, flags);
 		}
 
-		if ( buckets == null || buckets.vertices < bucketCount * slots * 2 ) {
+		if ( !singleBucket && (buckets == null || buckets.isDisposed() || buckets.vertices < bucketCount * slots * 2) ) {
 			if ( buckets != null )
 				alloc.disposeBuffer(buckets);
 			buckets = allocBuffer(bucketCount * slots * 2, hxd.BufferFormat.INDEX32, UniformReadWrite);
 		}
-		if ( instanceSlots == null || instanceSlots.vertices < totalInstanceCount * slots * 2 ) {
+		if ( !singleBucket && (instanceSlots == null || instanceSlots.isDisposed() || instanceSlots.vertices < totalInstanceCount * slots * 2) ) {
 			if ( instanceSlots != null )
 				alloc.disposeBuffer(instanceSlots);
 			instanceSlots = allocBuffer(totalInstanceCount * slots * 2, hxd.BufferFormat.INDEX32, UniformReadWrite);
 		}
-		if ( visibleInstanceIds == null || visibleInstanceIds.vertices < totalInstanceCount * slots ) {
+		if ( visibleInstanceIds == null || visibleInstanceIds.isDisposed() || visibleInstanceIds.vertices < totalInstanceCount * slots ) {
 			if ( visibleInstanceIds != null )
 				alloc.disposeBuffer(visibleInstanceIds);
 			visibleInstanceIds = allocBuffer(totalInstanceCount * slots, hxd.BufferFormat.INDEX32, UniformReadWrite);
 		}
 		batchShader.Batch_InstanceIds = visibleInstanceIds;
 
-		if ( commandBuffer != null && commandCapacity >= maxCommandCount && commandSlots >= slots )
-			return;
-		if ( commandBuffer != null )
-			alloc.disposeBuffer(commandBuffer);
 		var prevSlots = commandSlots;
-		commandCapacity = hxd.Math.imax(commandCapacity, hxd.impl.Allocator.roundPOT(maxCommandCount));
-		commandSlots = hxd.Math.imax(commandSlots, slots);
-		commandBuffer = alloc.allocBuffer( commandCapacity * commandSlots, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
-		if ( command == null )
-			command = new h3d.impl.InstanceBuffer();
-		@:privateAccess command.data = commandBuffer.vbuf;
-		if ( countBuffer == null || prevSlots != commandSlots ) {
+		if ( commandBuffer == null || commandBuffer.isDisposed() || commandCapacity < maxCommandCount || commandSlots < slots ) {
+			if ( commandBuffer != null )
+				alloc.disposeBuffer(commandBuffer);
+			commandCapacity = hxd.Math.imax(commandCapacity, hxd.impl.Allocator.roundPOT(maxCommandCount));
+			commandSlots = hxd.Math.imax(commandSlots, slots);
+			commandBuffer = alloc.allocBuffer( commandCapacity * commandSlots, INDIRECT_DRAW_ARGUMENTS_FMT, UniformReadWrite );
+			if ( command == null )
+				command = new h3d.impl.InstanceBuffer();
+			@:privateAccess command.data = commandBuffer.vbuf;
+		}
+		if ( countBuffer == null || countBuffer.buffer.isDisposed() || prevSlots != commandSlots ) {
 			countBuffer?.dispose();
 			countBuffer = new GPUCounter(commandSlots * 2);
 			@:privateAccess command.countBuffer = countBuffer.buffer.vbuf;
@@ -1369,10 +1764,100 @@ private class BatchPass {
 		ctx.computeDispatch(cast s, hxd.Math.ceil(totalInstanceCount/64.0), false);
 	}
 
+	public function fitsGpuLimits(ctx : RenderContext) {
+		var slots = isShadowPass ? batcher.prepareCascades(ctx) + 1 : 1;
+		var visible : Float = totalInstanceCount * 1.0 * slots;
+		var data : Float = totalInstanceCount * 1.0 * batchShader.paramsSize;
+		if( visible > 0x1000000 || data > 0x4000000 )
+			return false;
+
+		#if (hl && limen && gfx_vulkan)
+		var vk = Std.downcast(ctx.engine.driver, h3d.impl.driver.vulkan.VulkanDriver);
+		if( vk != null ) @:privateAccess {
+			var limits = vk.limits;
+			var buckets = primitive.gpuSubPartInfos.vertices;
+			var draws = hxd.Math.imin(totalInstanceCount, buckets);
+			if( limits.maxDrawIndirectCount >= 0 && draws > limits.maxDrawIndirectCount )
+				return false;
+
+			var maxStorage = limits.maxStorageBufferRange;
+			if( maxStorage >= 0 && (hxd.impl.Allocator.roundPOT(Std.int(data)) * 16.0 > maxStorage ||
+				hxd.impl.Allocator.roundPOT(Std.int(visible * 2)) * 4.0 > maxStorage ||
+				hxd.impl.Allocator.roundPOT(draws) * slots * 20.0 > maxStorage ||
+				primitive.gpuSubMeshInfos.getMemSize() > maxStorage || primitive.gpuSubPartInfos.getMemSize() > maxStorage ||
+				primitive.gpuLodInfos.getMemSize() > maxStorage) )
+				return false;
+
+			var groups = Math.ceil(visible / 64.);
+			if( hxd.Math.min(groups, 65535.) > limits.maxComputeWorkGroupCount ||
+				Math.ceil(groups / 65535.) > limits.maxComputeWorkGroupCount1 )
+				return false;
+		}
+		#end
+		return true;
+	}
+
+	function canReuseVisibility(cascades : Int) {
+		return batcher.reuseVisibility && !batcher.batchFlags.has(ManualEmitGPU) &&
+			!batcher.isRelative && batcher.syncShader == null && !batcher.hzbCulling && cascades == 0 &&
+			textureHandlePos.length == 0 && (!isShadowPass || (!batcher.shadowCameraFrustumCulling && batcher.shadowMaxDistance <= 0));
+	}
+
+	function visibilityMatches(ctx : RenderContext) {
+		if( visibilityGeometry != primitive.gpuSubMeshInfos || visibilityFrustum == null ||
+			visibleInstanceIds.isDisposed() || commandBuffer.isDisposed() || countBuffer.buffer.isDisposed() ||
+			visibilityLodScale != ctx.meshLodScale || visibilityProjection != hxd.Math.max(ctx.camera.mproj._11, ctx.camera.mproj._22) ||
+			visibilityCamera.x != ctx.camera.pos.x || visibilityCamera.y != ctx.camera.pos.y || visibilityCamera.z != ctx.camera.pos.z )
+			return false;
+
+		var a = visibilityFrustum;
+		var b = ctx.camera.frustum;
+		inline function same(a : h3d.col.Plane, b : h3d.col.Plane) @:privateAccess {
+			return a.nx == b.nx && a.ny == b.ny && a.nz == b.nz && a.d == b.d;
+		}
+		return isShadowPass || (a.checkNearFar == b.checkNearFar && same(a.pleft, b.pleft) &&
+			same(a.pright, b.pright) && same(a.ptop, b.ptop) && same(a.pbottom, b.pbottom) &&
+			(!a.checkNearFar || (same(a.pnear, b.pnear) && same(a.pfar, b.pfar))));
+	}
+
+	function rememberVisibility(ctx : RenderContext) {
+		var f = ctx.camera.frustum;
+		if( visibilityFrustum == null )
+			visibilityFrustum = f.clone();
+		else {
+			visibilityFrustum.pleft.load(f.pleft);
+			visibilityFrustum.pright.load(f.pright);
+			visibilityFrustum.ptop.load(f.ptop);
+			visibilityFrustum.pbottom.load(f.pbottom);
+			visibilityFrustum.pnear.load(f.pnear);
+			visibilityFrustum.pfar.load(f.pfar);
+			visibilityFrustum.checkNearFar = f.checkNearFar;
+		}
+		visibilityGeometry = primitive.gpuSubMeshInfos;
+		visibilityCamera.set(ctx.camera.pos.x, ctx.camera.pos.y, ctx.camera.pos.z);
+		visibilityProjection = hxd.Math.max(ctx.camera.mproj._11, ctx.camera.mproj._22);
+		visibilityLodScale = ctx.meshLodScale;
+	}
+
 	public function emitGPU(ctx : h3d.scene.RenderContext) {
+		var dirty = instancesDirty || instancesData == null || instancesData.isDisposed() ||
+			instancesInfos == null || instancesInfos.isDisposed();
 		uploadInstances();
 		var cascades = isShadowPass ? batcher.prepareCascades(ctx) : 0;
-		checkCommandBuffer(cascades + 1);
+		var cache = canReuseVisibility(cascades);
+		if( cache && !dirty && visibilityMatches(ctx) )
+			return;
+
+		visibilityGeometry = null;
+		var dispatches = ctx.engine.dispatches;
+		var slots = cascades + 1;
+		var bucketCount = primitive.gpuSubPartInfos.vertices;
+		var singleBucket = bucketCount == 1 && slots == 1;
+		checkCommandBuffer(slots, singleBucket);
+		builderShader.singleBucket = singleBucket;
+		builderShader.commandBuffer = commandBuffer;
+		builderShader.countBuffer = countBuffer.buffer;
+		builderShader.visibleInstanceIds = visibleInstanceIds;
 		emittedCascades = cascades;
 		builderShader.instancesData = instancesData;
 		builderShader.instanceStride = batchShader.paramsSize;
@@ -1388,6 +1873,7 @@ private class BatchPass {
 		builderShader.worldMatrix = batcher.getAbsPos();
 
 		builderShader.frustum = ctx.getCameraFrustumBuffer();
+		builderShader.frustumPlaneCount = ctx.camera.frustum.checkNearFar ? 6 : 4;
 
 		builderShader.cascadeCount = cascades;
 		builderShader.cascadeView = batcher.cascadeView;
@@ -1402,25 +1888,34 @@ private class BatchPass {
 		} else {
 			builderShader.ENABLE_FRUSTUM_CULLING = true;
 			builderShader.ENABLE_DISTANCE_CLIPPING = false;
-			if ( batcher.hzbCulling ) {
-				builderShader.ENABLE_HZB_CULLING = true;
-				builderShader.hzb = ctx.hzb;
-				builderShader.hzbSize.set(ctx.hzb.width, ctx.hzb.height);
-			} else {
-				builderShader.ENABLE_HZB_CULLING = false;
+			var pyramid = batcher.hzbCulling ? @:privateAccess ctx.getBatchOcclusionPyramid() : null;
+			builderShader.ENABLE_HZB_CULLING = pyramid != null;
+			builderShader.hzb = pyramid;
+			if ( pyramid != null ) {
+				builderShader.hzbSize.set(pyramid.width, pyramid.height);
+				builderShader.hzbMipCount = pyramid.mipLevels;
+				builderShader.reverseDepth = ctx.camera.reverseDepth;
 			}
 		}
 
 		builderShader.meshLodScale = ctx.meshLodScale;
 		setupStreamingFeedback(ctx);
-		countBuffer.reset();
-		var bucketCount = primitive.gpuSubPartInfos.vertices;
-		var slots = cascades + 1;
+
 		var bucketGroups = hxd.Math.ceil(bucketCount * slots/64.0);
 		bucketClearShader.buckets = buckets;
 		bucketClearShader.bucketCount = bucketCount * slots;
+		bucketClearShader.slotCount = slots;
+		bucketClearShader.countBuffer = countBuffer.buffer;
+		bucketClearShader.singleBucket = singleBucket;
+		bucketClearShader.subPartInfos = primitive.gpuSubPartInfos;
+		bucketClearShader.commandBuffer = commandBuffer;
 		ctx.computeDispatch(bucketClearShader, bucketGroups);
-		ctx.computeDispatch(builderShader, hxd.Math.ceil(totalInstanceCount/64.0), false);
+		dispatchInstances(ctx, builderShader, totalInstanceCount);
+		if( singleBucket ) {
+			if( cache && ctx.engine.dispatches == dispatches + 2 )
+				rememberVisibility(ctx);
+			return;
+		}
 		ctx.memoryBarrier();
 		bucketCommandsShader.buckets = buckets;
 		bucketCommandsShader.bucketCount = bucketCount;
@@ -1436,7 +1931,14 @@ private class BatchPass {
 		instanceScatterShader.visibleInstanceIds = visibleInstanceIds;
 		instanceScatterShader.instanceCount = totalInstanceCount;
 		instanceScatterShader.slotCount = slots;
-		ctx.computeDispatch(instanceScatterShader, hxd.Math.ceil(totalInstanceCount * slots/64.0), false);
+		dispatchInstances(ctx, instanceScatterShader, totalInstanceCount * slots);
+		if( cache && ctx.engine.dispatches == dispatches + 4 )
+			rememberVisibility(ctx);
+	}
+
+	function dispatchInstances(ctx : RenderContext, shader : hxsl.Shader, count : Int) {
+		var groups = (count + 63) >> 6;
+		ctx.computeDispatch(shader, hxd.Math.imin(groups, 65535), Std.int((groups + 65534) / 65535), 1, false);
 	}
 
 	function setupStreamingFeedback( ctx : h3d.scene.RenderContext ) {
@@ -1515,6 +2017,8 @@ private class BatchPass {
 		textureHandlePosBuffer?.dispose();
 		textureHandlePosBuffer = null;
 		command = null;
+		commandCapacity = commandSlots = 0;
+		visibilityGeometry = null;
 	}
 }
 
@@ -1525,12 +2029,16 @@ private class EmitData {
 	var instancesData : hxd.FloatBuffer;
 	var syncIDs : haxe.io.Bytes;
 	var batchPass : BatchPass;
-	var bufferHandles : Array<h3d.BufferHandle> = [];
-	var textureHandles : Array<h3d.mat.TextureHandle> = [];
+	var bufferRefs : Map<h3d.BufferHandle, Int>;
+	var textureRefs : Map<h3d.mat.TextureHandle, Int>;
 	var capacity : Int = 0;
 	var tmpInverse = new h3d.Matrix();
 	var uploadCursor = -1;
 	var uploadedCount = 0;
+	var dirtyTransformFirst = 0;
+	var dirtyTransformEnd = 0;
+	var dirtyInfoFirst = 0;
+	var dirtyInfoEnd = 0;
 
 	public function new(bp : BatchPass) {
 		batchPass = bp;
@@ -1572,20 +2080,13 @@ private class EmitData {
 	}
 
 	public function emitInstance( subMeshID : Int, subPartID : Int, shaderData : ShaderData, worldPosition : h3d.Matrix, syncID : Int ) {
-		if ( shaderData.bufferHandles != null)
-			for ( b in shaderData.bufferHandles )
-				if ( bufferHandles.indexOf(b) < 0 )
-					bufferHandles.push(b);
-		if ( shaderData.textureHandles != null)
-			for ( t in shaderData.textureHandles )
-				if ( textureHandles.indexOf(t) < 0 )
-					textureHandles.push(t);
+		if( subPartID < 0 || subPartID > 0xFFFF || subMeshID < 0 || subMeshID > 0xFFFF )
+			throw "GPU batch mesh or subpart ID exceeds 16 bits";
+
+		retainResources(shaderData);
 		batchPass.instancesDirty = true;
 		batchPass.totalInstanceCount++;
 		var instanceID = instanceCount++;
-
-		if ( subPartID > 0xFFFF || subMeshID > 0xFFFF )
-			throw 'ID overflow. Too many models';
 
 		var instanceInfosStride = BatchPass.PASS_INSTANCES_INFOS_FMT.strideBytes;
 		instancesInfos = growBytes(instancesInfos, instanceCount, instanceInfosStride);
@@ -1603,7 +2104,55 @@ private class EmitData {
 		if ( instancesData.length < minInstanceDataSize)
 			instancesData.grow((minInstanceDataSize >> 1) * 3);
 
-		var instanceDataStart = instanceID * instanceDataStride;
+		writeShaderData(instanceID, shaderData);
+		writeTransform(instanceID * instanceDataStride, worldPosition, worldPosition);
+	}
+
+	function retainResources(shaderData : ShaderData) {
+		if( shaderData.bufferHandles != null ) {
+			if( bufferRefs == null )
+				bufferRefs = [];
+			for( handle in shaderData.bufferHandles )
+				bufferRefs.set(handle, (bufferRefs.get(handle) ?? 0) + 1);
+		}
+		if( shaderData.textureHandles != null ) {
+			if( textureRefs == null )
+				textureRefs = [];
+			for( handle in shaderData.textureHandles )
+				textureRefs.set(handle, (textureRefs.get(handle) ?? 0) + 1);
+		}
+	}
+
+	function replaceInstance(index : Int, mesh : Int, part : Int, old : ShaderData, next : ShaderData,
+		worldPosition : h3d.Matrix, previousPosition : h3d.Matrix) {
+		if( old != next ) {
+			retainResources(next);
+			if( old.bufferHandles != null )
+				for( handle in old.bufferHandles ) {
+					var refs = bufferRefs.get(handle) - 1;
+					if( refs == 0 ) bufferRefs.remove(handle); else bufferRefs.set(handle, refs);
+				}
+			if( old.textureHandles != null )
+				for( handle in old.textureHandles ) {
+					var refs = textureRefs.get(handle) - 1;
+					if( refs == 0 ) textureRefs.remove(handle); else textureRefs.set(handle, refs);
+				}
+			writeShaderData(index, next);
+		}
+
+		var offset = index * BatchPass.PASS_INSTANCES_INFOS_FMT.strideBytes;
+		var packed = mesh << 16 | part;
+		if( instancesInfos.getInt32(offset) != packed ) {
+			instancesInfos.setInt32(offset, packed);
+			dirtyInfoFirst = hxd.Math.imin(dirtyInfoFirst, index);
+			dirtyInfoEnd = hxd.Math.imax(dirtyInfoEnd, index + 1);
+		}
+
+		updateTransform(index, worldPosition, previousPosition);
+	}
+
+	function writeShaderData(instanceID : Int, shaderData : ShaderData) {
+		var instanceDataStride = batchPass.batchShader.paramsSize * 4;
 		#if hl
 		var instanceByteStride = instanceDataStride * 4;
 		var instanceByteStart = instanceID * instanceByteStride;
@@ -1612,15 +2161,26 @@ private class EmitData {
 		dst.blit(instanceByteStart, src, 0, instanceByteStride);
 		#else
 		var data = shaderData.data;
+		var instanceDataStart = instanceID * instanceDataStride;
 		for ( i in 0...instanceDataStride )
 			instancesData[instanceDataStart + i] = data[i];
 		#end
 
+	}
+
+	function updateTransform(index : Int, worldPosition : h3d.Matrix, previousPosition : h3d.Matrix) {
+		writeTransform(index * batchPass.batchShader.paramsSize * 4, worldPosition, previousPosition);
+		dirtyTransformFirst = hxd.Math.imin(dirtyTransformFirst, index);
+		dirtyTransformEnd = hxd.Math.imax(dirtyTransformEnd, index + 1);
+		batchPass.instancesDirty = true;
+	}
+
+	function writeTransform(instanceDataStart : Int, worldPosition : h3d.Matrix, previousPosition : h3d.Matrix) {
 		var bp = batchPass;
 		if ( bp.modelViewPos >= 0 )
 			writeMatrix(instanceDataStart + bp.modelViewPos, worldPosition);
 		if ( bp.previousModelViewPos >= 0 )
-			writeMatrix(instanceDataStart + bp.previousModelViewPos, worldPosition);
+			writeMatrix(instanceDataStart + bp.previousModelViewPos, previousPosition);
 		if ( bp.modelViewInversePos >= 0 ) {
 			tmpInverse.inverse3x4(worldPosition);
 			writeMatrix(instanceDataStart + bp.modelViewInversePos, tmpInverse);
@@ -1636,6 +2196,8 @@ private class EmitData {
 		batchPass = null;
 		instancesData = null;
 		instancesInfos = null;
+		bufferRefs = null;
+		textureRefs = null;
 		instanceCount = 0;
 		capacity = 0;
 	}

@@ -10,7 +10,7 @@ import limen.d3d12.descriptor.DescriptorHeap.DescriptorHeapType;
 import limen.d3d12.internal.D3D12Bindings as Dx12;
 
 import haxe.Int64;
-import h3d.impl.driver.dx12.DX12Driver;
+import h3d.impl.DescriptorAllocationError;
 
 @:allow(h3d.impl.driver.dx12.descriptor)
 class DescriptorHeapBase {
@@ -54,7 +54,13 @@ class DescriptorHeapBase {
 		desc.numDescriptors = size;
 		if(shaderVisible)
 			desc.flags = SHADER_VISIBLE;
-		heap = DX12Driver.allocCheck(() -> new DescriptorHeap(desc));
+		var created = tryCreate(desc);
+		if( created == null ) {
+			created = tryCreate(desc);
+			if( created == null )
+				throw new DescriptorAllocationError('D3D12 descriptor allocation exhausted (type=$type, size=$size)', true);
+		}
+		heap = created;
 		#if dx12_descriptor_profile
 		if( this.size > 0 ) totalGrowths++;
 		totalCreations++;
@@ -63,6 +69,14 @@ class DescriptorHeapBase {
 		this.size = size;
 		address = heap.getHandle(false);
 		cpuToGpu = desc.flags == SHADER_VISIBLE ? (heap.getHandle(true).value - address.value) : 0;
+	}
+
+	function tryCreate(desc:DescriptorHeapDesc):DescriptorHeap {
+		try {
+			return DescriptorHeap.try_create(desc);
+		} catch( error : haxe.Exception ) {
+			throw new DescriptorAllocationError(error.message, false, error);
+		}
 	}
 
 	public dynamic function onFree(prev:DescriptorHeap, prevSize:Int) {
@@ -79,6 +93,10 @@ class DescriptorHeapBase {
 
 	public inline function getCpuAddressAt(index:Int):Address {
 		return address.offset(index * stride);
+	}
+
+	static inline function shaderVisibleCapacity(type:DescriptorHeapType):Int {
+		return type == SAMPLER ? 2048 : 1000000;
 	}
 
 	inline function getNextHeapSize():Int {

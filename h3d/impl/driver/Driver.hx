@@ -125,6 +125,9 @@ class Driver {
 	public function uploadShaderBuffers( buffers : h3d.shader.Buffers, which : h3d.shader.Buffers.BufferKind ) {
 	}
 
+	public function preflightBatchDescriptors() {
+	}
+
 	public function flushShaderBuffers() {
 	}
 

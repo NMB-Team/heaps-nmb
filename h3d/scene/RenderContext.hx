@@ -44,6 +44,46 @@ class RenderContext extends h3d.impl.RenderContext {
 	public var meshLodScale : Float = 1.0;
 
 	public var hzb : h3d.mat.Texture;
+	var batchOcclusionPyramid : h3d.mat.Texture;
+	var batchOcclusionAllocation : h3d.impl.driver.Texture;
+	var batchOcclusionMatrix : h3d.Matrix;
+	var batchOcclusionView : View;
+	var batchOcclusionViewIndex : Int;
+	var batchOcclusionFrame = -1;
+	var batchOcclusionReverseDepth : Bool;
+
+	/**
+		publish a pyramid built from current-view opaque occluders in this render context
+		each mip must retain the farthest depth, including the clear depth in holes
+		publish again after any change to the camera, occluders or view
+	**/
+	public function setBatchOcclusionPyramid(texture : h3d.mat.Texture) {
+		batchOcclusionPyramid = texture;
+		batchOcclusionAllocation = @:privateAccess texture?.t;
+		if( texture == null )
+			return;
+
+		if( batchOcclusionMatrix == null )
+			batchOcclusionMatrix = new h3d.Matrix();
+		batchOcclusionMatrix.load(camera.m);
+		batchOcclusionView = currentView;
+		batchOcclusionViewIndex = currentView.idx;
+		batchOcclusionFrame = frame;
+		batchOcclusionReverseDepth = camera.reverseDepth;
+	}
+
+	function getBatchOcclusionPyramid() {
+		var texture = batchOcclusionPyramid;
+		if( texture == null || batchOcclusionAllocation == null || batchOcclusionFrame != frame ||
+			batchOcclusionView != currentView || batchOcclusionViewIndex != currentView.idx ||
+			batchOcclusionReverseDepth != camera.reverseDepth || (@:privateAccess texture.t) != batchOcclusionAllocation ||
+			!batchOcclusionMatrix.equal(camera.m) || texture.startingMip != 0 || texture.format != R32F ||
+			texture.width != renderResolutionWidth || texture.height != renderResolutionHeight ||
+			texture.width & (texture.width - 1) != 0 || texture.height & (texture.height - 1) != 0 )
+			return null;
+
+		return texture;
+	}
 
 	public var numViews : Int = 1;
 	public var currentView : View = new h3d.scene.View(0);
@@ -118,6 +158,7 @@ class RenderContext extends h3d.impl.RenderContext {
 	}
 
 	public function setCamera( cam : h3d.Camera ) {
+		cameraFrustumUploaded = false;
 		prevCamera.load(camera);
 		camera.load(cam);
 		cameraReverseDepth = camera.reverseDepth = useReverseDepth;
@@ -192,6 +233,8 @@ class RenderContext extends h3d.impl.RenderContext {
 		globalPrevTime = time;
 		time += elapsedTime;
 		frame++;
+		batchOcclusionPyramid = null;
+		batchOcclusionAllocation = null;
 		setCurrent();
 		engine = h3d.Engine.getCurrent();
 		setRenderResolution(engine.width, engine.height);
@@ -302,8 +345,10 @@ class RenderContext extends h3d.impl.RenderContext {
 	}
 
 	public function getCameraFrustumBuffer() {
-		if ( cameraFrustumBuffer == null )
+		if ( cameraFrustumBuffer == null || cameraFrustumBuffer.isDisposed() ) {
 			cameraFrustumBuffer = hxd.impl.Allocator.get().allocBuffer( 6, hxd.BufferFormat.VEC4_DATA, UniformDynamic );
+			cameraFrustumUploaded = false;
+		}
 
 		if ( !cameraFrustumUploaded ) {
 			inline function fillBytesWithPlane( buffer : haxe.io.Bytes, startPos : Int, plane : h3d.col.Plane ) {

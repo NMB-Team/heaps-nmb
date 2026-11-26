@@ -276,45 +276,7 @@ class Renderer extends h3d.scene.Renderer {
 	public function buildHZB(max : Bool, name : String) : h3d.mat.Texture {
 		var hzbTarget = allocTarget(name, false, 1, R32F, [Target, Writable, MipMapped, ManualMipMapGen]);
 		var hzbTargetCopy = allocTarget(name + "Copy", false, 1, R32F, [Target, Writable, MipMapped, ManualMipMapGen]);
-		var depth = textures.albedo.depthBuffer;
-		var width = textures.depth.width;
-		var height = textures.depth.height;
-		var hzbShader = hzbPass.shader;
-		hzbShader.compareMax = max;
-
-		var prevFilter = depth.filter;
-		depth.filter = Nearest;
-		h3d.pass.Copy.run(depth, hzbTarget);
-		depth.filter = prevFilter;
-
-		hzbTarget.filter = hzbTargetCopy.filter = Nearest;
-		hzbTarget.mipMap = hzbTargetCopy.mipMap = Nearest;
-
-		var curWidth = width;
-		var curHeight = height;
-		var mipLevels = hzbTarget.mipLevels;
-		// DX12Driver doesn't yet handle transitions at sub-resource level.
-		// This means that we cannot bind a mip and use a different one as target.
-		// For now, we use a copy as workaround.
-		for ( lvl in 1...mipLevels ) {
-			var source = lvl & 1 == 0 ? hzbTargetCopy : hzbTarget;
-			var target = lvl & 1 == 0 ? hzbTarget : hzbTargetCopy;
-			source.startingMip = lvl - 1;
-			hzbShader.source = source;
-			hzbShader.sourceWidth = curWidth;
-			hzbShader.sourceHeight = curHeight;
-			ctx.engine.pushTarget(target, 0, lvl);
-			hzbPass.render();
-			ctx.engine.popTarget();
-
-			if ( target == hzbTargetCopy )
-				h3d.pass.Copy.run(hzbTargetCopy, hzbTarget, None, null, 0, lvl, lvl);
-
-			curWidth >>= 1;
-			curHeight >>= 1;
-		}
-		hzbTarget.startingMip = 0;
-		hzbTargetCopy.startingMip = 0;
+		h3d.shader.HZB.build(textures.albedo.depthBuffer, hzbTarget, hzbTargetCopy, hzbPass, max);
 		return hzbTarget;
 	}
 

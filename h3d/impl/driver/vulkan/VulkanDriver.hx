@@ -3252,7 +3252,14 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 
+	override function preflightBatchDescriptors() {
+		frames[currentFrameIndex].descriptorArena.preflight();
+	}
+
+	final pendingDescriptorSets : Array<VulkanDescriptorCacheEntry> = [];
+
 	function bindShaderDescriptors(compute:Bool) {
+		if( pendingDescriptorSets.length != 0 ) pendingDescriptorSets.resize(0);
 		final resolvedTextures = resolvedTextureScratch;
 		final setCount = currentShader.descriptorSets.length;
 		if( setCount == 0 ) {
@@ -3432,21 +3439,35 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 						}
 					default:
 					}
-				final entry = new VulkanDescriptorCacheEntry(metadata, currentShader.descriptorSetLayouts[setIndex], set,
-					buffers, bufferHandles, bufferRanges, images, views, samplers);
-				resolvedEntry = entry;
-				if( entries == null ) frame.descriptorSets.set(hash, [entry]) else entries.push(entry);
-				frame.recordDescriptorEntry();
-			}
-			if( fast == null )
+				pendingDescriptorSets.push(new VulkanDescriptorCacheEntry(hash, metadata, currentShader.descriptorSetLayouts[setIndex], set,
+					buffers, bufferHandles, bufferRanges, images, views, samplers));
+			} else if( fast == null ) {
 				frame.resolvedDescriptorSets.set(metadata.id, {revision: metadata.revision, entry: resolvedEntry});
-			else {
+			} else {
 				fast.revision = metadata.revision;
 				fast.entry = resolvedEntry;
 			}
 			descriptorSetScratch[setIndex] = set;
 		}
 		if( writeCount > 0 ) ctx.updateDescriptorBatch(writeCount, descriptorWriteScratch);
+		// publish only initialized sets so a retry can reuse the frame cache
+		for( entry in pendingDescriptorSets ) {
+			final metadata = entry.metadata;
+			final entries = frame.descriptorSets.get(entry.hash);
+			if( entries == null )
+				frame.descriptorSets.set(entry.hash, [entry]);
+			else
+				entries.push(entry);
+			final resolved = frame.resolvedDescriptorSets.get(metadata.id);
+			if( resolved == null )
+				frame.resolvedDescriptorSets.set(metadata.id, {revision: metadata.revision, entry: entry});
+			else {
+				resolved.revision = metadata.revision;
+				resolved.entry = entry;
+			}
+			frame.recordDescriptorEntry();
+		}
+		if( pendingDescriptorSets.length != 0 ) pendingDescriptorSets.resize(0);
 		final previousSets = compute ? boundComputeSets : boundGraphicsSets;
 		final previousOffsets = compute ? boundComputeOffsets : boundGraphicsOffsets;
 		var unchanged = (compute ? boundComputeDescriptorState : boundDescriptorState) == currentShader

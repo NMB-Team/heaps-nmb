@@ -17,6 +17,7 @@ import limen.vulkan.command.Commands.VkFence;
 import limen.vulkan.command.Commands.VkSemaphore;
 
 class VulkanDescriptorCacheEntry {
+	public final hash:Int;
 	public final metadata:VulkanDescriptorSetMetadata;
 	public final layout:VkDescriptorSetLayout;
 	public final set:VkDescriptorSet;
@@ -27,8 +28,9 @@ class VulkanDescriptorCacheEntry {
 	public final views:hl.NativeArray<VkImageView>;
 	public final samplers:hl.NativeArray<VkSampler>;
 
-	public function new(metadata:VulkanDescriptorSetMetadata, layout:VkDescriptorSetLayout, set:VkDescriptorSet, buffers:hl.NativeArray<VulkanBuffer>,
+	public function new(hash:Int, metadata:VulkanDescriptorSetMetadata, layout:VkDescriptorSetLayout, set:VkDescriptorSet, buffers:hl.NativeArray<VulkanBuffer>,
 		bufferHandles:hl.NativeArray<VkBuffer>, bufferRanges:hl.NativeArray<hl.I64>, images:hl.NativeArray<VulkanTexture>, views:hl.NativeArray<VkImageView>, samplers:hl.NativeArray<VkSampler>) {
+		this.hash = hash;
 		this.metadata = metadata;
 		this.layout = layout;
 		this.set = set;
