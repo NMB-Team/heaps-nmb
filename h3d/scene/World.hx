@@ -11,6 +11,7 @@ class WorldElement {
 	}
 }
 
+@:allow(h3d.scene.World)
 class WorldChunk {
 
 	public var cx : Int;
@@ -24,6 +25,10 @@ class WorldChunk {
 	public var initialized = false;
 	public var lastFrame : Int;
 	public var elements : Array<WorldElement>;
+	#if (hl && limen && heaps_native_world_culling)
+	var cullIndex = -1;
+	var cullGeneration = 0;
+	#end
 
 	public function new(cx, cy) {
 		this.cx = cx;
@@ -237,6 +242,9 @@ class World extends Object {
 	var cullBytes : hl.Bytes;
 	var cullCapacity = 0;
 	var cullBoundsDirty = true;
+	var cullGeneration = 1;
+	var cullDirtyFirst = 0;
+	var cullDirtyEnd = 0;
 	#end
 	var chunksBounds : { xMin : Int, yMin : Int, xMax : Int, yMax : Int };
 	var bigTextures : Array<{ diffuse : h3d.mat.BigTexture, spec : h3d.mat.BigTexture, normal : h3d.mat.BigTexture }>;
@@ -524,7 +532,11 @@ class World extends Object {
 	}
 
 	inline function makeId( cx : Int, cy : Int ) {
-		return (cx & 0xFFFF) | ((cy & 0xFFFF) << 16);
+		// mix the packed coordinates before the integer map masks its bucket index
+		var id : haxe.Int32 = (cx & 0xFFFF) | ((cy & 0xFFFF) << 16);
+		id = (id ^ (id >>> 16)) * 0x7FEB352D;
+		id = (id ^ (id >>> 15)) * 0x846CA68B;
+		return (id ^ (id >>> 16) : Int);
 	}
 
 	function getChunk( x : Float, y : Float, create = false ) {
@@ -546,7 +558,9 @@ class World extends Object {
 			if( iy > chunksBounds.yMax ) chunksBounds.yMax = iy;
 			allChunks.push(c);
 			#if (hl && limen && heaps_native_world_culling)
-			cullBoundsDirty = true;
+			c.cullIndex = allChunks.length - 1;
+			c.cullGeneration = cullGeneration;
+			markCullBoundsDirty(c);
 			#end
 		}
 		return c;
@@ -596,7 +610,7 @@ class World extends Object {
 		b.transform(mat);
 		c.bounds.add(b);
 		#if (hl && limen && heaps_native_world_culling)
-		cullBoundsDirty = true;
+		markCullBoundsDirty(c);
 		#end
 	}
 
@@ -641,6 +655,9 @@ class World extends Object {
 		cullBytes = null;
 		cullCapacity = 0;
 		cullBoundsDirty = true;
+		cullGeneration++;
+		if( cullGeneration == 0 ) cullGeneration = 1;
+		cullDirtyFirst = cullDirtyEnd = 0;
 		#end
 		chunks = [];
 		for(b in bigTextures) {
@@ -688,7 +705,7 @@ class World extends Object {
 		// don't do in sync() since animations in our world might affect our chunks
 		#if (hl && limen && heaps_native_world_culling)
 		var useBatch = !ctx.computingStatic && cullChunks(ctx.camera.frustum);
-		var result = 192 + 48 * allChunks.length;
+		var result = 192 + ((allChunks.length + 7) >> 3) * 384;
 		#end
 		for( c in allChunks ) {
 			var visible = #if (hl && limen && heaps_native_world_culling)
@@ -708,33 +725,45 @@ class World extends Object {
 	}
 
 	#if (hl && limen && heaps_native_world_culling)
+	function markCullBoundsDirty(chunk : WorldChunk) {
+		if( cullBoundsDirty || chunk.cullGeneration != cullGeneration )
+			return;
+
+		cullDirtyFirst = hxd.Math.imin(cullDirtyFirst, chunk.cullIndex);
+		cullDirtyEnd = hxd.Math.imax(cullDirtyEnd, chunk.cullIndex + 1);
+	}
+
 	function cullChunks(frustum : h3d.col.Frustum) : Bool {
 		final workers = limen.internal.NativeJobs.workers;
 		final count = allChunks.length;
-		if( workers <= 0 || count < 2048 || count > Std.int((0x7FFFFFFF - 192) / 49) || Type.getClass(this) != World )
+		if( workers <= 0 || count < 2048 || count > Std.int((0x7FFFFFFF - 528) / 49) || Type.getClass(this) != World )
 			return false;
 
-		final size = 192 + count * 49;
+		final size = 192 + ((count + 7) >> 3) * 384 + count;
 		if( size > cullCapacity ) {
-			cullBytes = new hl.Bytes(size);
-			cullCapacity = size;
+			final growth = hxd.Math.imin(cullCapacity >> 1, 0x7FFFFFFF - cullCapacity);
+			cullCapacity = hxd.Math.imax(size, cullCapacity + growth);
+			cullBytes = new hl.Bytes(cullCapacity);
 			cullBoundsDirty = true;
 		}
 
-		if( cullBoundsDirty ) {
-			var offset = 192;
-			for( chunk in allChunks ) {
-				final b = chunk.bounds;
-				cullBytes.setF64(offset, b.xMax + b.xMin);
-				cullBytes.setF64(offset + 8, b.yMax + b.yMin);
-				cullBytes.setF64(offset + 16, b.zMax + b.zMin);
-				cullBytes.setF64(offset + 24, b.xMax - b.xMin);
-				cullBytes.setF64(offset + 32, b.yMax - b.yMin);
-				cullBytes.setF64(offset + 40, b.zMax - b.zMin);
-				offset += 48;
-			}
-			cullBoundsDirty = false;
+		final first = cullBoundsDirty ? 0 : cullDirtyFirst;
+		final end = cullBoundsDirty ? count : cullDirtyEnd;
+		for( index in first...end ) {
+			// eight chunks share each coefficient stream
+			final offset = 192 + (index >> 3) * 384 + (index & 7) * 8;
+			final b = allChunks[index].bounds;
+			cullBytes.setF64(offset, b.xMax + b.xMin);
+			cullBytes.setF64(offset + 64, b.yMax + b.yMin);
+			cullBytes.setF64(offset + 128, b.zMax + b.zMin);
+			cullBytes.setF64(offset + 192, b.xMax - b.xMin);
+			cullBytes.setF64(offset + 256, b.yMax - b.yMin);
+			cullBytes.setF64(offset + 320, b.zMax - b.zMin);
 		}
+
+		cullBoundsDirty = false;
+		cullDirtyFirst = count;
+		cullDirtyEnd = 0;
 
 		inline function writePlane(offset : Int, p : h3d.col.Plane) @:privateAccess {
 			cullBytes.setF64(offset, p.nx);
@@ -751,7 +780,7 @@ class World extends Object {
 			writePlane(128, frustum.pnear);
 			writePlane(160, frustum.pfar);
 		}
-		return limen.internal.NativeJobs.cullWorldBoxes(cullBytes, size, count, frustum.checkNearFar, workers);
+		return limen.internal.NativeJobs.cullWorldBoxesSoa(cullBytes, size, count, frustum.checkNearFar, workers, 0);
 	}
 	#end
 

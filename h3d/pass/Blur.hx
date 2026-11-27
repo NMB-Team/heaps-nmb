@@ -27,6 +27,8 @@ class Blur extends ScreenFx<h3d.shader.Blur> {
 
 	var values : Array<Float>;
 	var offsets : Array<Float>;
+	var previousSourceName : String;
+	var temporaryName : String;
 
 	public function new( radius = 1., gain = 1., linear = 0., quality = 1. ) {
 		super(new h3d.shader.Blur());
@@ -130,7 +132,11 @@ class Blur extends ScreenFx<h3d.shader.Blur> {
 
 		var isCube = src.flags.has(Cube);
 		var faceCount = isCube ? 6 : 1;
-		var tmp = ctx.textures.allocTarget(src.name+"BlurTmp", src.width, src.height, false, src.format, isCube ? [Cube] : null);
+		if( temporaryName == null || previousSourceName != src.name ) {
+			previousSourceName = src.name;
+			temporaryName = src.name + "BlurTmp";
+		}
+		var tmp = ctx.textures.allocTarget(temporaryName, src.width, src.height, false, src.format, isCube ? [Cube] : null);
 
 		shader.Quality = values.length;
 		shader.values = values;

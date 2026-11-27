@@ -693,12 +693,25 @@ class Macros {
 							meta : [{ name : ":noCompletion", pos : f.pos }],
 						});
 						f.kind = FProp("get", "set", t);
+						var getter = macro $i{id}.get(globals);
+						var setter = macro $i{id}.set(globals, v);
+						if( Context.defined("hl") )
+							switch( t ) {
+							case TPath({pack:[], name:"Float"}):
+								getter = macro globals.fastGetFloat($i{id}.toInt());
+								setter = macro globals.fastSetFloat($i{id}.toInt(), v);
+							case TPath({pack:[], name:"Int"}):
+								getter = macro globals.fastGetInt($i{id}.toInt());
+								setter = macro globals.fastSetInt($i{id}.toInt(), v);
+							default:
+							}
+
 						fields.push({
 							name : "get_" + f.name,
 							kind : FFun({
 								args : [],
 								ret : t,
-								expr : macro return $i{id}.get(globals),
+								expr : macro return $getter,
 							}),
 							pos : f.pos,
 							access : [AInline],
@@ -708,7 +721,7 @@ class Macros {
 							kind : FFun({
 								args : [{ name : "v", type : t }],
 								ret : t,
-								expr : macro { $i{ id }.set(globals, v); return v; },
+								expr : macro { $setter; return v; },
 							}),
 							pos : f.pos,
 							access : [AInline],

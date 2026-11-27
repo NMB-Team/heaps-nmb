@@ -37,6 +37,7 @@ private class VulkanUploadPage {
 }
 
 class VulkanConstantUpload {
+	public var blockId:Int;
 	public var buffer:VulkanUploadBuffer;
 	public var offset:Int;
 	public var size:Int;

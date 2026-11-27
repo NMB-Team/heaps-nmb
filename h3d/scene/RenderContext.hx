@@ -127,7 +127,14 @@ class RenderContext extends h3d.impl.RenderContext {
 	var lights : Light;
 
 	var cameraFrustumBuffer : h3d.Buffer = null;
+	var cameraFrustumBytes : haxe.io.Bytes;
 	var cameraFrustumUploaded : Bool = false;
+	#if hl
+	final globalFloatBits = new hl.Bytes(16);
+	var resolutionPixelSize : h3d.Vector;
+	var targetPixelSize : h3d.Vector;
+	var projectionDiagonal : h3d.Vector4;
+	#end
 
 	public var streamingFeedback(default, null) : StreamingFeedback;
 	/**
@@ -172,7 +179,15 @@ class RenderContext extends h3d.impl.RenderContext {
 		cameraPos = camera.pos;
 		if(cameraPrevPos == null)
 			cameraPrevPos = camera.pos.clone();
+		#if hl
+		var p = camera.mproj;
+		var d = projectionDiagonal;
+		if( d == null || !sameGlobalFloat(d.x, p._11) || !sameGlobalFloat(d.y, p._22) || !sameGlobalFloat(d.z, p._33) || !sameGlobalFloat(d.w, p._44) )
+			projectionDiagonal = new h3d.Vector4(p._11, p._22, p._33, p._44);
+		cameraProjDiag = projectionDiagonal;
+		#else
 		cameraProjDiag = new h3d.Vector4(camera.mproj._11,camera.mproj._22,camera.mproj._33,camera.mproj._44);
+		#end
 		if ( cameraPrevView == null )
 			cameraPrevView = camera.mcam.clone();
 		if ( cameraPrevProj == null )
@@ -191,7 +206,15 @@ class RenderContext extends h3d.impl.RenderContext {
 	public function setRenderResolution( width : Int, height : Int ) {
 		renderResolutionWidth = width;
 		renderResolutionHeight = height;
+		#if hl
+		var x = 2 / width, y = 2 / height;
+		var v = resolutionPixelSize;
+		if( v == null || !sameGlobalFloat(v.x, x) || !sameGlobalFloat(v.y, y) || !sameGlobalFloat(v.z, 0) )
+			resolutionPixelSize = new h3d.Vector(x, y);
+		pixelSize = resolutionPixelSize;
+		#else
 		pixelSize = new h3d.Vector(2 / width, 2 / height);
+		#end
 	}
 
 	public function updateNumViews( numViews : Int ) {
@@ -208,9 +231,27 @@ class RenderContext extends h3d.impl.RenderContext {
 		if( cameraProjFlip != v ) cameraProjFlip = v;
 	}
 
+	#if hl
+	inline function sameGlobalFloat(a : Float, b : Float) : Bool {
+		globalFloatBits.setF64(0, a);
+		globalFloatBits.setF64(8, b);
+		return globalFloatBits.getI32(0) == globalFloatBits.getI32(8)
+			&& globalFloatBits.getI32(4) == globalFloatBits.getI32(12);
+	}
+	#end
+
 	function getCurrentPixelSize() {
 		var t = engine.getCurrentTarget();
+		#if hl
+		var x = 2 / (t == null ? engine.width : t.width), y = 2 / (t == null ? engine.height : t.height);
+		var v = targetPixelSize;
+		// replace changed values so retained shader snapshots are never mutated
+		if( v == null || !sameGlobalFloat(v.x, x) || !sameGlobalFloat(v.y, y) || !sameGlobalFloat(v.z, 0) )
+			targetPixelSize = new h3d.Vector(x, y);
+		return targetPixelSize;
+		#else
 		return new h3d.Vector(2 / (t == null ? engine.width : t.width), 2 / (t == null ? engine.height : t.height));
+		#end
 	}
 
 	@:access(h3d.mat.Pass)
@@ -358,7 +399,10 @@ class RenderContext extends h3d.impl.RenderContext {
 				buffer.setFloat( startPos + 12, 	@:privateAccess plane.d	);
 			}
 
-			var tmp = haxe.io.Bytes.alloc( 16 * 6 );
+			if( cameraFrustumBytes == null )
+				cameraFrustumBytes = haxe.io.Bytes.alloc(16 * 6);
+
+			var tmp = cameraFrustumBytes;
 			var frustum = camera.frustum;
 			fillBytesWithPlane( tmp, 0, 	frustum.pleft 	);
 			fillBytesWithPlane( tmp, 16, 	frustum.pright 	);
@@ -500,6 +544,7 @@ class RenderContext extends h3d.impl.RenderContext {
 			hxd.impl.Allocator.get().disposeBuffer( cameraFrustumBuffer );
 			cameraFrustumBuffer = null;
 		}
+		cameraFrustumBytes = null;
 	}
 
 }

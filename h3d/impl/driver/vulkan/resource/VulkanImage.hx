@@ -82,12 +82,17 @@ class VulkanImage {
 	}
 
 	public inline function getState(mipLevel:Int, layer:Int, ?aspect:VkImageAspectFlag):VulkanImageState {
+		return aspect == null ? (this.aspect.has(COLOR) ? colorStates[layer * mipCount + mipLevel] : depthStates[layer * mipCount + mipLevel])
+			: getAspectState(mipLevel, layer, aspect);
+	}
+
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver, h3d.impl.driver.vulkan.resource.VulkanResourceState)
+	inline function getAspectState(mipLevel:Int, layer:Int, aspect:VkImageAspectFlag):VulkanImageState {
 		final index = layer * mipCount + mipLevel;
 		return switch (aspect) {
 		case STENCIL: stencilStates[index];
 		case DEPTH: depthStates[index];
 		case COLOR: colorStates[index];
-		case null: this.aspect.has(COLOR) ? colorStates[index] : depthStates[index];
 		default: throw 'Unsupported Vulkan image aspect $aspect';
 		}
 	}

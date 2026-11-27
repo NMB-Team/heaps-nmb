@@ -73,8 +73,11 @@ class VulkanCompiledShader {
 	public final descriptorBuffers:Map<String, {buffer:VulkanBuffer, handle:VkBuffer, range:haxe.Int64}> = new Map();
 	public final layout:VkPipelineLayout;
 	public final pipelineLayoutIdentity:String;
+	public final computePipelineKey:String;
 	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
 	final textureAllocationIds:Map<hxsl.RuntimeShader.RuntimeShaderData, Array<String>> = new Map();
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	final bufferAllocationIds:Map<hxsl.RuntimeShader.RuntimeShaderData, Array<String>> = new Map();
 	var disposed = false;
 
 	public function new(shader:hxsl.RuntimeShader, cacheKey:String, abi:VulkanShaderAbi, vertex:Null<VulkanShaderStageData>,
@@ -118,6 +121,14 @@ class VulkanCompiledShader {
 				allocation = allocation.next;
 			}
 			textureAllocationIds.set(stage, ids);
+
+			final bufferIds = [];
+			allocation = stage.buffers;
+			while (allocation != null) {
+				bufferIds.push(VulkanShaderAbi.allocationId(allocation));
+				allocation = allocation.next;
+			}
+			bufferAllocationIds.set(stage, bufferIds);
 		}
 
 		this.stages = stages;
@@ -151,6 +162,7 @@ class VulkanCompiledShader {
 		}
 		this.layout = layout;
 		this.pipelineLayoutIdentity = pipelineLayoutIdentity;
+		computePipelineKey = compute == null ? null : '$cacheKey:${abi.version}:$pipelineLayoutIdentity:specialization=none';
 	}
 
 	public function dispose(_context:Context) {

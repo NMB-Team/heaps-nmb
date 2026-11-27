@@ -7,6 +7,20 @@ class DirShadowMap extends Shadows {
 	var mergePass = new h3d.pass.ScreenFx(new h3d.shader.MinMaxShader());
 	var boundingObject : h3d.scene.Object;
 	var cullZMin : Float;
+	final clearDepth : Null<Float> = 1.0;
+	final clearColor : Null<Int> = 0xFFFFFF;
+	final casterMatrix = new h3d.Matrix();
+	final casterIdentity = h3d.Matrix.I();
+	final casterBounds = new h3d.col.Bounds();
+	final casterPoint = new h3d.Vector();
+	final cameraCorner = new h3d.Vector();
+	final frustumBounds = new h3d.col.Bounds();
+	var boundsCamera : h3d.Camera;
+	var boundsZMin : Float;
+	var boundsZMax : Float;
+	var casterVisitor : h3d.scene.Mesh -> Void;
+	var shadowCollider : h3d.col.Collider -> Bool;
+
 
 	/**
 		Shrink the frustum of the light to the bounds containing all visible objects
@@ -31,6 +45,8 @@ class DirShadowMap extends Shadows {
 		lightCamera = new h3d.Camera();
 		lightCamera.orthoBounds = new h3d.col.Bounds();
 		shader = dshader = new h3d.shader.DirShadow();
+		casterVisitor = collectCasterBounds;
+		shadowCollider = collider -> collider.inFrustum(lightCamera.frustum);
 	}
 
 	override function set_mode(m:Shadows.RenderMode) {
@@ -56,63 +72,51 @@ class DirShadowMap extends Shadows {
 		return ctx.engine.driver.hasFeature(DepthClamp);
 	}
 
+	function collectCasterBounds(mesh : h3d.scene.Mesh) {
+		if( mesh.primitive == null || !mesh.material.castShadows ) return;
+		var b = mesh.primitive.getBounds();
+		if( b.xMin > b.xMax ) return;
+
+		var bounds = boundsCamera.orthoBounds;
+		var absPos = mesh.primitive is h3d.prim.Instanced ? casterIdentity : mesh.getAbsPos();
+		if( autoZPlanes ) {
+			casterBounds.load(b);
+			casterBounds.transform(absPos);
+			if( casterBounds.zMax > boundsZMax ) boundsZMax = casterBounds.zMax;
+			if( casterBounds.zMin < boundsZMin ) boundsZMin = casterBounds.zMin;
+		}
+		casterMatrix.multiply3x4(absPos, boundsCamera.mcam);
+		var reuse = Type.getClass(bounds) == h3d.col.Bounds;
+		addCasterCorner(bounds, reuse, b.xMin, b.yMin, b.zMin);
+		addCasterCorner(bounds, reuse, b.xMin, b.yMin, b.zMax);
+		addCasterCorner(bounds, reuse, b.xMin, b.yMax, b.zMin);
+		addCasterCorner(bounds, reuse, b.xMin, b.yMax, b.zMax);
+		addCasterCorner(bounds, reuse, b.xMax, b.yMin, b.zMin);
+		addCasterCorner(bounds, reuse, b.xMax, b.yMin, b.zMax);
+		addCasterCorner(bounds, reuse, b.xMax, b.yMax, b.zMin);
+		addCasterCorner(bounds, reuse, b.xMax, b.yMax, b.zMax);
+	}
+
+	inline function addCasterCorner(bounds : h3d.col.Bounds, reuse : Bool, x : Float, y : Float, z : Float) {
+		var point = reuse ? casterPoint : new h3d.Vector();
+		point.set(x, y, z);
+		point.transform(casterMatrix);
+		bounds.addPoint(point);
+	}
+
 	public dynamic function calcShadowBounds( camera : h3d.Camera ) {
 		var bounds = camera.orthoBounds;
 		var zMax = -1e9, zMin = 1e9;
 		if( autoShrink ) {
 			// add visible casters in light camera position
-			var mtmp = new h3d.Matrix();
-			var identity = h3d.Matrix.I();
-			var btmp = autoZPlanes ? new h3d.col.Bounds() : null;
+			boundsCamera = camera;
+			boundsZMin = zMin;
+			boundsZMax = zMax;
 			var obj = boundingObject != null ? boundingObject : ctx.scene;
-			obj.iterVisibleMeshes(function(m) {
-				if( m.primitive == null || !m.material.castShadows ) return;
-				var b = m.primitive.getBounds();
-				if( b.xMin > b.xMax ) return;
-
-				var absPos = m.primitive is h3d.prim.Instanced ? identity : m.getAbsPos();
-				if( autoZPlanes ) {
-					btmp.load(b);
-					btmp.transform(absPos);
-					if( btmp.zMax > zMax ) zMax = btmp.zMax;
-					if( btmp.zMin < zMin ) zMin = btmp.zMin;
-				}
-
-				mtmp.multiply3x4(absPos, camera.mcam);
-
-				var p = new h3d.col.Point(b.xMin, b.yMin, b.zMin);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMin, b.yMin, b.zMax);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMin, b.yMax, b.zMin);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMin, b.yMax, b.zMax);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMax, b.yMin, b.zMin);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMax, b.yMin, b.zMax);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMax, b.yMax, b.zMin);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-				var p = new h3d.col.Point(b.xMax, b.yMax, b.zMax);
-				p.transform(mtmp);
-				bounds.addPoint(p);
-
-			});
+			obj.iterVisibleMeshes(casterVisitor);
+			zMin = boundsZMin;
+			zMax = boundsZMax;
+			boundsCamera = null;
 		} else {
 			if( mode == Dynamic )
 				bounds.all();
@@ -121,13 +125,21 @@ class DirShadowMap extends Shadows {
 		if( mode == Dynamic ) {
 
 			// Intersect with frustum bounds
-			var cameraBounds = new h3d.col.Bounds();
+			var cameraBounds = Type.getClass(bounds) == h3d.col.Bounds ? frustumBounds : new h3d.col.Bounds();
+			cameraBounds.empty();
+			var plainCamera = Type.getClass(ctx.camera) == h3d.Camera;
 			var minDist = minDist < 0 ? ctx.camera.zNear : minDist;
 			var maxDist = maxDist < 0 ? ctx.camera.zFar : maxDist;
 
 			inline function addCorner(x,y,d) {
 				var dist = d?minDist:maxDist;
-				var pt = ctx.camera.unproject(x,y,ctx.camera.distanceToDepth(dist)).toPoint();
+				var pt : h3d.Vector;
+				if( plainCamera ) {
+					pt = cameraCorner;
+					pt.set(x, y, ctx.camera.distanceToDepth(dist));
+					pt.project(ctx.camera.getInverseViewProj());
+				} else
+					pt = ctx.camera.unproject(x, y, ctx.camera.distanceToDepth(dist)).toPoint();
 				if( autoShrink && autoZPlanes ) {
 					// let's auto limit our frustrum to our zMin/Max planes
 					var r = h3d.col.Ray.fromPoints(ctx.camera.pos.toPoint(), pt);
@@ -270,11 +282,11 @@ class DirShadowMap extends Shadows {
 		@:privateAccess ctx.cameraViewProj = getShadowViewProj();
 		if ( tex.isDepth() ) {
 			ctx.engine.pushDepth(tex);
-			ctx.engine.clear(null, 1.0);
+			ctx.engine.clear(null, clearDepth);
 		}
 		else {
 			ctx.engine.pushTarget(tex);
-			ctx.engine.clear(0xFFFFFF, 1.0);
+			ctx.engine.clear(clearColor, clearDepth);
 		}
 		var clamp = useDepthClamp();
 		if( clamp ) ctx.engine.setDepthClamp(true);
@@ -353,7 +365,7 @@ class DirShadowMap extends Shadows {
 			lightCamera.orthoBounds.zMin = cullZMin;
 			lightCamera.update();
 		}
-		cullPasses(passes,function(col) return col.inFrustum(lightCamera.frustum));
+		cullPasses(passes, shadowCollider);
 		if( hasCullZMin ) {
 			lightCamera.orthoBounds.zMin = zMin;
 			lightCamera.update();

@@ -7,6 +7,7 @@ class DefaultShadowMap extends DirShadowMap {
 	var shadowColorId : Int;
 	var shadowPowerId : Int;
 	var shadowBiasId : Int;
+	var shadowMapValue : {texture:h3d.mat.Texture, channel:hxsl.Channel};
 
 	public var color : h3d.Vector;
 
@@ -26,11 +27,19 @@ class DefaultShadowMap extends DirShadowMap {
 
 	override function draw( passes, ?sort ) {
 		super.draw(passes, sort);
-		ctx.globals.fastSet(shadowMapId, { texture : dshader.shadowMap, channel : format == h3d.mat.Texture.nativeFormat ? hxsl.Channel.PackedFloat : hxsl.Channel.R });
+		var channel = format == h3d.mat.Texture.nativeFormat ? hxsl.Channel.PackedFloat : hxsl.Channel.R;
+		if( shadowMapValue == null || shadowMapValue.texture != dshader.shadowMap || shadowMapValue.channel != channel )
+			shadowMapValue = {texture:dshader.shadowMap, channel:channel};
+		ctx.globals.fastSet(shadowMapId, shadowMapValue);
 		ctx.globals.fastSet(shadowViewProjId, getShadowViewProj());
 		ctx.globals.fastSet(shadowColorId, color);
+		#if hl
+		ctx.globals.fastSetFloat(shadowPowerId, power);
+		ctx.globals.fastSetFloat(shadowBiasId, bias);
+		#else
 		ctx.globals.fastSet(shadowPowerId, power);
 		ctx.globals.fastSet(shadowBiasId, bias);
+		#end
 	}
 
 }

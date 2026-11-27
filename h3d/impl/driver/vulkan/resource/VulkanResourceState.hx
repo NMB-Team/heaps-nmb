@@ -29,11 +29,15 @@ class VulkanResourceState {
 
 	public static function transitionImage(command:VkCommandBuffer, image:VulkanImage, mipLevel:Int, layer:Int, next:VulkanImageState,
 		?aspectMask:haxe.EnumFlags<VkImageAspectFlag>) {
-		if (aspectMask == null)
-			aspectMask = image.aspect;
+		transitionImageMask(command, image, mipLevel, layer, next, aspectMask == null ? image.aspect : aspectMask);
+	}
+
+	@:allow(h3d.impl.driver.vulkan.VulkanDriver)
+	static function transitionImageMask(command:VkCommandBuffer, image:VulkanImage, mipLevel:Int, layer:Int, next:VulkanImageState,
+		aspectMask:haxe.EnumFlags<VkImageAspectFlag>) {
 		if (image.aspect.has(DEPTH) && image.aspect.has(STENCIL) && (aspectMask.has(DEPTH) || aspectMask.has(STENCIL))) {
-			final depthState = image.getState(mipLevel, layer, DEPTH);
-			final stencilState = image.getState(mipLevel, layer, STENCIL);
+			final depthState = image.getAspectState(mipLevel, layer, DEPTH);
+			final stencilState = image.getAspectState(mipLevel, layer, STENCIL);
 			if (depthState != stencilState)
 				throw 'Combined depth/stencil image ${image.debugName} has incompatible tracked aspect states';
 			transitionImageAspects(command, image, mipLevel, layer, image.aspect.toInt(), DEPTH, true, depthState, next);
@@ -49,7 +53,7 @@ class VulkanResourceState {
 
 	static function transitionImageAspect(command:VkCommandBuffer, image:VulkanImage, mipLevel:Int, layer:Int, aspect:VkImageAspectFlag,
 		mask:Int, next:VulkanImageState) {
-		final current = image.getState(mipLevel, layer, aspect);
+		final current = image.getAspectState(mipLevel, layer, aspect);
 		transitionImageAspects(command, image, mipLevel, layer, mask, aspect, false, current, next);
 	}
 

@@ -108,8 +108,6 @@ import limen.vulkan.pipeline.Pipeline.VkGraphicsPipeline;
 import limen.vulkan.pipeline.Pipeline.VkPrimitiveTopology;
 import limen.vulkan.pipeline.Pipeline.VkStencilOp;
 import limen.vulkan.pipeline.Pipeline.VkPipelineShaderStage;
-import limen.vulkan.render.RenderPass.VkClearAttachment;
-import limen.vulkan.render.RenderPass.VkClearRect;
 import limen.vulkan.query.Queries.VkQueryControlFlag;
 import limen.vulkan.Vulkan as VulkanRuntime;
 import limen.vulkan.shader.ShaderModule;
@@ -373,8 +371,10 @@ class VulkanDriver extends Driver {
 	var mipmapIndex:h3d.Buffer;
 
 	var frameCount = 2;
+	var suspendForQueryGrowth : Void -> Void;
 
 	public function new() {
+		suspendForQueryGrowth = suspendRendering;
 		var win = hxd.Window.getInstance();
 		final requirements = new limen.vulkan.VulkanRequirements();
 		#if renderdoc
@@ -758,7 +758,7 @@ class VulkanDriver extends Driver {
 			throw "Vulkan rendering requires an active attachment set";
 		for( color in currentTargetSet.colors ) {
 			if( color.resource != null )
-				VulkanResourceState.transitionImage(command, color.resource, color.mipLevel, color.layer, ColorAttachment, color.aspect);
+				VulkanResourceState.transitionImageMask(command, color.resource, color.mipLevel, color.layer, ColorAttachment, color.aspect);
 			else {
 				final swapchain = outImages[currentImageIndex];
 				final sourceStage = VkPipelineStage2.COLOR_ATTACHMENT_OUTPUT;
@@ -774,7 +774,7 @@ class VulkanDriver extends Driver {
 		}
 		final depthState = currentTargetSet.depthBinding == ReadOnly ? DepthStencilReadOnly : DepthStencilAttachment;
 		if( currentTargetSet.depth != null )
-			VulkanResourceState.transitionImage(command, currentTargetSet.depth.resource, currentTargetSet.depth.mipLevel,
+			VulkanResourceState.transitionImageMask(command, currentTargetSet.depth.resource, currentTargetSet.depth.mipLevel,
 				currentTargetSet.depth.layer, depthState, currentTargetSet.depth.aspect);
 		final colorCount = currentTargetSet.colors.length;
 		if( colorViewScratch.length < colorCount ) colorViewScratch = new hl.NativeArray<VkImageView>(colorCount);
@@ -788,7 +788,7 @@ class VulkanDriver extends Driver {
 		applyViewport();
 		applyScissor();
 		if( pendingInitialColorClears.length > 0 ) {
-			clearColorAttachments(pendingInitialColorClears, new Vector4(0, 0, 0, 0));
+			clearColorAttachments(pendingInitialColorClears, initialClearColor);
 			pendingInitialColorClears = noInitialColorClears;
 		}
 		if( pendingInitialDepthClear ) {
@@ -1126,7 +1126,7 @@ class VulkanDriver extends Driver {
 		if (previousState == Undefined)
 			throw "Cannot capture an undefined Vulkan image subresource";
 		if (resource != null)
-			VulkanResourceState.transitionImage(command, resource, mipLevel, layer, TransferSource, aspect);
+			VulkanResourceState.transitionImageMask(command, resource, mipLevel, layer, TransferSource, aspect);
 		final rowStride = Std.int((width + blockWidth - 1) / blockWidth) * bytesPerBlock;
 		final submittedFrame = currentFrameIndex;
 		final request = new VulkanImageReadbackRequest(source, resource, aspect, mipLevel, layer, x, y, width, height,
@@ -1134,7 +1134,7 @@ class VulkanDriver extends Driver {
 			rowStride, currentSubmissionSerial, null);
 		readbackManager.requestImage(command, submittedFrame, request);
 		if (resource != null)
-			VulkanResourceState.transitionImage(command, resource, mipLevel, layer, previousState, aspect);
+			VulkanResourceState.transitionImageMask(command, resource, mipLevel, layer, previousState, aspect);
 		else {
 			VulkanResourceState.recordBarrier();
 			command.imageBarrier2(source, aspect, 0, 1, 0, 1, TRANSFER_SRC_OPTIMAL, rawRestoreLayout,
@@ -1308,9 +1308,7 @@ class VulkanDriver extends Driver {
 		graphicsPipelineDirty = true;
 		clearTextureBindings();
 		textureBindingsShaderKey = p.cacheKey;
-		bufferBindings.clear();
-		bufferBindingKeys.resize(0);
-		bufferBindingKinds.clear();
+		clearBufferBindings();
 		bufferBindingsShaderKey = p.cacheKey;
 		if( p.compute != null ) {
 			boundComputePipeline = null;
@@ -1462,12 +1460,17 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		}
 	}
 
-	var tmpClearRect = new VkClearRect();
+	final clearColorIndices:Array<Int> = [];
+	final clearDepthBits = new hl.Bytes(4);
+	final pendingClearColorValue = new Vector4();
+	final initialClearColor = new Vector4(0, 0, 0, 0);
 
 	override function clear(?color:Vector4, ?depth:Float, ?stencil:Int) {
 		if( !renderingStarted ) {
-			if( color != null )
-				pendingClearColor = new Vector4(color.r, color.g, color.b, color.a);
+			if( color != null ) {
+				pendingClearColorValue.load(color);
+				pendingClearColor = pendingClearColorValue;
+			}
 			if( depth != null )
 				pendingClearDepth = depth;
 			if( stencil != null )
@@ -1478,24 +1481,29 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 	}
 
 	function clearNow(color:Vector4, depth:Null<Float>, stencil:Null<Int>) {
-		var rect = tmpClearRect;
-		if( color != null && currentTargetSet.colors.length > 0 )
-			clearColorAttachments([for( index in 0...currentTargetSet.colors.length ) index], color);
+		if( color != null && currentTargetSet.colors.length > 0 ) {
+			clearColorIndices.resize(currentTargetSet.colors.length);
+			for( index in 0...clearColorIndices.length ) clearColorIndices[index] = index;
+			clearColorAttachments(clearColorIndices, color);
+		}
 		if( (depth != null || stencil != null) && currentTargetSet.depth != null ) {
-			final clear = new VkClearAttachment();
-			clear.aspectMask = new haxe.EnumFlags();
-			if( depth != null ) {
-				clear.aspectMask.set(DEPTH);
-				clear.depth = depth;
-			}
-			if( stencil != null && currentTargetSet.stencil != null ) {
-				clear.aspectMask.set(STENCIL);
-				clear.stencil = stencil;
-			}
-			rect.extendX = viewportWidth;
-			rect.extendY = viewportHeight;
-			rect.layerCount = 1;
-			command.clearAttachments(1, makeRef(clear), 1, makeRef(rect));
+			if( clearAttachmentScratch.length < 6 ) clearAttachmentScratch = new hl.NativeArray<Int>(6);
+			// two header words precede the four-word clear value
+			clearAttachmentScratch[0] = (depth != null ? 2 : 0) | (stencil != null && currentTargetSet.stencil != null ? 4 : 0);
+			clearAttachmentScratch[1] = 0;
+			var depthValue:Float = depth == null ? 0. : depth;
+			clearDepthBits.setF32(0, depthValue);
+			clearAttachmentScratch[2] = clearDepthBits.getI32(0);
+			var stencilValue = 0;
+			if( stencil != null ) stencilValue = stencil;
+			clearAttachmentScratch[3] = stencilValue;
+			clearAttachmentScratch[4] = clearAttachmentScratch[5] = 0;
+			clearRectScratch[0] = clearRectScratch[1] = 0;
+			clearRectScratch[2] = viewportWidth;
+			clearRectScratch[3] = viewportHeight;
+			clearRectScratch[4] = 0;
+			clearRectScratch[5] = 1;
+			command.clearAttachmentsNative(1, clearAttachmentScratch, 1, clearRectScratch);
 		}
 	}
 
@@ -2836,11 +2844,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( currentShader.shader.mode != hxsl.RuntimeShader.LinkMode.Compute && uploadStageTextures(buf, buf.fragment, currentShader.shader.fragment) )
 				return;
 		case Buffers:
-			if( bufferBindingKeys.length > 0 ) {
-				bufferBindings.clear();
-				bufferBindingKeys.resize(0);
-				bufferBindingKinds.clear();
-			}
+			clearBufferBindings();
 			bufferBindingsShaderKey = currentShader.cacheKey;
 			if( uploadStageBuffers(buf.vertex, currentShader.shader.mode == hxsl.RuntimeShader.LinkMode.Compute ? currentShader.shader.compute : currentShader.shader.vertex) )
 				return;
@@ -2855,7 +2859,16 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		activeTextureBindings.resize(0);
 	}
 
+	function clearBufferBindings() {
+		for( key in bufferBindingKeys ) {
+			bufferBindings.remove(key);
+			bufferBindingKinds.remove(key);
+		}
+		bufferBindingKeys.resize(0);
+	}
+
 	function uploadStageBuffers(buffers:h3d.shader.Buffers.ShaderBuffers, shader:hxsl.RuntimeShader.RuntimeShaderData):Bool {
+		final allocationIds = currentShader.bufferAllocationIds.get(shader);
 		var allocation = shader.buffers;
 		var slot = 0;
 		while( allocation != null ) {
@@ -2885,7 +2898,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					throw 'Buffer ${buffer.id} is missing Vulkan storage-buffer usage';
 				validateBufferDescriptorRange(allocation.name, resource.size, limits.maxStorageBufferRange);
 			}
-			final key = VulkanShaderAbi.allocationId(allocation);
+			final key = allocationIds[slot - 1];
 			final existing = bufferBindings.get(key);
 			if( existing != null && existing != buffer )
 				throw 'HxSL resource $key resolves to different vertex and fragment buffers';
@@ -3064,6 +3077,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			if( frame.usedConstantUploads == frame.constantUploads.length )
 				frame.constantUploads.push(new VulkanConstantUpload());
 			upload = frame.constantUploads[frame.usedConstantUploads++];
+			upload.blockId = blockId;
 			frame.shaderConstants.set(blockId, upload);
 		}
 		final previousBuffer = upload.buffer;
@@ -3507,7 +3521,13 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 				throw 'Vulkan shader buffer $allocationId was disposed before ${compute ? "dispatch" : "draw"}';
 			final previous = currentShader.descriptorBuffers.get(allocationId);
 			if( previous == null || previous.buffer != native || previous.handle != native.buffer || previous.range != native.size ) {
-				currentShader.descriptorBuffers.set(allocationId, {buffer: native, handle: native.buffer, range: native.size});
+				if( previous == null )
+					currentShader.descriptorBuffers.set(allocationId, {buffer: native, handle: native.buffer, range: native.size});
+				else {
+					previous.buffer = native;
+					previous.handle = native.buffer;
+					previous.range = native.size;
+				}
 				final sets = currentShader.bufferDescriptorSets.get(allocationId);
 				if( sets != null ) for( set in sets ) set.revision++;
 			}
@@ -3575,9 +3595,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 					: compute ? VulkanImageState.ComputeShaderRead : VulkanImageState.ShaderRead;
 				for( layer in baseLayer...baseLayer + layerCount )
 					for( mip in baseMip...baseMip + levelCount )
-						if( image.getState(mip, layer, texture.isDepth() ? DEPTH : COLOR) != targetState ) {
+						if( image.getAspectState(mip, layer, texture.isDepth() ? DEPTH : COLOR) != targetState ) {
 							suspendRendering();
-							VulkanResourceState.transitionImage(command, image, mip, layer, targetState, sampleAspect);
+							VulkanResourceState.transitionImageMask(command, image, mip, layer, targetState, sampleAspect);
 						}
 				image.lastSubmission = currentSubmissionSerial;
 				if( valueIndex == values.length ) values.push(new VulkanResolvedTexture());
@@ -3825,9 +3845,9 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 		final aspect = texture.isDepth() ? depthAspect : colorAspect;
 		for( layer in resolved.baseLayer...resolved.baseLayer + resolved.layerCount )
 			for( mip in resolved.baseMip...resolved.baseMip + resolved.levelCount )
-				if( resolved.image.getState(mip, layer, texture.isDepth() ? DEPTH : COLOR) != targetState ) {
+				if( resolved.image.getAspectState(mip, layer, texture.isDepth() ? DEPTH : COLOR) != targetState ) {
 					suspendRendering();
-					VulkanResourceState.transitionImage(command, resolved.image, mip, layer, targetState, aspect);
+					VulkanResourceState.transitionImageMask(command, resolved.image, mip, layer, targetState, aspect);
 				}
 		resolved.image.lastSubmission = currentSubmissionSerial;
 		@:privateAccess texture.lastFrame = hxd.Timer.frameCount;
@@ -3929,7 +3949,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Nested Vulkan Samples queries are not supported";
 		if (query.kind == Samples && renderingStarted)
 			suspendRendering();
-		final generation = queryManager.start(query, currentFrameIndex, command, suspendRendering);
+		final generation = queryManager.start(query, currentFrameIndex, command, suspendForQueryGrowth);
 		activeQueryIntervals++;
 		switch (query.kind) {
 		case Samples:
@@ -3948,7 +3968,7 @@ static var STAGE_NAME = @:privateAccess "main".toUtf8();
 			throw "Vulkan query end requires an active frame";
 		switch (query.kind) {
 		case TimeStamp:
-			final generation = queryManager.start(query, currentFrameIndex, command, suspendRendering);
+			final generation = queryManager.start(query, currentFrameIndex, command, suspendForQueryGrowth);
 			command.writeTimestamp2(VkPipelineStage2.BOTTOM_OF_PIPE, generation.page.pool, generation.firstSlot);
 			queryManager.endTimestamp(query);
 		case Samples:

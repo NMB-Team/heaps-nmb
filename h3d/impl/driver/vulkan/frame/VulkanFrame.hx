@@ -80,9 +80,11 @@ class VulkanFrame {
 	var idleDescriptorReuses = 0;
 
 	public function resetShaderConstants() {
-		shaderConstants.clear();
-		for( index in 0...usedConstantUploads )
-			constantUploads[index].buffer = null;
+		for( index in 0...usedConstantUploads ) {
+			final upload = constantUploads[index];
+			shaderConstants.remove(upload.blockId);
+			upload.buffer = null;
+		}
 		usedConstantUploads = 0;
 	}
 

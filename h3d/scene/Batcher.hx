@@ -2061,6 +2061,27 @@ private class EmitData {
 	}
 
 	inline function writeMatrix( pos : Int, m : h3d.Matrix ) {
+		#if hl
+		var bytes = hl.Bytes.getArray(instancesData.getNative());
+		pos <<= 2;
+
+		bytes.setF32(pos, m._11);
+		bytes.setF32(pos + 4, m._21);
+		bytes.setF32(pos + 8, m._31);
+		bytes.setF32(pos + 12, m._41);
+		bytes.setF32(pos + 16, m._12);
+		bytes.setF32(pos + 20, m._22);
+		bytes.setF32(pos + 24, m._32);
+		bytes.setF32(pos + 28, m._42);
+		bytes.setF32(pos + 32, m._13);
+		bytes.setF32(pos + 36, m._23);
+		bytes.setF32(pos + 40, m._33);
+		bytes.setF32(pos + 44, m._43);
+		bytes.setF32(pos + 48, m._14);
+		bytes.setF32(pos + 52, m._24);
+		bytes.setF32(pos + 56, m._34);
+		bytes.setF32(pos + 60, m._44);
+		#else
 		instancesData[pos++] = m._11;
 		instancesData[pos++] = m._21;
 		instancesData[pos++] = m._31;
@@ -2077,6 +2098,7 @@ private class EmitData {
 		instancesData[pos++] = m._24;
 		instancesData[pos++] = m._34;
 		instancesData[pos++] = m._44;
+		#end
 	}
 
 	public function emitInstance( subMeshID : Int, subPartID : Int, shaderData : ShaderData, worldPosition : h3d.Matrix, syncID : Int ) {

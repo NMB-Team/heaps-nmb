@@ -231,6 +231,19 @@ class RenderContext {
 			var thid = s.paramsTexHandleCount;
 			var bhid = s.paramsBufHandleCount;
 			while( g != null ) {
+				#if hl
+				switch( g.type ) {
+				case TFloat if( globals.hasScalar(g.gid) ):
+					ptr[g.pos] = globals.fastGetFloat(g.gid);
+					g = g.next;
+					continue;
+				case TInt if( globals.hasScalar(g.gid) ):
+					fillIntParam(globals.fastGetInt(g.gid), g.pos, ptr);
+					g = g.next;
+					continue;
+				default:
+				}
+				#end
 				var v : Dynamic = globals.fastGet(g.gid);
 				if( v == null )
 					throw "Missing global value " + g.path;
@@ -303,6 +316,19 @@ class RenderContext {
 					}
 					i.writeParam(p.index, p.type, ptr, p.pos);
 				} else {
+					#if hl
+					switch( p.type ) {
+					case TFloat if( globals.hasScalar(p.perObjectGlobal.gid) ):
+						ptr[p.pos] = globals.fastGetFloat(p.perObjectGlobal.gid);
+						p = p.next;
+						continue;
+					case TInt if( globals.hasScalar(p.perObjectGlobal.gid) ):
+						fillIntParam(globals.fastGetInt(p.perObjectGlobal.gid), p.pos, ptr);
+						p = p.next;
+						continue;
+					default:
+					}
+					#end
 					var v = getParamValue(p, shaders);
 					fillRec(v, p.type, ptr, p.pos);
 				}

@@ -32,9 +32,12 @@ class TempObjects {
 	public var depthStencils : hl.BytesAccess<Address>;
 	public var copyableInfosBytes : hl.Bytes;
 	public var vertexViews : hl.CArray<VertexBufferView>;
+	public var vertexViewRefs : Array<VertexBufferView>;
 	public var vertexViewCount : Int;
 	public var descriptors2 : hl.NativeArray<DescriptorHeap>;
 	public var barriers : hl.CArray<ResourceBarrier>;
+	// keep the CArray owners alive while reusing their element wrappers
+	public var barrierViews : Array<ResourceBarrier>;
 	public var resourcesToTransition : hl.NativeArray<ResourceData>;
 	public var maxBarriers : Int;
 	public var barrierCount : Int;
@@ -64,10 +67,8 @@ class TempObjects {
 		renderTargets = new hl.Bytes(8 * 8);
 		depthStencils = new hl.Bytes(8);
 		copyableInfosBytes = new hl.Bytes(8 * 3);
-		vertexViewCount = 16;
-		vertexViews = hl.CArray.alloc(VertexBufferView, vertexViewCount);
-		maxBarriers = 100;
-		barriers = hl.CArray.alloc(ResourceBarrier, maxBarriers);
+		allocateVertexViews(16);
+		allocateBarriers(100);
 		resourcesToTransition = new hl.NativeArray(maxBarriers);
 		barrierCount = 0;
 		pass = new h3d.mat.Pass("default");
@@ -80,6 +81,25 @@ class TempObjects {
 		descriptors2 = new hl.NativeArray(2);
 		uavDesc.viewDimension = BUFFER;
 		barrier.subResource = -1;
+	}
+
+	public function allocateVertexViews(count : Int) {
+		var storage = hl.CArray.alloc(VertexBufferView, count);
+		var refs = [for( i in 0...count ) storage[i]];
+
+		// drop old wrappers before replacing their owning block
+		vertexViewRefs = refs;
+		vertexViews = storage;
+		vertexViewCount = count;
+	}
+
+	public function allocateBarriers(count : Int) {
+		var storage = hl.CArray.alloc(ResourceBarrier, count);
+		var refs = [for( i in 0...count ) storage[i]];
+
+		barrierViews = refs;
+		barriers = storage;
+		maxBarriers = count;
 	}
 }
 #end

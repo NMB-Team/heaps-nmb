@@ -883,8 +883,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		// Need one barrier for UAV
 		if( tmp.barrierCount >= tmp.maxBarriers - 1) {
 			flushTransitions();
-			tmp.maxBarriers += 100;
-			tmp.barriers = hl.CArray.alloc(ResourceBarrier, tmp.maxBarriers);
+			tmp.allocateBarriers(tmp.maxBarriers + 100);
 			tmp.resourcesToTransition = new hl.NativeArray<ResourceData>(tmp.maxBarriers);
 		}
 
@@ -934,7 +933,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	}
 
 	inline function queueTextureBarrier(res : ResourceData, index : Int, from : ResourceState, to : ResourceState, count : Int) {
-		final b = tmp.barriers[count++];
+		final b = tmp.barrierViews[count++];
 		b.resource = res.res;
 		@:privateAccess b.type = TRANSITION;
 		b.stateBefore = from;
@@ -973,7 +972,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 				if (res.res == null)
 					continue;
 
-				var b = tmp.barriers[totalBarrier++];
+				var b = tmp.barrierViews[totalBarrier++];
 				b.resource = res.res;
 				@:privateAccess b.type = TRANSITION;
 				b.stateBefore = res.state;
@@ -985,7 +984,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 		}
 
 		if ( needUAVBarrier ) {
-			var b = tmp.barriers[totalBarrier++];
+			var b = tmp.barrierViews[totalBarrier++];
 			b.resource = null;
 			@:privateAccess b.type = UAV;
 			needUAVBarrier = false;
@@ -3105,7 +3104,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 						}
 						final texture:TextureData = t.t;
 						table.textures[i] = texture;
-						table.resources[i] = texture.res;
+						if( table.resources[i] != texture.res ) table.resources[i] = texture.res;
 						table.bits[i] = t.bits;
 						table.residentMips[i] = t.residentMip;
 						table.flags[i] = t.flags.toInt();
@@ -3269,7 +3268,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 			return;
 
 		ensureVertexViews(currentShader.inputCount);
-		var views = tmp.vertexViews;
+		var views = tmp.vertexViewRefs;
 		var bview = vbuf.view;
 		var map = buffer.format.resolveMapping(currentShader.format);
 		for( i in 0...currentShader.inputCount ) {
@@ -3289,7 +3288,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	override function selectMultiBuffers(formats:hxd.BufferFormat.MultiFormat,buffers:Array<h3d.Buffer>) {
 		var map = formats.resolveMapping(currentShader.format);
 		ensureVertexViews(map.length);
-		var views = tmp.vertexViews;
+		var views = tmp.vertexViewRefs;
 		for( i in 0...map.length ) {
 			var v = views[i];
 			var inf = map[i];
@@ -3308,8 +3307,7 @@ class DX12Driver extends h3d.impl.driver.Driver {
 	inline function ensureVertexViews( count : Int ) {
 		if ( count <= tmp.vertexViewCount )
 			return;
-		tmp.vertexViewCount = count;
-		tmp.vertexViews = hl.CArray.alloc(VertexBufferView, count);
+		tmp.allocateVertexViews(count);
 	}
 
 	static var CULL : Array<Dx12CullMode> = [NONE,BACK,FRONT,NONE];

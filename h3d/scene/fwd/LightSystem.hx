@@ -6,6 +6,8 @@ class LightSystem extends h3d.scene.LightSystem {
 	var globals : hxsl.Globals;
 	var ambientShader : hxsl.Shader;
 	var lightCount : Int;
+	final cullingSphere = new h3d.col.Sphere();
+	var sortLights : h3d.scene.Light -> h3d.scene.Light -> Int;
 	public var perPixelLighting : Bool = true;
 	public var ambientLight(default,null) : h3d.Vector;
 
@@ -17,6 +19,7 @@ class LightSystem extends h3d.scene.LightSystem {
 
 	public function new() {
 		super();
+		sortLights = cast sortLight;
 		ambientLight = new h3d.Vector(0.5, 0.5, 0.5);
 		ambientShader = new h3d.shader.AmbientLight();
 		additiveLighting = true;
@@ -36,7 +39,7 @@ class LightSystem extends h3d.scene.LightSystem {
 		cullLights();
 		super.initLights(ctx);
 		if( lightCount <= maxLightsPerObject )
-			@:privateAccess ctx.lights = haxe.ds.ListSort.sortSingleLinked(ctx.lights, cast sortLight);
+			@:privateAccess ctx.lights = haxe.ds.ListSort.sortSingleLinked(ctx.lights, sortLights);
 	}
 
 	override function initGlobals( globals : hxsl.Globals ) {
@@ -47,7 +50,7 @@ class LightSystem extends h3d.scene.LightSystem {
 	function cullLights() @:privateAccess  {
 		// remove lights which cullingDistance is outside of frustum
 		var ll = ctx.lights, prev : h3d.scene.Light = null;
-		var s = new h3d.col.Sphere();
+		var s = cullingSphere;
 		while( ll != null ) {
 			var l = Std.downcast(ll, h3d.scene.fwd.Light);
 			if( l != null ) {

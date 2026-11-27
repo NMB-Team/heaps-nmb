@@ -44,7 +44,7 @@ class VulkanComputePipelineManager {
 	public function get(program:VulkanCompiledShader, submissionSerial:Int = 0):VulkanComputePipeline {
 		if (program.compute == null || program.vertex != null || program.fragment != null)
 			throw "Vulkan compute pipeline requires one compute-only shader program";
-		final key = '${program.cacheKey}:${program.abiVersion}:${program.pipelineLayoutIdentity}:specialization=none';
+		final key = program.computePipelineKey;
 		final cached = pipelines.get(key);
 		if (cached != null) {
 			hitCount++;
