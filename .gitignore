@@ -14,3 +14,4 @@ bin
 *.exe
 /shaders
 tests
+.DS_Store
